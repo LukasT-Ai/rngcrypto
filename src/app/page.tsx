@@ -108,9 +108,12 @@ function AscendPreview() {
           transition={{ duration: 0.6 }}
           className="mb-12 flex flex-col items-center text-center"
         >
-          <div className="mb-4 flex items-center gap-2 rounded-full border border-[#00FF88]/20 bg-[#00FF88]/5 px-4 py-1.5">
-            <LivePulse />
-            <span className="text-xs font-medium text-[#00FF88]">
+          <div className="mb-4 flex items-center gap-2 rounded-full border border-[#E8622C]/20 bg-[#E8622C]/5 px-4 py-1.5">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#E8622C] opacity-75" />
+              <span className="relative inline-flex size-2 rounded-full bg-[#E8622C]" />
+            </span>
+            <span className="text-xs font-medium text-[#E8622C]">
               Live on Ascend Market
             </span>
           </div>
@@ -163,7 +166,7 @@ function AscendPreview() {
         >
           <Link
             href="/ascend"
-            className="group flex items-center gap-2 rounded-full border border-[#00FF88]/30 bg-[#00FF88]/5 px-6 py-3 text-sm font-medium text-[#00FF88] transition-all hover:border-[#00FF88]/60 hover:bg-[#00FF88]/10"
+            className="group flex items-center gap-2 rounded-full border border-[#E8622C]/30 bg-[#E8622C]/5 px-6 py-3 text-sm font-medium text-[#E8622C] transition-all hover:border-[#E8622C]/60 hover:bg-[#E8622C]/10"
           >
             <BarChart3 className="size-4" />
             View Full Dashboard
@@ -179,9 +182,9 @@ const ecosystemProjects = [
   {
     name: "Ascend Market",
     handle: "@ascendperps",
-    description: "Event perpetuals on Cardano using ZK proofs via Midnight",
-    href: "/projects#ascend",
-    color: "#00FF88",
+    description: "Leveraged event perpetuals on Midnight with multi-chain ZK settlement",
+    href: "/ascend",
+    color: "#E8622C",
     icon: TrendingUp,
   },
   {
@@ -391,7 +394,7 @@ function SocialProof() {
             href="https://x.com/ascendperps"
             target="_blank"
             rel="noopener noreferrer"
-            className="group flex items-center gap-3 text-white/40 transition-colors hover:text-[#00FF88]/80"
+            className="group flex items-center gap-3 text-white/40 transition-colors hover:text-[#E8622C]/80"
           >
             <TrendingUp className="size-5" />
             <div>

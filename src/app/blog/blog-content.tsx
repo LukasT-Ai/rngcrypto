@@ -18,6 +18,15 @@ interface BlogPost {
 
 const posts: BlogPost[] = [
   {
+    slug: "what-is-ascend-market-event-perpetuals",
+    title: "What Is Ascend Market: Event Perpetuals That Could Bring Cross-Chain Users to Cardano",
+    date: "Apr 29, 2026",
+    categories: ["Trading", "DeFi"],
+    excerpt:
+      "Ascend is a fully verifiable events perpetuals platform built on Midnight. Trade leveraged positions on probability outcomes for world events, metals, commodities, stocks, and crypto. With multi-chain settlement via ZK proofs supporting Cardano, EVM, and Solana, Ascend could become the bridge that brings traders from every ecosystem into the Cardano orbit.",
+    readingTime: 8,
+  },
+  {
     slug: "why-cardano-defi-just-getting-started",
     title: "Why Cardano's DeFi Ecosystem Is Just Getting Started",
     date: "Apr 28, 2026",

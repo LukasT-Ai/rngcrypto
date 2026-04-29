@@ -228,7 +228,7 @@ function FeaturedAscendCard() {
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="relative mb-10 overflow-hidden rounded-2xl border border-[#00FF88]/20 bg-gradient-to-br from-[#00FF88]/[0.06] via-[#06080F] to-[#06080F] p-8"
+      className="relative mb-10 overflow-hidden rounded-2xl border border-[#E8622C]/20 bg-gradient-to-br from-[#E8622C]/[0.06] via-[#06080F] to-[#06080F] p-8"
     >
       <div className="flex flex-col gap-8 lg:flex-row lg:items-center">
         <div className="flex-1 min-w-0">
@@ -239,17 +239,17 @@ function FeaturedAscendCard() {
             <h2 className="font-display text-xl font-bold tracking-tight lg:text-2xl">
               Ascend Market
             </h2>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#00FF88]/30 bg-[#00FF88]/20 px-2.5 py-0.5 text-xs font-medium text-[#00FF88]">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#E8622C]/30 bg-[#E8622C]/20 px-2.5 py-0.5 text-xs font-medium text-[#E8622C]">
               <span className="relative flex size-1.5">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#00FF88] opacity-75" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-[#00FF88]" />
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#E8622C] opacity-75" />
+                <span className="relative inline-flex size-1.5 rounded-full bg-[#E8622C]" />
               </span>
               LIVE
             </span>
           </div>
-          <p className="mt-1 text-sm text-white/40">Leveraged Prediction Perpetuals</p>
+          <p className="mt-1 text-sm text-white/40">Leveraged Event Perpetuals on Midnight</p>
           <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-white/60">
-            Up to 1001x leverage on event outcome perpetuals built on the Midnight blockchain. RnGcrYptO runs a fully autonomous trading bot on the testnet, executing strategies around the clock.
+            Fully verifiable events perpetuals platform for leveraged trading on probability outcomes. Trade world events, metals, commodities, stocks, and crypto with ZK-verified multi-chain settlement across Cardano, EVM, and Solana.
           </p>
 
           <div className="mt-6 flex flex-wrap gap-6">
@@ -260,7 +260,7 @@ function FeaturedAscendCard() {
               <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total Trades</div>
             </div>
             <div className="text-center">
-              <div className="font-mono text-lg font-bold text-[#00FF88]">
+              <div className="font-mono text-lg font-bold text-[#E8622C]">
                 {stats?.winRate != null ? `${stats.winRate}%` : "---"}
               </div>
               <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Win Rate</div>
@@ -272,7 +272,7 @@ function FeaturedAscendCard() {
               <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Open Positions</div>
             </div>
             <div className="text-center">
-              <div className={`font-mono text-lg font-bold ${stats?.totalPnl != null && stats.totalPnl >= 0 ? "text-[#00FF88]" : "text-[#FF3B5C]"}`}>
+              <div className={`font-mono text-lg font-bold ${stats?.totalPnl != null && stats.totalPnl >= 0 ? "text-gain" : "text-loss"}`}>
                 {stats?.totalPnl != null
                   ? `${stats.totalPnl >= 0 ? "+" : ""}${stats.totalPnl.toLocaleString()} ADA`
                   : "---"}
@@ -284,7 +284,7 @@ function FeaturedAscendCard() {
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
               href="/ascend"
-              className="inline-flex items-center gap-2 rounded-full bg-[#00FF88] px-6 py-2.5 text-sm font-semibold text-[#06080F] transition-opacity hover:opacity-90"
+              className="inline-flex items-center gap-2 rounded-full bg-[#E8622C] px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
             >
               Live Dashboard
               <ArrowRight className="size-4" />
@@ -303,9 +303,9 @@ function FeaturedAscendCard() {
 
         <div className="hidden w-[300px] shrink-0 lg:block">
           <div className="relative h-[200px] w-full overflow-hidden rounded-xl">
-            <div className="absolute inset-0 bg-gradient-to-br from-[#00FF88]/10 via-[#00FF88]/5 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-br from-[#E8622C]/10 via-[#E8622C]/5 to-transparent" />
             <div className="absolute inset-0" style={{
-              backgroundImage: `radial-gradient(circle at 1px 1px, rgba(0,255,136,0.15) 1px, transparent 0)`,
+              backgroundImage: `radial-gradient(circle at 1px 1px, rgba(232,98,44,0.15) 1px, transparent 0)`,
               backgroundSize: "20px 20px",
             }} />
             <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-[#06080F] to-transparent" />
@@ -313,7 +313,7 @@ function FeaturedAscendCard() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-[#00FF88]/40 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-[#E8622C]/40 to-transparent" />
     </motion.div>
   )
 }

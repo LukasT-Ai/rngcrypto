@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { motion } from "framer-motion"
+import Image from "next/image"
 import {
   AreaChart,
   Area,
@@ -11,9 +12,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
   Bar,
-  Cell,
 } from "recharts"
 import {
   TrendingUp,
@@ -30,6 +29,7 @@ import {
   Clock,
   Filter,
   RefreshCw,
+  ExternalLink,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
@@ -180,15 +180,14 @@ const item = {
 }
 
 // ---------------------------------------------------------------------------
-// Stat Card
+// Stat Card — uses Ascend orange for accent
 // ---------------------------------------------------------------------------
 
 function StatCard({
   label,
   value,
   icon: Icon,
-  color = "text-primary",
-  glowColor = "shadow-primary/20",
+  color = "text-ascend",
   sub,
   children,
 }: {
@@ -196,18 +195,13 @@ function StatCard({
   value: string
   icon: React.ComponentType<{ className?: string }>
   color?: string
-  glowColor?: string
   sub?: string
   children?: React.ReactNode
 }) {
   return (
     <motion.div variants={item}>
-      <div
-        className={`group relative overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5 transition-all hover:border-white/20 hover:shadow-lg hover:${glowColor}`}
-      >
-        <div
-          className={`pointer-events-none absolute -right-4 -top-4 h-20 w-20 rounded-full opacity-20 blur-2xl transition-opacity group-hover:opacity-40 ${color === "text-gain" || color === "text-primary" ? "bg-primary" : color === "text-loss" ? "bg-destructive" : "bg-chart-3"}`}
-        />
+      <div className="group relative overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5 transition-all hover:border-[#E8622C]/20 hover:shadow-lg hover:shadow-[#E8622C]/10">
+        <div className="pointer-events-none absolute -right-4 -top-4 h-20 w-20 rounded-full bg-[#E8622C] opacity-10 blur-2xl transition-opacity group-hover:opacity-25" />
         <div className="flex items-start justify-between">
           <div className="space-y-1">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -216,9 +210,7 @@ function StatCard({
             <p className={`font-display text-2xl font-bold tracking-tight tabular-nums ${color}`}>{value}</p>
             {sub && <p className="font-mono text-xs tabular-nums text-muted-foreground">{sub}</p>}
           </div>
-          <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 ${color}`}
-          >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#E8622C]/10 text-[#E8622C]">
             <Icon className="h-5 w-5" />
           </div>
         </div>
@@ -241,7 +233,7 @@ function PnlTooltip({ active, payload, label }: {
   const cumulative = payload.find((p) => p.dataKey === "cumulativePnl")?.value ?? 0
   const daily = payload.find((p) => p.dataKey === "tradePnl")?.value ?? 0
   return (
-    <div className="rounded-lg border border-white/10 bg-[#0A0E17]/95 px-4 py-3 shadow-xl backdrop-blur-md">
+    <div className="rounded-lg border border-[#E8622C]/20 bg-[#0A0E17]/95 px-4 py-3 shadow-xl backdrop-blur-md">
       <p className="mb-1 text-xs text-muted-foreground">{label}</p>
       <p className={`font-mono text-sm font-semibold tabular-nums ${cumulative >= 0 ? "text-gain" : "text-loss"}`}>
         Cumulative: {formatPnl(cumulative)} ADA
@@ -292,7 +284,6 @@ export default function AscendDashboard() {
   const timeline = timelineData?.timeline ?? []
   const openPositions = liveData?.openPositions ?? []
 
-  // Unique assets for filter
   const uniqueAssets = useMemo(() => {
     const set = new Set(trades.map((t) => t.asset))
     return Array.from(set).sort()
@@ -303,7 +294,6 @@ export default function AscendDashboard() {
     [trades, assetFilter]
   )
 
-  // Best asset by PnL
   const bestAsset = useMemo(() => {
     if (!assets.length) return "N/A"
     const best = assets.reduce((a, b) => (a.totalPnl > b.totalPnl ? a : b))
@@ -317,8 +307,8 @@ export default function AscendDashboard() {
 
   const leverageColor = useMemo(() => {
     if (avgLeverage >= 6) return "text-loss"
-    if (avgLeverage >= 3) return "text-chart-4"
-    return "text-chart-3"
+    if (avgLeverage >= 3) return "text-[#F59E0B]"
+    return "text-[#E8622C]"
   }, [avgLeverage])
 
   const dailySummary = useMemo(() => {
@@ -353,27 +343,62 @@ export default function AscendDashboard() {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
       >
-        <div className="flex items-center gap-3">
-          <h1 className="font-display text-3xl font-bold tracking-tight">Ascend Bot</h1>
-          <Badge variant="secondary" className="gap-1.5 bg-gain-bg text-gain text-xs">
-            <span className="size-1.5 rounded-full bg-gain pulse-live" />
-            Live
-          </Badge>
+        <div className="flex items-center gap-4">
+          <div className="relative size-12 overflow-hidden rounded-xl ring-2 ring-[#E8622C]/30">
+            <Image
+              src="/avatar/ascend_logo_coin.jpg"
+              alt="Ascend Market"
+              fill
+              className="object-cover"
+              priority
+            />
+          </div>
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="font-display text-3xl font-bold tracking-tight text-[#E8622C]">Ascend Bot</h1>
+              <Badge variant="secondary" className="gap-1.5 bg-[#E8622C]/15 text-[#E8622C] border border-[#E8622C]/30 text-xs">
+                <span className="relative flex size-1.5">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#E8622C] opacity-75" />
+                  <span className="relative inline-flex size-1.5 rounded-full bg-[#E8622C]" />
+                </span>
+                Live
+              </Badge>
+            </div>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Autonomous event perpetuals trading on{" "}
+              <a
+                href="https://www.ascend.market"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#E8622C] underline-offset-4 hover:underline"
+              >
+                Ascend Market
+              </a>{" "}
+              testnet
+            </p>
+          </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Autonomous event perpetuals trading on{" "}
+        <div className="flex items-center gap-3">
           <a
-            href="https://ascend.trade"
+            href="https://www.ascend.market"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary underline-offset-4 hover:underline"
+            className="inline-flex items-center gap-2 rounded-full border border-[#E8622C]/30 bg-[#E8622C]/10 px-4 py-2 text-xs font-medium text-[#E8622C] transition-all hover:border-[#E8622C]/50 hover:bg-[#E8622C]/15"
           >
-            Ascend Market
-          </a>{" "}
-          testnet
-        </p>
+            <ExternalLink className="size-3.5" />
+            ascend.market
+          </a>
+          <a
+            href="https://x.com/ascendperps"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-xs font-medium text-white/50 transition-all hover:border-white/[0.15] hover:text-white/70"
+          >
+            @ascendperps
+          </a>
+        </div>
       </motion.div>
 
       {/* ----------------------------------------------------------------- */}
@@ -390,7 +415,6 @@ export default function AscendDashboard() {
           value={stats ? `${formatPnl(stats.totalPnl)} ADA` : "..."}
           icon={stats && stats.totalPnl >= 0 ? TrendingUp : TrendingDown}
           color={stats && stats.totalPnl >= 0 ? "text-gain" : "text-loss"}
-          glowColor={stats && stats.totalPnl >= 0 ? "shadow-gain/20" : "shadow-loss/20"}
           sub={stats ? `Best: ${formatPnl(stats.bestTrade)} / Worst: ${formatPnl(stats.worstTrade)}` : undefined}
         >
           {stats && (
@@ -404,13 +428,12 @@ export default function AscendDashboard() {
           label="Win Rate"
           value={stats ? `${stats.winRate}%` : "..."}
           icon={Target}
-          color="text-chart-3"
-          glowColor="shadow-chart-3/20"
+          color="text-[#E8622C]"
           sub={stats ? `${stats.wins}W / ${stats.losses}L` : undefined}
         >
           {stats && (
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-loss/30">
-              <div className="h-full rounded-full bg-gain" style={{ width: `${stats.winRate}%` }} />
+              <div className="h-full rounded-full bg-[#E8622C]" style={{ width: `${stats.winRate}%` }} />
             </div>
           )}
         </StatCard>
@@ -418,30 +441,26 @@ export default function AscendDashboard() {
           label="Total Trades"
           value={stats ? `${stats.totalTrades}` : "..."}
           icon={Activity}
-          color="text-chart-5"
-          glowColor="shadow-chart-5/20"
+          color="text-white/90"
           sub={stats ? `Avg PnL: ${formatPnl(stats.avgPnl)} ADA` : undefined}
         />
         <StatCard
           label="Open Positions"
           value={`${openPositions.length}`}
           icon={Crosshair}
-          color="text-chart-4"
-          glowColor="shadow-chart-4/20"
+          color="text-[#F07B3F]"
         />
         <StatCard
           label="Avg Leverage"
           value={`${avgLeverage.toFixed(1)}x`}
           icon={BarChart3}
           color={leverageColor}
-          glowColor="shadow-chart-2/20"
         />
         <StatCard
           label="Best Asset"
           value={bestAsset}
           icon={Trophy}
-          color="text-primary"
-          glowColor="shadow-primary/20"
+          color="text-[#E8622C]"
         />
       </motion.div>
 
@@ -449,7 +468,7 @@ export default function AscendDashboard() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, delay: 0.1 }}
-        className="flex flex-wrap items-center gap-6 rounded-xl border border-white/[0.06] bg-white/[0.03] px-5 py-3 text-sm"
+        className="flex flex-wrap items-center gap-6 rounded-xl border border-[#E8622C]/10 bg-[#E8622C]/[0.03] px-5 py-3 text-sm"
       >
         <div className="flex items-center gap-2">
           <span className="text-white/40">Today</span>
@@ -460,14 +479,14 @@ export default function AscendDashboard() {
             ({dailySummary.todayWins}W / {dailySummary.todayLosses}L)
           </span>
         </div>
-        <div className="h-4 w-px bg-white/10" />
+        <div className="h-4 w-px bg-[#E8622C]/20" />
         <div className="flex items-center gap-2">
           <span className="text-white/40">This Week</span>
           <span className={`font-mono font-semibold tabular-nums ${dailySummary.weekPnl >= 0 ? "text-gain" : "text-loss"}`}>
             {formatPnl(dailySummary.weekPnl)} ADA
           </span>
         </div>
-        <div className="h-4 w-px bg-white/10" />
+        <div className="h-4 w-px bg-[#E8622C]/20" />
         <div className="flex items-center gap-2">
           <span className="text-white/40">This Month</span>
           <span className={`font-mono font-semibold tabular-nums ${dailySummary.monthPnl >= 0 ? "text-gain" : "text-loss"}`}>
@@ -499,7 +518,7 @@ export default function AscendDashboard() {
                   onClick={() => setTimeframe(tf.days)}
                   className={`rounded-md px-3 py-1 text-xs font-medium ${
                     timeframe === tf.days
-                      ? "bg-white/10 text-foreground"
+                      ? "bg-[#E8622C]/15 text-[#E8622C]"
                       : "text-white/40 hover:text-white/60"
                   }`}
                 >
@@ -519,8 +538,8 @@ export default function AscendDashboard() {
               <AreaChart data={timeline} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="pnlGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#00FF88" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#00FF88" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#E8622C" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="#E8622C" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
@@ -538,11 +557,11 @@ export default function AscendDashboard() {
                   tickFormatter={(v: number) => `${v >= 0 ? "+" : ""}${v}`}
                 />
                 <Tooltip content={<PnlTooltip />} />
-                <Bar dataKey="tradePnl" fill="#6366F1" opacity={0.4} radius={[2, 2, 0, 0]} />
+                <Bar dataKey="tradePnl" fill="#E8622C" opacity={0.4} radius={[2, 2, 0, 0]} />
                 <Area
                   type="monotone"
                   dataKey="cumulativePnl"
-                  stroke="#00FF88"
+                  stroke="#E8622C"
                   strokeWidth={2}
                   fill="url(#pnlGradient)"
                 />
@@ -564,7 +583,7 @@ export default function AscendDashboard() {
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h2 className="font-display text-lg font-semibold">Open Positions</h2>
-              <Badge variant="secondary" className="gap-1 bg-gain-bg text-gain text-xs">
+              <Badge variant="secondary" className="gap-1 bg-[#E8622C]/10 text-[#E8622C] border border-[#E8622C]/20 text-xs">
                 <RefreshCw className="h-3 w-3" />
                 10s
               </Badge>
@@ -589,7 +608,7 @@ export default function AscendDashboard() {
               {openPositions.map((pos) => (
                 <div
                   key={pos.id}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-white/20"
+                  className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-4 transition-colors hover:border-[#E8622C]/20"
                 >
                   <div className="mb-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -609,8 +628,8 @@ export default function AscendDashboard() {
                       pos.leverage >= 6
                         ? "bg-loss/15 text-loss"
                         : pos.leverage >= 3
-                          ? "bg-chart-4/15 text-chart-4"
-                          : "bg-white/5 text-white/60"
+                          ? "bg-[#F59E0B]/15 text-[#F59E0B]"
+                          : "bg-[#E8622C]/10 text-[#E8622C]"
                     }`}>
                       {pos.leverage}x
                     </span>
@@ -673,7 +692,7 @@ export default function AscendDashboard() {
               <select
                 value={assetFilter}
                 onChange={(e) => setAssetFilter(e.target.value)}
-                className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-foreground backdrop-blur-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-foreground backdrop-blur-sm focus:border-[#E8622C] focus:outline-none focus:ring-1 focus:ring-[#E8622C]"
               >
                 <option value="all">All Assets</option>
                 {uniqueAssets.map((a) => (
@@ -699,7 +718,7 @@ export default function AscendDashboard() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[800px] text-sm">
                 <thead>
-                  <tr className="border-b border-white/10 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr className="border-b border-[#E8622C]/10 text-left text-xs uppercase tracking-wider text-muted-foreground">
                     <th className="pb-3 pr-3">Asset</th>
                     <th className="pb-3 pr-3">Side</th>
                     <th className="pb-3 pr-3 text-right">Margin</th>
@@ -815,7 +834,7 @@ export default function AscendDashboard() {
                 return (
                   <div
                     key={a.asset}
-                    className="rounded-lg border border-white/5 bg-white/[0.02] p-4 transition-colors hover:border-white/10"
+                    className="rounded-lg border border-white/5 bg-white/[0.02] p-4 transition-colors hover:border-[#E8622C]/15"
                   >
                     <div className="mb-2 flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -838,17 +857,15 @@ export default function AscendDashboard() {
                         </span>
                       </div>
                     </div>
-                    {/* Horizontal bar */}
                     <div className="h-2 w-full overflow-hidden rounded-full bg-white/5">
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${barWidth}%` }}
                         transition={{ duration: 0.8, ease: "easeOut" }}
-                        className={`h-full rounded-full ${isPositive ? "bg-gain" : "bg-loss"}`}
+                        className={`h-full rounded-full ${isPositive ? "bg-[#E8622C]" : "bg-loss"}`}
                         style={{ opacity: 0.7 }}
                       />
                     </div>
-                    {/* Win/Loss micro bar */}
                     <div className="mt-2 flex gap-0.5">
                       {a.wins > 0 && (
                         <div
@@ -868,6 +885,42 @@ export default function AscendDashboard() {
               })}
             </div>
           )}
+        </div>
+      </motion.div>
+
+      {/* Ascend info banner */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, delay: 0.35 }}
+        className="overflow-hidden rounded-xl border border-[#E8622C]/15 bg-gradient-to-r from-[#E8622C]/[0.06] via-transparent to-transparent p-6"
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="relative h-16 w-28 shrink-0 overflow-hidden rounded-lg">
+              <Image
+                src="/avatar/event_perpetual_markets.jpg"
+                alt="Event Perpetual Markets"
+                fill
+                className="object-cover"
+              />
+            </div>
+            <div>
+              <h3 className="font-display text-sm font-semibold text-[#E8622C]">What is Ascend?</h3>
+              <p className="mt-1 max-w-md text-xs leading-relaxed text-white/50">
+                Leveraged trading on probability outcomes: world events, metals, commodities, stocks, and crypto. Built on Midnight with ZK-verified multi-chain settlement.
+              </p>
+            </div>
+          </div>
+          <a
+            href="https://docs.ascend.market/start-here/what-is-ascend"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full bg-[#E8622C] px-5 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Read the Docs
+            <ExternalLink className="size-3.5" />
+          </a>
         </div>
       </motion.div>
 

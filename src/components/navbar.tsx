@@ -68,6 +68,9 @@ export function Navbar() {
         <nav className="hidden items-center gap-1 md:flex">
           {navItems.map((item) => {
             const isActive = pathname.startsWith(item.href)
+            const isAscend = item.href === "/ascend"
+            const activeColor = isAscend ? "text-[#E8622C]" : "text-[#00FF88]"
+            const activeBar = isAscend ? "via-[#E8622C]" : "via-[#00FF88]"
             return (
               <Link
                 key={item.href}
@@ -75,13 +78,13 @@ export function Navbar() {
                 className={cn(
                   "relative px-4 py-2 text-sm font-medium transition-all duration-200",
                   isActive
-                    ? "text-[#00FF88]"
+                    ? activeColor
                     : "text-white/50 hover:text-white/80"
                 )}
               >
                 {item.label}
                 {isActive && (
-                  <span className="absolute inset-x-4 -bottom-[1px] h-px bg-gradient-to-r from-transparent via-[#00FF88] to-transparent" />
+                  <span className={`absolute inset-x-4 -bottom-[1px] h-px bg-gradient-to-r from-transparent ${activeBar} to-transparent`} />
                 )}
               </Link>
             )
@@ -138,6 +141,10 @@ export function Navbar() {
                 item.href === "/"
                   ? pathname === "/"
                   : pathname.startsWith(item.href)
+              const isAscend = item.href === "/ascend"
+              const mobileActiveClass = isAscend
+                ? "bg-[#E8622C]/10 text-[#E8622C]"
+                : "bg-[#00FF88]/10 text-[#00FF88]"
               return (
                 <Link
                   key={item.href}
@@ -145,7 +152,7 @@ export function Navbar() {
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-[#00FF88]/10 text-[#00FF88]"
+                      ? mobileActiveClass
                       : "text-white/50 hover:bg-white/5 hover:text-white/80"
                   )}
                 >

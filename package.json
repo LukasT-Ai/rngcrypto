@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -p ${PORT:-3000}",
-    "lint": "eslint"
+    "lint": "eslint",
+    "sync-stats": "cp C:/Users/Lukas/ascend-agent/ascend.db data/ascend.db && echo 'Ascend DB synced'"
   },
   "dependencies": {
     "@fontsource-variable/space-grotesk": "^5.2.10",

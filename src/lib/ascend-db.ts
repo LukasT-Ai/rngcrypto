@@ -3,7 +3,7 @@ import path from "path";
 
 const DB_PATH =
   process.env.ASCEND_DB_PATH ??
-  path.join("C:", "Users", "Lukas", "ascend-agent", "ascend.db");
+  path.join(process.cwd(), "data", "ascend.db");
 
 /**
  * Opens the Ascend SQLite database in read-only mode.

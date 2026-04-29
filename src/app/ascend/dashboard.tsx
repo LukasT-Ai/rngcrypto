@@ -12,7 +12,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Bar,
 } from "recharts"
 import {
   TrendingUp,
@@ -30,6 +29,7 @@ import {
   Filter,
   RefreshCw,
   ExternalLink,
+  Calendar,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
@@ -165,6 +165,17 @@ function formatDateTime(d: string): string {
   })
 }
 
+function timeAgo(d: string): string {
+  const ms = Date.now() - new Date(d).getTime()
+  const mins = Math.floor(ms / 60000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
 // ---------------------------------------------------------------------------
 // Animation variants
 // ---------------------------------------------------------------------------
@@ -180,7 +191,7 @@ const item = {
 }
 
 // ---------------------------------------------------------------------------
-// Stat Card — uses Ascend orange for accent
+// Stat Card — uniform height
 // ---------------------------------------------------------------------------
 
 function StatCard({
@@ -199,22 +210,22 @@ function StatCard({
   children?: React.ReactNode
 }) {
   return (
-    <motion.div variants={item}>
-      <div className="group relative overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5 transition-all hover:border-[#E8622C]/20 hover:shadow-lg hover:shadow-[#E8622C]/10">
+    <motion.div variants={item} className="h-full">
+      <div className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5 transition-all hover:border-[#E8622C]/20 hover:shadow-lg hover:shadow-[#E8622C]/10">
         <div className="pointer-events-none absolute -right-4 -top-4 h-20 w-20 rounded-full bg-[#E8622C] opacity-10 blur-2xl transition-opacity group-hover:opacity-25" />
         <div className="flex items-start justify-between">
-          <div className="space-y-1">
+          <div className="min-w-0 flex-1 space-y-1">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               {label}
             </p>
             <p className={`font-display text-2xl font-bold tracking-tight tabular-nums ${color}`}>{value}</p>
             {sub && <p className="font-mono text-xs tabular-nums text-muted-foreground">{sub}</p>}
           </div>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#E8622C]/10 text-[#E8622C]">
+          <div className="ml-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#E8622C]/10 text-[#E8622C]">
             <Icon className="h-5 w-5" />
           </div>
         </div>
-        {children}
+        {children && <div className="mt-auto pt-2">{children}</div>}
       </div>
     </motion.div>
   )
@@ -231,15 +242,11 @@ function PnlTooltip({ active, payload, label }: {
 }) {
   if (!active || !payload?.length) return null
   const cumulative = payload.find((p) => p.dataKey === "cumulativePnl")?.value ?? 0
-  const daily = payload.find((p) => p.dataKey === "tradePnl")?.value ?? 0
   return (
     <div className="rounded-lg border border-[#E8622C]/20 bg-[#0A0E17]/95 px-4 py-3 shadow-xl backdrop-blur-md">
       <p className="mb-1 text-xs text-muted-foreground">{label}</p>
       <p className={`font-mono text-sm font-semibold tabular-nums ${cumulative >= 0 ? "text-gain" : "text-loss"}`}>
-        Cumulative: {formatPnl(cumulative)} ADA
-      </p>
-      <p className={`font-mono text-xs tabular-nums ${daily >= 0 ? "text-gain" : "text-loss"}`}>
-        Daily: {formatPnl(daily)} ADA
+        {formatPnl(cumulative)} USDT
       </p>
     </div>
   )
@@ -402,28 +409,21 @@ export default function AscendDashboard() {
       </motion.div>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 1. Hero Stats Bar                                                 */}
+      {/* 1. Hero Stats Bar — uniform grid                                  */}
       {/* ----------------------------------------------------------------- */}
       <motion.div
         variants={container}
         initial="hidden"
         animate="show"
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+        className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6"
       >
         <StatCard
           label="Total P&L"
-          value={stats ? `${formatPnl(stats.totalPnl)} ADA` : "..."}
+          value={stats ? `${formatPnl(stats.totalPnl)}` : "..."}
           icon={stats && stats.totalPnl >= 0 ? TrendingUp : TrendingDown}
           color={stats && stats.totalPnl >= 0 ? "text-gain" : "text-loss"}
-          sub={stats ? `Best: ${formatPnl(stats.bestTrade)} / Worst: ${formatPnl(stats.worstTrade)}` : undefined}
-        >
-          {stats && (
-            <div className={`mt-2 flex items-center gap-1 text-xs ${stats.totalPnl >= 0 ? "text-gain" : "text-loss"}`}>
-              {stats.totalPnl >= 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
-              <span className="font-mono tabular-nums">{Math.abs(stats.totalPnl).toFixed(2)} ADA</span>
-            </div>
-          )}
-        </StatCard>
+          sub="USDT (testnet)"
+        />
         <StatCard
           label="Win Rate"
           value={stats ? `${stats.winRate}%` : "..."}
@@ -432,7 +432,7 @@ export default function AscendDashboard() {
           sub={stats ? `${stats.wins}W / ${stats.losses}L` : undefined}
         >
           {stats && (
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-loss/30">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-loss/30">
               <div className="h-full rounded-full bg-[#E8622C]" style={{ width: `${stats.winRate}%` }} />
             </div>
           )}
@@ -442,25 +442,28 @@ export default function AscendDashboard() {
           value={stats ? `${stats.totalTrades}` : "..."}
           icon={Activity}
           color="text-white/90"
-          sub={stats ? `Avg PnL: ${formatPnl(stats.avgPnl)} ADA` : undefined}
+          sub={stats ? `Avg: ${formatPnl(stats.avgPnl)} USDT` : undefined}
         />
         <StatCard
           label="Open Positions"
           value={`${openPositions.length}`}
           icon={Crosshair}
           color="text-[#F07B3F]"
+          sub={loadingLive ? "Loading..." : "Active now"}
         />
         <StatCard
           label="Avg Leverage"
           value={`${avgLeverage.toFixed(1)}x`}
           icon={BarChart3}
           color={leverageColor}
+          sub="Across recent trades"
         />
         <StatCard
           label="Best Asset"
           value={bestAsset}
           icon={Trophy}
           color="text-[#E8622C]"
+          sub="By total P&L"
         />
       </motion.div>
 
@@ -473,7 +476,7 @@ export default function AscendDashboard() {
         <div className="flex items-center gap-2">
           <span className="text-white/40">Today</span>
           <span className={`font-mono font-semibold tabular-nums ${dailySummary.todayPnl >= 0 ? "text-gain" : "text-loss"}`}>
-            {formatPnl(dailySummary.todayPnl)} ADA
+            {formatPnl(dailySummary.todayPnl)} USDT
           </span>
           <span className="font-mono text-xs tabular-nums text-white/40">
             ({dailySummary.todayWins}W / {dailySummary.todayLosses}L)
@@ -483,20 +486,20 @@ export default function AscendDashboard() {
         <div className="flex items-center gap-2">
           <span className="text-white/40">This Week</span>
           <span className={`font-mono font-semibold tabular-nums ${dailySummary.weekPnl >= 0 ? "text-gain" : "text-loss"}`}>
-            {formatPnl(dailySummary.weekPnl)} ADA
+            {formatPnl(dailySummary.weekPnl)} USDT
           </span>
         </div>
         <div className="h-4 w-px bg-[#E8622C]/20" />
         <div className="flex items-center gap-2">
           <span className="text-white/40">This Month</span>
           <span className={`font-mono font-semibold tabular-nums ${dailySummary.monthPnl >= 0 ? "text-gain" : "text-loss"}`}>
-            {formatPnl(dailySummary.monthPnl)} ADA
+            {formatPnl(dailySummary.monthPnl)} USDT
           </span>
         </div>
       </motion.div>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 2. PnL Timeline Chart                                             */}
+      {/* 2. PnL Timeline Chart — clean line only                           */}
       {/* ----------------------------------------------------------------- */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
@@ -505,7 +508,7 @@ export default function AscendDashboard() {
       >
         <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-display text-lg font-semibold">P&L Timeline</h2>
+            <h2 className="font-display text-lg font-semibold">Cumulative P&L</h2>
             <div className="flex items-center gap-1">
               {[
                 { label: "7D", days: 7 },
@@ -538,7 +541,7 @@ export default function AscendDashboard() {
               <AreaChart data={timeline} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="pnlGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#E8622C" stopOpacity={0.35} />
+                    <stop offset="0%" stopColor="#E8622C" stopOpacity={0.25} />
                     <stop offset="100%" stopColor="#E8622C" stopOpacity={0} />
                   </linearGradient>
                 </defs>
@@ -554,16 +557,17 @@ export default function AscendDashboard() {
                   tick={{ fill: "#9CA3AF", fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v: number) => `${v >= 0 ? "+" : ""}${v}`}
+                  tickFormatter={(v: number) => `${v >= 0 ? "+" : ""}${(v / 1000).toFixed(0)}k`}
                 />
                 <Tooltip content={<PnlTooltip />} />
-                <Bar dataKey="tradePnl" fill="#E8622C" opacity={0.4} radius={[2, 2, 0, 0]} />
                 <Area
                   type="monotone"
                   dataKey="cumulativePnl"
                   stroke="#E8622C"
                   strokeWidth={2}
                   fill="url(#pnlGradient)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: "#E8622C", stroke: "#0A0E17", strokeWidth: 2 }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -600,8 +604,9 @@ export default function AscendDashboard() {
               ))}
             </div>
           ) : openPositions.length === 0 ? (
-            <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
-              No open positions
+            <div className="flex h-24 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
+              <Crosshair className="h-5 w-5 text-white/20" />
+              No open positions right now
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -637,7 +642,7 @@ export default function AscendDashboard() {
                   <div className="grid grid-cols-2 gap-y-2 text-xs">
                     <div>
                       <span className="text-muted-foreground">Margin</span>
-                      <p className="font-mono font-medium tabular-nums">{pos.margin.toFixed(2)} ADA</p>
+                      <p className="font-mono font-medium tabular-nums">${pos.margin.toFixed(2)}</p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Entry</span>
@@ -677,7 +682,7 @@ export default function AscendDashboard() {
       </motion.div>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 4. Recent Trades Feed                                             */}
+      {/* 4. Recent Trades Feed — with timestamps                           */}
       {/* ----------------------------------------------------------------- */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
@@ -716,7 +721,7 @@ export default function AscendDashboard() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[800px] text-sm">
+              <table className="w-full min-w-[900px] text-sm">
                 <thead>
                   <tr className="border-b border-[#E8622C]/10 text-left text-xs uppercase tracking-wider text-muted-foreground">
                     <th className="pb-3 pr-3">Asset</th>
@@ -727,6 +732,7 @@ export default function AscendDashboard() {
                     <th className="pb-3 pr-3 text-right">Exit</th>
                     <th className="pb-3 pr-3 text-right">P&L</th>
                     <th className="pb-3 pr-3 text-right">Duration</th>
+                    <th className="pb-3 pr-3 text-right">Closed</th>
                     <th className="pb-3 text-right">Reason</th>
                   </tr>
                 </thead>
@@ -764,7 +770,7 @@ export default function AscendDashboard() {
                           </span>
                         </td>
                         <td className="py-3 pr-3 text-right font-mono tabular-nums">
-                          {trade.margin.toFixed(2)}
+                          ${trade.margin.toFixed(2)}
                         </td>
                         <td className="py-3 pr-3 text-right font-mono tabular-nums">{trade.leverage}x</td>
                         <td className="py-3 pr-3 text-right font-mono tabular-nums">
@@ -786,6 +792,14 @@ export default function AscendDashboard() {
                             <Clock className="h-3 w-3" />
                             {formatDuration(trade.openedAt, trade.closedAt)}
                           </div>
+                        </td>
+                        <td className="py-3 pr-3 text-right text-xs text-muted-foreground">
+                          {trade.closedAt && (
+                            <div className="flex items-center justify-end gap-1" title={formatDateTime(trade.closedAt)}>
+                              <Calendar className="h-3 w-3" />
+                              {timeAgo(trade.closedAt)}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 text-right">
                           {trade.closeReason && (
@@ -853,7 +867,7 @@ export default function AscendDashboard() {
                           </span>
                         </span>
                         <span className={`font-mono font-semibold tabular-nums ${isPositive ? "text-gain" : "text-loss"}`}>
-                          {formatPnl(a.totalPnl)} ADA
+                          {formatPnl(a.totalPnl)} USDT
                         </span>
                       </div>
                     </div>
@@ -931,7 +945,7 @@ export default function AscendDashboard() {
         transition={{ delay: 0.5 }}
         className="pb-4 text-center text-xs text-muted-foreground"
       >
-        Data sourced from Ascend testnet. Positions and P&L are in test ADA. Auto-refreshes every 10-60s.
+        Data sourced from Ascend testnet. All values in USDT (stablecoin). Auto-refreshes every 10-60s.
       </motion.p>
     </div>
   )

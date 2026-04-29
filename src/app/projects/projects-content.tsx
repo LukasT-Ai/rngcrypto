@@ -280,7 +280,7 @@ function FeaturedAscendCard() {
             <div className="text-center">
               <div className={`font-mono text-lg font-bold ${stats?.totalPnl != null && stats.totalPnl >= 0 ? "text-gain" : "text-loss"}`}>
                 {stats?.totalPnl != null
-                  ? `${stats.totalPnl >= 0 ? "+" : ""}${stats.totalPnl.toLocaleString()} ADA`
+                  ? `${stats.totalPnl >= 0 ? "+" : ""}${stats.totalPnl.toLocaleString()} USDT`
                   : "---"}
               </div>
               <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total PnL</div>
@@ -309,12 +309,13 @@ function FeaturedAscendCard() {
 
         <div className="hidden w-[300px] shrink-0 lg:block">
           <div className="relative h-[200px] w-full overflow-hidden rounded-xl">
-            <div className="absolute inset-0 bg-gradient-to-br from-[#E8622C]/10 via-[#E8622C]/5 to-transparent" />
-            <div className="absolute inset-0" style={{
-              backgroundImage: `radial-gradient(circle at 1px 1px, rgba(232,98,44,0.15) 1px, transparent 0)`,
-              backgroundSize: "20px 20px",
-            }} />
-            <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-[#06080F] to-transparent" />
+            <Image
+              src="/avatar/ascend_liquid_staking.jpg"
+              alt="Ascend Market event perpetuals"
+              fill
+              className="object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#06080F]/60 to-transparent" />
           </div>
         </div>
       </div>

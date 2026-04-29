@@ -20,7 +20,10 @@ type AscendStats = {
   losses: number
   winRate: number
   totalPnl: number
-  openPositions: number
+}
+
+type LiveStats = {
+  openPositions: { id: number }[]
 }
 
 function StatCard({
@@ -77,8 +80,8 @@ function LivePulse() {
 }
 
 function AscendPreview() {
-  const { data, isLoading } = useQuery<AscendStats>({
-    queryKey: ["ascend-overview"],
+  const { data } = useQuery<AscendStats>({
+    queryKey: ["ascend-homepage"],
     queryFn: async () => {
       const res = await fetch("/api/ascend?view=overview")
       if (!res.ok) throw new Error("Failed to fetch")
@@ -89,14 +92,26 @@ function AscendPreview() {
     retry: false,
   })
 
+  const { data: liveData } = useQuery<LiveStats>({
+    queryKey: ["ascend-live-homepage"],
+    queryFn: async () => {
+      const res = await fetch("/api/ascend?view=live")
+      if (!res.ok) throw new Error("Failed to fetch")
+      return res.json()
+    },
+    refetchInterval: 15_000,
+    retry: false,
+  })
+
   const stats = data ?? {
     totalTrades: 903,
     wins: 757,
     losses: 127,
     winRate: 85.6,
     totalPnl: 350862,
-    openPositions: 0,
   }
+
+  const openCount = liveData?.openPositions?.length ?? 0
 
   return (
     <section className="relative py-24">
@@ -129,7 +144,7 @@ function AscendPreview() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             label="Total P&L"
-            value={`+$${stats.totalPnl.toLocaleString()}`}
+            value={`+${stats.totalPnl.toLocaleString()} USDT`}
             subtext="Testnet"
             color="green"
             delay={0.1}
@@ -150,8 +165,8 @@ function AscendPreview() {
           />
           <StatCard
             label="Open Now"
-            value={String(stats.openPositions)}
-            subtext={isLoading ? "Loading..." : "Positions"}
+            value={String(openCount)}
+            subtext="Positions"
             color="white"
             delay={0.4}
           />

@@ -52,7 +52,7 @@ export function Navbar() {
         <Link href="/" className="flex items-center gap-3">
           <div className="relative size-8 overflow-hidden rounded-full ring-1 ring-white/10">
             <Image
-              src="/avatar/avatar.jpg"
+              src="/avatar/character.jpg"
               alt="RnGcrYptO"
               fill
               className="object-cover"

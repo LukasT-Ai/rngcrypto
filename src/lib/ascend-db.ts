@@ -5,16 +5,10 @@ const DB_PATH =
   process.env.ASCEND_DB_PATH ??
   path.join(process.cwd(), "data", "ascend.db");
 
-/**
- * Opens the Ascend SQLite database in read-only mode.
- * Each call returns a fresh connection so we never hold a long-lived handle
- * against a WAL database that another process is actively writing to.
- */
 function openDb(): Database.Database {
   return new Database(DB_PATH, { readonly: true, fileMustExist: true });
 }
 
-/** Run a callback with a short-lived read-only connection. */
 function withDb<T>(fn: (db: Database.Database) => T): T {
   const db = openDb();
   try {
@@ -28,22 +22,10 @@ function withDb<T>(fn: (db: Database.Database) => T): T {
 // Asset extraction from market_slug
 // ---------------------------------------------------------------------------
 
-/**
- * Extracts an asset ticker from a market slug.
- *   "will-btc-go-up-down-1777242586"   -> "BTC"
- *   "will-silver-go-up-down-1777246248" -> "SILVER"
- *   "37d9_crude_oil_closes"             -> "CRUDE OIL"
- *   "will-the-oklahoma-city-thunder..." -> "EVENT"
- */
 function extractAsset(slug: string): string {
-  // Standard pattern: will-<ASSET>-go-up-down-<timestamp>
   const m = slug.match(/^will-(.+?)-go-up-down-/);
   if (m) return m[1].toUpperCase();
-
-  // Underscore-delimited event slugs (e.g. "37d9_crude_oil_closes")
   if (slug.includes("crude_oil")) return "CRUDE OIL";
-
-  // Anything else is a one-off event market
   return "EVENT";
 }
 
@@ -246,7 +228,6 @@ export interface PnlPoint {
 
 export function getPnlTimeline(days = 30): PnlPoint[] {
   return withDb((db) => {
-    // For large date ranges group by day, for smaller ranges group by hour
     const groupBy = days <= 3 ? "hour" : "day";
     const dateFormat =
       groupBy === "hour" ? "%Y-%m-%d %H:00:00" : "%Y-%m-%d";
@@ -264,8 +245,6 @@ export function getPnlTimeline(days = 30): PnlPoint[] {
       )
       .all() as { bucket: string; periodPnl: number }[];
 
-    // Compute cumulative PnL starting from the beginning of the window.
-    // First get the baseline (all PnL before the window).
     const baseline = db
       .prepare(
         `SELECT COALESCE(SUM(pnl), 0) AS base

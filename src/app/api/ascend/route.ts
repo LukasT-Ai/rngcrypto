@@ -36,11 +36,11 @@ interface PushCache {
   live?: unknown;
 }
 
-function readPushCache(): PushCache | null {
+function readPushCache(allowStale = false): PushCache | null {
   try {
     if (!fs.existsSync(CACHE_PATH)) return null;
     const raw = JSON.parse(fs.readFileSync(CACHE_PATH, "utf-8")) as PushCache;
-    if (Date.now() - raw._pushedAt > PUSH_MAX_AGE) return null;
+    if (!allowStale && Date.now() - raw._pushedAt > PUSH_MAX_AGE) return null;
     return raw;
   } catch {
     return null;
@@ -135,6 +135,19 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("[ascend-api]", err);
+    const stale = readPushCache(true);
+    if (stale) {
+      const fallback =
+        view === "overview" ? stale.overview :
+        view === "trades" ? stale.trades :
+        view === "live" ? stale.live :
+        view === "timeline" ? stale.timeline?.["d30"] : null;
+      if (fallback) {
+        return NextResponse.json(fallback, {
+          headers: { "X-Data-Source": "push-stale" },
+        });
+      }
+    }
     const message =
       err instanceof Error
         ? err.message

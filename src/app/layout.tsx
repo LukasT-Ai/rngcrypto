@@ -126,8 +126,8 @@ export default function RootLayout({
                 className="object-cover"
                 priority
               />
-              <div className="absolute inset-0 bg-[#06080F]/50" />
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_20%,_#06080F_75%)]" />
+              <div className="absolute inset-0 bg-[#06080F]/40" />
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_25%,_#06080F_80%)]" />
             </div>
             <div className="flex min-h-screen flex-col">
               <Navbar />

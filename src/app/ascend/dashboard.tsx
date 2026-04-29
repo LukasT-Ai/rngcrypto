@@ -337,7 +337,7 @@ export default function AscendDashboard() {
   }, [overview?.dailyStats])
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-8 px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1440px] space-y-8 px-4 pb-6 pt-24 lg:px-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -12 }}

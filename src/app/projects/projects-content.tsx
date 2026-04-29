@@ -120,6 +120,9 @@ const projects: Project[] = [
       { label: "Network", url: "https://midnight.network" },
       { label: "City", url: "https://midnight.city" },
     ],
+    images: [
+      { src: "/avatar/circle_dots_icon.jpg", alt: "Midnight Network logo" },
+    ],
     stats: [
       { label: "Launch", value: "Mar 2026" },
       { label: "Token", value: "NIGHT" },
@@ -159,6 +162,9 @@ const projects: Project[] = [
     categories: ["L1", "Trading", "Analysis"],
     chain: "bitcoin",
     icon: Bitcoin,
+    images: [
+      { src: "/avatar/bitcoin_logo.svg", alt: "Bitcoin logo" },
+    ],
     stats: [
       { label: "Since", value: "2009" },
       { label: "Role", value: "Foundation" },
@@ -320,8 +326,6 @@ function FeaturedAscendCard() {
 
 function ProjectCard({ project }: { project: Project }) {
   const chainColor = chainColors[project.chain]
-  const isArbiter = project.name === "Arbiter"
-  const isGoodVibes = project.name === "Good Vibes Club"
 
   return (
     <motion.div
@@ -330,11 +334,11 @@ function ProjectCard({ project }: { project: Project }) {
       initial="hidden"
       animate="show"
       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-      className="group relative overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-6 transition-all hover:border-white/[0.12]"
+      className="group relative flex flex-col overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] transition-all hover:border-white/[0.12]"
     >
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${project.gradient} opacity-0 transition-opacity duration-500 group-hover:opacity-100`} />
 
-      <div className="relative">
+      <div className="relative flex flex-1 flex-col p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ring-white/[0.08]">
@@ -365,51 +369,15 @@ function ProjectCard({ project }: { project: Project }) {
 
         {project.images && project.images.length > 0 && (
           <div className="mt-5">
-            {isGoodVibes ? (
-              <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-white/10 transition-transform duration-300 group-hover:scale-[1.01]">
-                <Image
-                  src={project.images[0].src}
-                  alt={project.images[0].alt}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 768px) 100vw, 33vw"
-                />
-              </div>
-            ) : isArbiter ? (
-              <div className="flex gap-3">
-                {project.images.map((img) => (
-                  <div
-                    key={img.src}
-                    className="relative h-[140px] w-[140px] overflow-hidden rounded-xl ring-1 ring-white/10 transition-transform duration-300 group-hover:scale-[1.02]"
-                  >
-                    <Image
-                      src={img.src}
-                      alt={img.alt}
-                      fill
-                      className="object-cover"
-                      sizes="140px"
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex gap-3">
-                {project.images.map((img) => (
-                  <div
-                    key={img.src}
-                    className="relative h-32 w-full overflow-hidden rounded-xl ring-1 ring-white/10 transition-transform duration-300 group-hover:scale-[1.02]"
-                  >
-                    <Image
-                      src={img.src}
-                      alt={img.alt}
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 768px) 100vw, 33vw"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-white/10 transition-transform duration-300 group-hover:scale-[1.01]">
+              <Image
+                src={project.images[0].src}
+                alt={project.images[0].alt}
+                fill
+                className="object-cover"
+                sizes="(max-width: 768px) 100vw, 33vw"
+              />
+            </div>
           </div>
         )}
 
@@ -424,7 +392,7 @@ function ProjectCard({ project }: { project: Project }) {
           </div>
         )}
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-auto pt-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-1.5">
             {project.categories.map((cat) => (
               <Badge
@@ -459,7 +427,7 @@ function ProjectCard({ project }: { project: Project }) {
                 className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70"
               >
                 <ExternalLink className="size-3.5" />
-                <span className="hidden sm:inline">Visit</span>
+                Visit
               </a>
             ) : null}
             {project.href && (

@@ -51,7 +51,7 @@ type Project = {
   href?: string
   externalHref?: string
   links?: ProjectLink[]
-  images?: { src: string; alt: string }[]
+  images?: { src: string; alt: string; contain?: boolean }[]
   stats?: { label: string; value: string }[]
   gradient: string
 }
@@ -121,7 +121,7 @@ const projects: Project[] = [
       { label: "City", url: "https://midnight.city" },
     ],
     images: [
-      { src: "/avatar/circle_dots_icon.jpg", alt: "Midnight Network logo" },
+      { src: "/avatar/circle_dots_icon.jpg", alt: "Midnight Network logo", contain: true },
     ],
     stats: [
       { label: "Launch", value: "Mar 2026" },
@@ -163,7 +163,7 @@ const projects: Project[] = [
     chain: "bitcoin",
     icon: Bitcoin,
     images: [
-      { src: "/avatar/bitcoin_logo.svg", alt: "Bitcoin logo" },
+      { src: "/avatar/bitcoin_logo.svg", alt: "Bitcoin logo", contain: true },
     ],
     stats: [
       { label: "Since", value: "2009" },
@@ -369,12 +369,16 @@ function ProjectCard({ project }: { project: Project }) {
 
         {project.images && project.images.length > 0 && (
           <div className="mt-5">
-            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-white/10 transition-transform duration-300 group-hover:scale-[1.01]">
+            <div
+              className={`relative aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-white/10 transition-transform duration-300 group-hover:scale-[1.01] ${
+                project.images[0].contain ? "bg-[#0A0E17]" : ""
+              }`}
+            >
               <Image
                 src={project.images[0].src}
                 alt={project.images[0].alt}
                 fill
-                className="object-cover"
+                className={project.images[0].contain ? "object-contain p-6" : "object-cover"}
                 sizes="(max-width: 768px) 100vw, 33vw"
               />
             </div>

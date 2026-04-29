@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Image from "next/image"
 import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -116,6 +117,18 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <QueryProvider>
+            {/* Fixed parallax background */}
+            <div className="fixed inset-0 -z-10">
+              <Image
+                src="/hero-bg.png"
+                alt=""
+                fill
+                className="object-cover"
+                priority
+              />
+              <div className="absolute inset-0 bg-[#06080F]/50" />
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_20%,_#06080F_75%)]" />
+            </div>
             <div className="flex min-h-screen flex-col">
               <Navbar />
               <main className="flex-1">{children}</main>

@@ -427,20 +427,7 @@ function SocialProof() {
 
 export default function HomePage() {
   return (
-    <div className="relative">
-      {/* Full-page background image */}
-      <div className="fixed inset-0 -z-10">
-        <Image
-          src="/hero-bg.png"
-          alt=""
-          fill
-          className="object-cover"
-          priority
-        />
-        <div className="absolute inset-0 bg-[#06080F]/50" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_20%,_#06080F_75%)]" />
-      </div>
-
+    <>
       {/* Hero */}
       <section className="relative min-h-screen overflow-hidden">
         <div className="relative mx-auto flex min-h-screen max-w-7xl flex-col items-center justify-center px-4 py-32 lg:px-8">
@@ -561,6 +548,6 @@ export default function HomePage() {
 
       {/* Social */}
       <SocialProof />
-    </div>
+    </>
   )
 }

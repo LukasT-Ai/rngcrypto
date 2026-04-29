@@ -1,0 +1,48 @@
+<!--
+  RnGcrYptO Favicon - Square icon mark
+
+  To generate favicon.ico:
+  1. Using ImageMagick: magick convert -background none favicon.svg -resize 32x32 favicon.ico
+  2. Or use https://realfavicongenerator.net — upload this SVG
+  3. For multi-size .ico: magick convert -background none favicon.svg -define icon:auto-resize=16,32,48 favicon.ico
+  4. For PNG fallback: magick convert -background none favicon.svg -resize 32x32 favicon-32x32.png
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0e1a"/>
+      <stop offset="100%" stop-color="#06080F"/>
+    </linearGradient>
+    <filter id="iconGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1" result="blur"/>
+      <feFlood flood-color="#00FF88" flood-opacity="0.4" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="roundedClip">
+      <rect x="0" y="0" width="32" height="32" rx="6" ry="6"/>
+    </clipPath>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect x="0" y="0" width="32" height="32" rx="6" ry="6" fill="url(#bgGrad)"/>
+
+  <!-- Subtle border -->
+  <rect x="0.5" y="0.5" width="31" height="31" rx="5.5" ry="5.5"
+        fill="none" stroke="#00FF88" stroke-width="0.8" opacity="0.25"/>
+
+  <!-- RnG lettermark -->
+  <text x="16" y="22.5" text-anchor="middle"
+        font-family="'Inter', 'SF Pro Display', 'Segoe UI', system-ui, sans-serif"
+        font-size="14" font-weight="800" letter-spacing="-0.5"
+        fill="#00FF88" filter="url(#iconGlow)">RnG</text>
+
+  <!-- Small signal accent at top-right -->
+  <polyline points="20,7 23,5.5 26,8 28,4"
+            fill="none" stroke="#00FF88" stroke-width="1"
+            stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+  <circle cx="28" cy="4" r="1.2" fill="#00FF88" opacity="0.7"/>
+</svg>

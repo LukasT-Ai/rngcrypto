@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <filter id="markGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feFlood flood-color="#00FF88" flood-opacity="0.35" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="markGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00FF88"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+
+  <!--
+    Standalone icon: Abstract "R" formed from a signal wave and geometric shapes.
+    Represents randomness (wave/signal) meets crypto (angular, precise geometry).
+    Transparent background for overlay use.
+  -->
+
+  <!-- Outer hexagonal frame (crypto motif) -->
+  <polygon points="32,2 58,17 58,47 32,62 6,47 6,17"
+           fill="none" stroke="#00FF88" stroke-width="1.5" opacity="0.2"/>
+
+  <!-- Inner signal wave forming abstract "R" shape -->
+  <g filter="url(#markGlow)">
+    <!-- Vertical stroke of R -->
+    <line x1="18" y1="14" x2="18" y2="50" stroke="url(#markGrad)" stroke-width="3.5" stroke-linecap="round"/>
+
+    <!-- R bowl as signal wave -->
+    <path d="M18,14 C18,14 38,12 40,22 C42,32 22,32 22,32"
+          fill="none" stroke="#00FF88" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- R leg as upward signal/chart line -->
+    <polyline points="22,32 30,38 36,30 42,42 48,26"
+              fill="none" stroke="url(#markGrad)" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Signal peak dot -->
+    <circle cx="48" cy="26" r="3" fill="#00FF88"/>
+    <circle cx="48" cy="26" r="6" fill="#00FF88" opacity="0.12"/>
+  </g>
+
+  <!-- Small dice dots (randomness motif) -->
+  <circle cx="30" cy="22" r="1.5" fill="#00FF88" opacity="0.4"/>
+  <circle cx="36" cy="18" r="1" fill="#22D3EE" opacity="0.3"/>
+
+  <!-- Subtle pulse rings around peak -->
+  <circle cx="48" cy="26" r="9" fill="none" stroke="#00FF88" stroke-width="0.5" opacity="0.1"/>
+</svg>

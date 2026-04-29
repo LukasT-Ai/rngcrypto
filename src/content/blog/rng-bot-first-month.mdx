@@ -1,0 +1,65 @@
+---
+title: "RnG Daytrader: What We Learned in Month One"
+description: "Our algo trading bot ran for 30 days on Coinbase. Here are the real numbers, the wins, the losses, and the lessons."
+date: "2026-02-18"
+category: "Bot"
+featured: false
+---
+
+## Full Transparency
+
+Most crypto influencers show you their wins. We show you everything.
+
+The RnG Daytrader bot has been running live on Coinbase Advanced Trade for 30 days. This is not a backtest. This is real capital, real trades, real results.
+
+## The Strategy
+
+Our bot runs a triple EMA crossover strategy (9/21/50 periods) combined with RSI and ATR filters:
+
+- **Entry:** EMA 9 crosses above EMA 21 while both are above EMA 50 (bullish structure)
+- **RSI filter:** Only enters when RSI is between 35-70 (avoids overbought/oversold)
+- **ATR stop-loss:** Dynamic stops based on 14-period ATR (adapts to volatility)
+- **Position sizing:** 1% risk per trade, max 3x leverage
+
+## Month One Numbers
+
+Here's what the data shows:
+
+- **Total trades:** 47
+- **Win rate:** 53.2%
+- **Average winner:** +2.1%
+- **Average loser:** -0.9%
+- **Profit factor:** 2.48
+- **Max drawdown:** -4.7%
+
+## What Worked
+
+The ATR-based stops were the star of the show. By adapting stop-loss levels to current volatility, the bot avoided getting stopped out during normal market noise while still cutting losses quickly during actual trend reversals.
+
+The RSI filter also prevented several bad entries during choppy, overbought conditions that would have been losers.
+
+## What Didn't Work
+
+Sideways markets remain the bot's weakness. During a 10-day consolidation range, the bot made 12 trades and lost on 9 of them. Mean-reversion in ranges is the opposite of what a trend-following strategy wants.
+
+We're exploring adding a volatility regime filter (using Bollinger Band width) to reduce trading during low-volatility consolidation periods.
+
+## Pairs Performance
+
+Not all pairs performed equally:
+
+- **BTC/USD:** Best performer. Strong trends, clean signals.
+- **ETH/USD:** Solid. Slightly more false signals than BTC.
+- **SOL/USD:** Mixed. More volatile, more noise.
+- **ADA/USD:** Worst performer. Choppy price action generated too many false signals.
+
+We may remove ADA from the active pairs list and add LINK or AVAX instead.
+
+## Next Month Goals
+
+1. Implement volatility regime filter
+2. Test 4-hour timeframe alongside daily
+3. Add trailing stop option for extended trends
+4. Evaluate LINK and AVAX as replacement pairs
+
+Check the [RnG Bot page](/bot) for live status updates.

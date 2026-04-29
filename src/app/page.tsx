@@ -427,26 +427,22 @@ function SocialProof() {
 
 export default function HomePage() {
   return (
-    <>
+    <div className="relative">
+      {/* Full-page background image */}
+      <div className="fixed inset-0 -z-10">
+        <Image
+          src="/hero-bg.png"
+          alt=""
+          fill
+          className="object-cover"
+          priority
+        />
+        <div className="absolute inset-0 bg-[#06080F]/50" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_20%,_#06080F_75%)]" />
+      </div>
+
       {/* Hero */}
       <section className="relative min-h-screen overflow-hidden">
-        {/* Background effects */}
-        <div className="absolute inset-0">
-          {/* Radial gradient from center */}
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(0,255,136,0.06)_0%,_transparent_70%)]" />
-          {/* Grid pattern */}
-          <div
-            className="absolute inset-0 opacity-[0.03]"
-            style={{
-              backgroundImage:
-                "linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)",
-              backgroundSize: "64px 64px",
-            }}
-          />
-          {/* Noise texture */}
-          <div className="absolute inset-0 opacity-[0.015]" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E\")" }} />
-        </div>
-
         <div className="relative mx-auto flex min-h-screen max-w-7xl flex-col items-center justify-center px-4 py-32 lg:px-8">
           {/* Avatar */}
           <motion.div
@@ -565,6 +561,6 @@ export default function HomePage() {
 
       {/* Social */}
       <SocialProof />
-    </>
+    </div>
   )
 }

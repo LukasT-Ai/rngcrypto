@@ -28,10 +28,11 @@ export const metadata: Metadata = {
     template: "%s | RnGcrYptO",
   },
   description:
-    "Web3 creator, DeFi degen, and builder of autonomous trading bots on Cardano. Follow the journey through Ascend Market, Good Vibes Club, Arbiter, Liqwid, and Midnight.",
+    "Web3 creator, DeFi degen, and builder of autonomous trading bots across Cardano, Ethereum, Midnight, and Bitcoin. Follow the journey through Ascend Market, Good Vibes Club, Arbiter, Liqwid Finance, and Midnight.",
   keywords: [
     "RnGcrYptO",
     "Cardano",
+    "Ethereum",
     "DeFi",
     "Web3",
     "NFT",

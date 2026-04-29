@@ -68,6 +68,7 @@ const ecosystemItems = [
   { name: "Liqwid", color: "#22D3EE" },
   { name: "Ascend", color: "#00FF88" },
   { name: "Midnight", color: "#6366F1" },
+  { name: "Ethereum", color: "#627EEA" },
   { name: "Good Vibes Club", color: "#A855F7" },
   { name: "Arbiter", color: "#F59E0B" },
   { name: "Bitcoin", color: "#F7931A" },
@@ -162,7 +163,7 @@ export default function AboutContent() {
             Web3 Builder &middot; DeFi Degen &middot; Bot Builder
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
-            {["SINCE 2021", "CARDANO", "BOT BUILDER", "DeFi"].map((badge) => (
+            {["SINCE 2021", "MULTI-CHAIN", "BOT BUILDER", "DeFi"].map((badge) => (
               <span
                 key={badge}
                 className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-mono text-xs text-white/50"

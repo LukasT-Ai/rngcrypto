@@ -118,7 +118,7 @@ function AscendPreview() {
             Autonomous Trading Bot
           </h2>
           <p className="mt-3 max-w-xl text-white/40">
-            14-source evaluation engine trading event perpetuals on Cardano.
+            14-source evaluation engine trading event perpetuals on Midnight.
             Every trade, every stat, fully transparent.
           </p>
         </motion.div>
@@ -187,7 +187,7 @@ const ecosystemProjects = [
   {
     name: "Good Vibes Club",
     handle: "@goodvibesclub",
-    description: "NFT community on Cardano. Kill em' with kindness.",
+    description: "6,968 3D PFP NFTs on Ethereum by Toast studio. Kill em' with kindness.",
     href: "/projects#gvc",
     color: "#A855F7",
     icon: Trophy,
@@ -302,18 +302,18 @@ function LatestContent() {
                 "How I built a 14-source evaluation engine that trades event perpetuals on Cardano with 85%+ win rate.",
             },
             {
-              title: "Good Vibes Club: The NFT Community That Stayed",
-              tag: "NFTs",
+              title: "Why Liqwid Is the Best DeFi Protocol on Cardano",
+              tag: "DeFi",
               date: "Mar 2026",
               excerpt:
-                "While most PFP projects vanished, GVC kept building. Here's why I'm still holding.",
+                "$32M+ TVL, Lombard loans, and real governance. Here's why Liqwid stands out.",
             },
             {
-              title: "Midnight + Ascend: ZK Privacy Meets Perpetual Markets",
-              tag: "DeFi",
-              date: "Feb 2026",
+              title: "Midnight: The Fairest Token Launch in Crypto History",
+              tag: "Cardano",
+              date: "Mar 2026",
               excerpt:
-                "Breaking down how Ascend uses Midnight's zero-knowledge proofs to build private event markets.",
+                "37M wallets airdropped NIGHT tokens. Enterprise node operators. ZK privacy done right.",
             },
           ].map((post, i) => (
             <motion.div
@@ -472,7 +472,7 @@ export default function HomePage() {
             transition={{ delay: 0.35, duration: 0.6 }}
             className="mt-4 max-w-lg text-center text-lg text-white/40 sm:text-xl"
           >
-            Web3 builder. DeFi degen. Autonomous trading on Cardano.
+            Web3 builder. DeFi degen. Autonomous trading across chains.
           </motion.p>
 
           {/* Subtitle badges */}
@@ -482,7 +482,7 @@ export default function HomePage() {
             transition={{ delay: 0.5, duration: 0.6 }}
             className="mt-6 flex flex-wrap justify-center gap-2"
           >
-            {["Cardano", "Bitcoin", "Midnight", "DeFi", "NFTs"].map((tag) => (
+            {["Cardano", "Ethereum", "Bitcoin", "Midnight", "DeFi", "NFTs"].map((tag) => (
               <span
                 key={tag}
                 className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-xs text-white/40"

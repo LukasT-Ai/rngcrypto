@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { useState } from "react"
 import { ArrowRight, Calendar, Clock, Search, Mail } from "lucide-react"
 
-type Category = "DeFi" | "Trading" | "NFTs" | "Cardano" | "Opinion"
+type Category = "DeFi" | "Trading" | "NFTs" | "Cardano" | "Ethereum" | "Opinion"
 
 interface BlogPost {
   slug: string
@@ -48,16 +48,43 @@ const posts: BlogPost[] = [
     slug: "good-vibes-club-more-than-pfps",
     title: "Good Vibes Club: More Than Just PFPs",
     date: "Feb 22, 2026",
-    categories: ["NFTs"],
+    categories: ["NFTs", "Ethereum"],
     excerpt:
-      "Good Vibes Club is one of the most underrated communities on Cardano. Beyond the art, there is a real culture of builders, holders, and positive energy that keeps me coming back.",
+      "6,968 3D PFPs on Ethereum crafted by Toast studio. GVC built an entire ecosystem around Vibetown: Vibe Off, Smash The Wall, SpotiVibe, and AI tools. This is why the community stayed.",
     readingTime: 4,
+  },
+  {
+    slug: "why-liqwid-is-the-best-on-cardano",
+    title: "Why Liqwid Is the Best DeFi Protocol on Cardano",
+    date: "Mar 5, 2026",
+    categories: ["DeFi", "Cardano"],
+    excerpt:
+      "With $32M+ TVL, Lombard loans that let you borrow against staked ADA without losing rewards, and a governance token with real utility, Liqwid Finance is the DeFi protocol I trust most on Cardano.",
+    readingTime: 6,
+  },
+  {
+    slug: "arbiter-passive-ada-from-forex",
+    title: "Arbiter: Earning Passive ADA From Dubai Forex Trading",
+    date: "Feb 10, 2026",
+    categories: ["NFTs", "Cardano"],
+    excerpt:
+      "1,718 NFTs backed by ATS, a Dubai forex firm running AUD/CAD strategies. Transparent Myfxbook results, passive ADA rewards, no token dilution. This is real yield in the NFT space.",
+    readingTime: 5,
+  },
+  {
+    slug: "midnight-fair-launch-zk-privacy",
+    title: "Midnight: The Fairest Token Launch in Crypto History",
+    date: "Mar 20, 2026",
+    categories: ["Cardano"],
+    excerpt:
+      "37 million wallets received the NIGHT airdrop. Node operators include Worldpay, MoneyGram, and Google Cloud. Midnight's ZK privacy layer is not just another L1, it is enterprise infrastructure.",
+    readingTime: 5,
   },
   {
     slug: "case-for-liqwid-finance-multi-chain",
     title: "The Case for Liqwid Finance in a Multi-Chain World",
     date: "Jan 18, 2026",
-    categories: ["DeFi"],
+    categories: ["DeFi", "Cardano"],
     excerpt:
       "Liqwid Finance is Cardano's leading lending and borrowing protocol. In a world where every chain has an Aave fork, here is why Liqwid's native approach and growing TVL make it stand out.",
     readingTime: 5,
@@ -73,13 +100,14 @@ const posts: BlogPost[] = [
   },
 ]
 
-const allCategories: Category[] = ["DeFi", "Trading", "NFTs", "Cardano", "Opinion"]
+const allCategories: Category[] = ["DeFi", "Trading", "NFTs", "Cardano", "Ethereum", "Opinion"]
 
 const categoryColors: Record<Category, string> = {
   DeFi: "bg-[#00FF88]/10 text-[#00FF88] border-[#00FF88]/20",
   Trading: "bg-[#6366F1]/10 text-[#6366F1] border-[#6366F1]/20",
   NFTs: "bg-[#A855F7]/10 text-[#A855F7] border-[#A855F7]/20",
   Cardano: "bg-[#22D3EE]/10 text-[#22D3EE] border-[#22D3EE]/20",
+  Ethereum: "bg-[#627EEA]/10 text-[#627EEA] border-[#627EEA]/20",
   Opinion: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20",
 }
 
@@ -88,6 +116,7 @@ const categoryGradients: Record<Category, string> = {
   Trading: "from-[#6366F1]/15 to-[#6366F1]/5",
   NFTs: "from-[#A855F7]/15 to-[#A855F7]/5",
   Cardano: "from-[#22D3EE]/15 to-[#22D3EE]/5",
+  Ethereum: "from-[#627EEA]/15 to-[#627EEA]/5",
   Opinion: "from-[#F59E0B]/15 to-[#F59E0B]/5",
 }
 

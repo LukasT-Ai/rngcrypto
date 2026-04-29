@@ -485,7 +485,7 @@ export default function HomePage() {
             transition={{ delay: 0.5, duration: 0.6 }}
             className="mt-6 flex flex-wrap justify-center gap-2"
           >
-            {["Cardano", "Ethereum", "Bitcoin", "Midnight", "DeFi", "NFTs"].map((tag) => (
+            {["Cardano", "Midnight", "Ethereum", "Bitcoin", "DeFi", "NFTs"].map((tag) => (
               <span
                 key={tag}
                 className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-xs text-white/40"

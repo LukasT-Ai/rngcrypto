@@ -149,7 +149,7 @@ export default function BlogContent() {
     <div className="min-h-screen">
       <section className="relative overflow-hidden border-b border-white/5">
         <div className="absolute inset-0 bg-gradient-to-b from-[#00FF88]/5 via-transparent to-transparent" />
-        <div className="relative mx-auto max-w-[1440px] px-4 py-16 lg:px-6 lg:py-24">
+        <div className="relative mx-auto max-w-7xl px-4 py-16 lg:px-6 lg:py-24">
           <h1 className="font-display text-4xl font-bold tracking-tight lg:text-5xl">
             Blog
           </h1>
@@ -159,7 +159,7 @@ export default function BlogContent() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-[1440px] px-4 py-10 lg:px-6">
+      <section className="mx-auto max-w-7xl px-4 py-10 lg:px-6">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -337,7 +337,7 @@ export default function BlogContent() {
       </section>
 
       <section className="border-t border-white/5">
-        <div className="mx-auto max-w-[1440px] px-4 py-12 lg:px-6">
+        <div className="mx-auto max-w-7xl px-4 py-12 lg:px-6">
           <div className="mx-auto max-w-lg text-center">
             <p className="text-muted-foreground mb-4">
               Follow the journey on X and YouTube

@@ -16,6 +16,18 @@ export function generateMetadata({ params }: { params: { slug: string } }) {
   return {
     title: post.title,
     description: post.description,
+    openGraph: {
+      title: post.title,
+      description: post.description,
+      type: "article",
+      images: ["/og-image.svg"],
+    },
+    twitter: {
+      card: "summary_large_image" as const,
+      title: post.title,
+      description: post.description,
+      images: ["/og-image.svg"],
+    },
   }
 }
 

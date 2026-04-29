@@ -80,6 +80,31 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Person",
+              name: "RnGcrYptO",
+              url: "https://rngcrypto.com",
+              sameAs: [
+                "https://x.com/RnGcrYptO",
+                "https://www.youtube.com/@RnGcrYptO",
+              ],
+              description:
+                "Web3 builder, DeFi degen, and autonomous trading bot developer across Cardano, Ethereum, Midnight, and Bitcoin.",
+              knowsAbout: [
+                "DeFi",
+                "Autonomous Trading",
+                "Cardano",
+                "Ethereum",
+                "NFTs",
+                "Zero-Knowledge Proofs",
+              ],
+            }),
+          }}
+        />
       </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} ${spaceGrotesk.variable} font-sans antialiased`}

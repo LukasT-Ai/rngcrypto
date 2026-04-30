@@ -19,6 +19,7 @@ import { useState, useEffect } from "react"
 const navItems = [
   { href: "/ascend", label: "Ascend", icon: BarChart3 },
   { href: "/projects", label: "Projects", icon: Layers },
+  { href: "/proposals", label: "Proposals", icon: Zap },
   { href: "/blog", label: "Blog", icon: PenSquare },
   { href: "/about", label: "About", icon: User },
 ]

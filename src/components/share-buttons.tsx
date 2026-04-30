@@ -1,7 +1,15 @@
 "use client"
 
 import { useState } from "react"
-import { Twitter, Link2, Linkedin, Check } from "lucide-react"
+import { Link2, Check } from "lucide-react"
+
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  )
+}
 
 interface ShareButtonsProps {
   url: string
@@ -9,26 +17,14 @@ interface ShareButtonsProps {
   description: string
 }
 
-export function ShareButtons({ url, title, description }: ShareButtonsProps) {
+export function ShareButtons({ url, title }: ShareButtonsProps) {
   const [copied, setCopied] = useState(false)
 
-  const buttonBase =
-    "inline-flex items-center justify-center size-10 rounded-full bg-white/5 border border-white/10 hover:border-[#00FF88]/30 hover:bg-white/10 transition-all duration-200 text-muted-foreground hover:text-foreground"
-
-  function shareOnTwitter() {
-    const text = encodeURIComponent(`${title} #RnGcrypto`)
+  function shareOnX() {
+    const text = encodeURIComponent(`${title} #RnGcrypto #Cardano`)
     const shareUrl = encodeURIComponent(url)
     window.open(
-      `https://twitter.com/intent/tweet?text=${text}&url=${shareUrl}`,
-      "_blank",
-      "noopener,noreferrer"
-    )
-  }
-
-  function shareOnLinkedIn() {
-    const shareUrl = encodeURIComponent(url)
-    window.open(
-      `https://www.linkedin.com/sharing/share-offsite/?url=${shareUrl}`,
+      `https://x.com/intent/tweet?text=${text}&url=${shareUrl}`,
       "_blank",
       "noopener,noreferrer"
     )
@@ -40,7 +36,6 @@ export function ShareButtons({ url, title, description }: ShareButtonsProps) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      // Fallback for older browsers
       const textarea = document.createElement("textarea")
       textarea.value = url
       document.body.appendChild(textarea)
@@ -56,29 +51,21 @@ export function ShareButtons({ url, title, description }: ShareButtonsProps) {
     <div className="flex items-center gap-3">
       <span className="text-sm text-muted-foreground">Share</span>
       <button
-        onClick={shareOnTwitter}
-        className={buttonBase}
-        aria-label="Share on X/Twitter"
+        onClick={shareOnX}
+        className="inline-flex items-center justify-center size-10 rounded-full bg-[#00FF88]/10 border border-[#00FF88]/30 hover:border-[#00FF88]/60 hover:bg-[#00FF88]/20 hover:shadow-[0_0_12px_rgba(0,255,136,0.3)] transition-all duration-200 text-[#00FF88]"
+        aria-label="Share on X"
         title="Share on X"
       >
-        <Twitter className="size-4" />
-      </button>
-      <button
-        onClick={shareOnLinkedIn}
-        className={buttonBase}
-        aria-label="Share on LinkedIn"
-        title="Share on LinkedIn"
-      >
-        <Linkedin className="size-4" />
+        <XIcon className="size-4" />
       </button>
       <button
         onClick={copyLink}
-        className={buttonBase}
+        className="inline-flex items-center justify-center size-10 rounded-full bg-[#00FF88]/10 border border-[#00FF88]/30 hover:border-[#00FF88]/60 hover:bg-[#00FF88]/20 hover:shadow-[0_0_12px_rgba(0,255,136,0.3)] transition-all duration-200 text-[#00FF88]"
         aria-label="Copy link"
         title="Copy link"
       >
         {copied ? (
-          <Check className="size-4 text-[#00FF88]" />
+          <Check className="size-4" />
         ) : (
           <Link2 className="size-4" />
         )}

@@ -30,11 +30,21 @@ import {
   RefreshCw,
   ExternalLink,
   Calendar,
-  Twitter,
+  Download,
+
   Link2,
   Check,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { FlexCard } from "@/components/flex-card"
+
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Types matching API responses
@@ -309,15 +319,16 @@ export default function AscendDashboard() {
   const [sourceFilter, setSourceFilter] = useState<string>("all")
   const [timeframe, setTimeframe] = useState<number>(90)
   const [linkCopied, setLinkCopied] = useState(false)
+  const [flexCardOpen, setFlexCardOpen] = useState(false)
 
   const SHARE_URL = "https://www.rngcrypto.com/ascend"
   const SHARE_TEXT = "Check out my live Ascend bot trading dashboard! \u{1F916}\u{1F4C8} #Cardano #ADA #ASCEND"
 
-  function shareOnTwitter() {
+  function shareOnX() {
     const text = encodeURIComponent(SHARE_TEXT)
     const url = encodeURIComponent(SHARE_URL)
     window.open(
-      `https://twitter.com/intent/tweet?text=${text}&url=${url}`,
+      `https://x.com/intent/tweet?text=${text}&url=${url}`,
       "_blank",
       "noopener,noreferrer"
     )
@@ -493,23 +504,33 @@ export default function AscendDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* Share buttons */}
+          {/* Flex card button */}
           <button
-            onClick={shareOnTwitter}
-            className="inline-flex items-center justify-center size-9 rounded-full border border-white/[0.08] bg-white/[0.03] text-white/40 transition-all hover:border-[#E8622C]/30 hover:bg-[#E8622C]/10 hover:text-[#E8622C]"
-            aria-label="Share on X/Twitter"
+            onClick={() => setFlexCardOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#00FF88]/10 border border-[#00FF88]/30 px-3.5 py-1.5 text-xs font-medium text-[#00FF88] hover:bg-[#00FF88]/20 hover:border-[#00FF88]/50 hover:shadow-[0_0_16px_rgba(0,255,136,0.25)] transition-all"
+            title="Share stats card"
+          >
+            <Download className="size-3" />
+            Flex
+          </button>
+          {/* Share on X */}
+          <button
+            onClick={shareOnX}
+            className="inline-flex items-center justify-center size-9 rounded-full bg-[#00FF88]/10 border border-[#00FF88]/30 text-[#00FF88] hover:bg-[#00FF88]/20 hover:border-[#00FF88]/60 hover:shadow-[0_0_12px_rgba(0,255,136,0.3)] transition-all"
+            aria-label="Share on X"
             title="Share on X"
           >
-            <Twitter className="size-3.5" />
+            <XIcon className="size-3.5" />
           </button>
+          {/* Copy link */}
           <button
             onClick={copyShareLink}
-            className="inline-flex items-center justify-center size-9 rounded-full border border-white/[0.08] bg-white/[0.03] text-white/40 transition-all hover:border-[#E8622C]/30 hover:bg-[#E8622C]/10 hover:text-[#E8622C]"
+            className="inline-flex items-center justify-center size-9 rounded-full bg-[#00FF88]/10 border border-[#00FF88]/30 text-[#00FF88] hover:bg-[#00FF88]/20 hover:border-[#00FF88]/60 hover:shadow-[0_0_12px_rgba(0,255,136,0.3)] transition-all"
             aria-label="Copy link"
             title="Copy link"
           >
             {linkCopied ? (
-              <Check className="size-3.5 text-[#00FF88]" />
+              <Check className="size-3.5" />
             ) : (
               <Link2 className="size-3.5" />
             )}
@@ -1154,6 +1175,14 @@ export default function AscendDashboard() {
       >
         Data sourced from Ascend testnet. All values in USDT (stablecoin). Auto-refreshes every 10-60s.
       </motion.p>
+
+      <FlexCard
+        open={flexCardOpen}
+        onClose={() => setFlexCardOpen(false)}
+        stats={stats ?? null}
+        openPositionCount={openPositions.length}
+        bestAsset={bestAsset}
+      />
     </div>
   )
 }

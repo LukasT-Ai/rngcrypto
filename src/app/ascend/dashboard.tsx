@@ -740,10 +740,11 @@ export default function AscendDashboard() {
                 </thead>
                 <tbody>
                   {filteredTrades.map((trade) => {
-                    const isWin = trade.pnl > 0
+                    const pnl = trade.pnl ?? 0
+                    const isWin = pnl > 0
                     const pnlPct =
                       trade.margin > 0
-                        ? (trade.pnl / trade.margin) * 100
+                        ? (pnl / trade.margin) * 100
                         : 0
                     return (
                       <tr
@@ -751,7 +752,7 @@ export default function AscendDashboard() {
                         className={`border-b border-white/5 transition-colors ${
                           isWin
                             ? "bg-gain/[0.02] hover:bg-gain/[0.04]"
-                            : trade.pnl < 0
+                            : pnl < 0
                               ? "bg-loss/[0.02] hover:bg-loss/[0.04]"
                               : "hover:bg-white/[0.04]"
                         }`}
@@ -804,8 +805,8 @@ export default function AscendDashboard() {
                             isWin ? "text-gain" : "text-loss"
                           }`}
                         >
-                          <div>{formatPnl(trade.pnl)}</div>
-                          <div className="text-xs opacity-70">{formatPct(pnlPct)}</div>
+                          <div>{trade.pnl != null ? formatPnl(pnl) : "—"}</div>
+                          <div className="text-xs opacity-70">{trade.pnl != null ? formatPct(pnlPct) : ""}</div>
                         </td>
                         <td className="py-3 pr-3 text-right font-mono tabular-nums text-xs text-muted-foreground">
                           <div className="flex items-center justify-end gap-1">

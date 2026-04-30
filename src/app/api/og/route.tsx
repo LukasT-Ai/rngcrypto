@@ -9,6 +9,7 @@ export async function GET(req: NextRequest) {
   const description =
     searchParams.get("description") ??
     "Crypto Dashboard & Market Intelligence"
+  const category = searchParams.get("category")
 
   return new ImageResponse(
     (
@@ -64,6 +65,29 @@ export async function GET(req: NextRequest) {
           </span>
         </div>
 
+        {/* Category badge */}
+        {category && (
+          <div
+            style={{
+              display: "flex",
+              marginBottom: "16px",
+            }}
+          >
+            <span
+              style={{
+                background: "#00FF88",
+                color: "#06080F",
+                fontSize: "16px",
+                fontWeight: 600,
+                padding: "4px 14px",
+                borderRadius: "6px",
+              }}
+            >
+              {category}
+            </span>
+          </div>
+        )}
+
         {/* Title */}
         <h1
           style={{
@@ -102,7 +126,7 @@ export async function GET(req: NextRequest) {
           }}
         >
           <span style={{ color: "#6B7280", fontSize: "18px" }}>
-            rngcrypto.com
+            rngcrypto.withlukas.com
           </span>
           <span style={{ color: "#374151" }}>|</span>
           <span style={{ color: "#6B7280", fontSize: "18px" }}>

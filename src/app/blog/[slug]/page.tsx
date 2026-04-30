@@ -14,6 +14,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const post = getPostBySlug(slug)
   if (!post) return {}
+  const ogParams = new URLSearchParams({
+    title: post.title,
+    description: post.description,
+    ...(post.category && { category: post.category }),
+  })
+  const ogImage = `/api/og?${ogParams.toString()}`
+
   return {
     title: post.title,
     description: post.description,
@@ -21,13 +28,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       title: post.title,
       description: post.description,
       type: "article",
-      images: ["/og-image.svg"],
+      images: [ogImage],
     },
     twitter: {
       card: "summary_large_image" as const,
       title: post.title,
       description: post.description,
-      images: ["/og-image.svg"],
+      images: [ogImage],
     },
   }
 }

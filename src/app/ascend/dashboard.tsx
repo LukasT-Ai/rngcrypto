@@ -180,6 +180,44 @@ function timeAgo(d: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Source mapping & badge colors
+// ---------------------------------------------------------------------------
+
+function mapSource(priceSource: string | null): string {
+  if (!priceSource || priceSource.includes("ascend_")) return "Sniper"
+  if (priceSource === "auto_trader") return "Auto-Trader"
+  if (priceSource === "momentum") return "Momentum"
+  if (priceSource === "crowd_reentry") return "Re-entry"
+  return priceSource.replace(/_/g, " ")
+}
+
+function sourceBadgeClasses(label: string): string {
+  switch (label) {
+    case "Sniper":
+      return "border-cyan-500/30 text-cyan-400 bg-cyan-500/10"
+    case "Auto-Trader":
+      return "border-[#E8622C]/30 text-[#E8622C] bg-[#E8622C]/10"
+    case "Momentum":
+      return "border-purple-500/30 text-purple-400 bg-purple-500/10"
+    case "Re-entry":
+      return "border-amber-500/30 text-amber-400 bg-amber-500/10"
+    default:
+      return "border-white/10 text-muted-foreground"
+  }
+}
+
+function formatHoldTime(openedAt: string): string {
+  const ms = Date.now() - new Date(openedAt).getTime()
+  const mins = Math.floor(ms / 60000)
+  if (mins < 1) return "<1m"
+  if (mins < 60) return `${mins}m`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ${mins % 60}m`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ${hrs % 24}h`
+}
+
+// ---------------------------------------------------------------------------
 // Animation variants
 // ---------------------------------------------------------------------------
 
@@ -261,6 +299,7 @@ function PnlTooltip({ active, payload, label }: {
 
 export default function AscendDashboard() {
   const [assetFilter, setAssetFilter] = useState<string>("all")
+  const [sourceFilter, setSourceFilter] = useState<string>("all")
   const [timeframe, setTimeframe] = useState<number>(90)
 
   // Queries
@@ -301,10 +340,13 @@ export default function AscendDashboard() {
 
   const filteredTrades = useMemo(
     () => {
-      const list = assetFilter === "all" ? trades : trades.filter((t) => t.asset === assetFilter)
+      let list = assetFilter === "all" ? trades : trades.filter((t) => t.asset === assetFilter)
+      if (sourceFilter !== "all") {
+        list = list.filter((t) => mapSource(t.priceSource) === sourceFilter)
+      }
       return [...list].sort((a, b) => new Date(b.closedAt ?? 0).getTime() - new Date(a.closedAt ?? 0).getTime())
     },
-    [trades, assetFilter]
+    [trades, assetFilter, sourceFilter]
   )
 
   const bestAsset = useMemo(() => {
@@ -348,6 +390,27 @@ export default function AscendDashboard() {
 
     return { todayPnl, todayWins, todayLosses, weekPnl, monthPnl }
   }, [overview?.dailyStats])
+
+  const openExposure = useMemo(() => {
+    return openPositions.reduce((sum, p) => sum + p.margin, 0)
+  }, [openPositions])
+
+  const avgHoldTimeToday = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const todayTrades = trades.filter(
+      (t) => t.closedAt && t.closedAt.startsWith(todayStr)
+    )
+    if (todayTrades.length === 0) return "N/A"
+    const totalMs = todayTrades.reduce((sum, t) => {
+      return sum + (new Date(t.closedAt!).getTime() - new Date(t.openedAt).getTime())
+    }, 0)
+    const avgMs = totalMs / todayTrades.length
+    const mins = Math.floor(avgMs / 60000)
+    if (mins < 1) return "<1m"
+    if (mins < 60) return `${mins}m`
+    const hrs = Math.floor(mins / 60)
+    return `${hrs}h ${mins % 60}m`
+  }, [trades])
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-8 px-4 pb-6 pt-24 lg:px-6">
@@ -502,6 +565,21 @@ export default function AscendDashboard() {
             {formatPnl(dailySummary.monthPnl)} USDT
           </span>
         </div>
+        <div className="h-4 w-px bg-[#E8622C]/20" />
+        <div className="flex items-center gap-2">
+          <span className="text-white/40">Open Exposure</span>
+          <span className="font-mono font-semibold tabular-nums text-[#F07B3F]">
+            ${openExposure.toFixed(2)}
+          </span>
+        </div>
+        <div className="h-4 w-px bg-[#E8622C]/20" />
+        <div className="flex items-center gap-2">
+          <Clock className="h-3.5 w-3.5 text-white/40" />
+          <span className="text-white/40">Avg Hold</span>
+          <span className="font-mono font-semibold tabular-nums text-white/70">
+            {avgHoldTimeToday}
+          </span>
+        </div>
       </motion.div>
 
       {/* ----------------------------------------------------------------- */}
@@ -616,72 +694,108 @@ export default function AscendDashboard() {
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {openPositions.map((pos) => (
-                <div
-                  key={pos.id}
-                  className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-4 transition-colors hover:border-[#E8622C]/20"
-                >
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-display text-sm font-semibold">{pos.asset}</span>
-                      <Badge
-                        variant="secondary"
-                        className={`text-xs ${
-                          pos.side === "YES"
-                            ? "bg-gain-bg text-gain"
-                            : "bg-loss-bg text-loss"
-                        }`}
-                      >
-                        {pos.side}
-                      </Badge>
+              {openPositions.map((pos) => {
+                const tpDist = pos.tpPrice && pos.entryPrice
+                  ? pos.side === "YES"
+                    ? ((pos.tpPrice - pos.entryPrice) / pos.entryPrice) * 100
+                    : ((pos.entryPrice - pos.tpPrice) / pos.entryPrice) * 100
+                  : null
+                const slDist = pos.slPrice && pos.entryPrice
+                  ? pos.side === "YES"
+                    ? ((pos.entryPrice - pos.slPrice) / pos.entryPrice) * 100
+                    : ((pos.slPrice - pos.entryPrice) / pos.entryPrice) * 100
+                  : null
+                const sourceLabel = mapSource(pos.priceSource)
+                return (
+                  <div
+                    key={pos.id}
+                    className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-4 transition-colors hover:border-[#E8622C]/20"
+                  >
+                    <div className="mb-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-display text-sm font-semibold">{pos.asset}</span>
+                        <Badge
+                          variant="secondary"
+                          className={`text-xs ${
+                            pos.side === "YES"
+                              ? "bg-gain-bg text-gain"
+                              : "bg-loss-bg text-loss"
+                          }`}
+                        >
+                          {pos.side}
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] font-medium ${sourceBadgeClasses(sourceLabel)}`}
+                        >
+                          {sourceLabel}
+                        </Badge>
+                      </div>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-mono font-medium tabular-nums ${
+                        pos.leverage >= 6
+                          ? "bg-loss/15 text-loss"
+                          : pos.leverage >= 3
+                            ? "bg-[#F59E0B]/15 text-[#F59E0B]"
+                            : "bg-[#E8622C]/10 text-[#E8622C]"
+                      }`}>
+                        {pos.leverage}x
+                      </span>
                     </div>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-mono font-medium tabular-nums ${
-                      pos.leverage >= 6
-                        ? "bg-loss/15 text-loss"
-                        : pos.leverage >= 3
-                          ? "bg-[#F59E0B]/15 text-[#F59E0B]"
-                          : "bg-[#E8622C]/10 text-[#E8622C]"
-                    }`}>
-                      {pos.leverage}x
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-y-2 text-xs">
-                    <div>
-                      <span className="text-muted-foreground">Margin</span>
-                      <p className="font-mono font-medium tabular-nums">${pos.margin.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Entry</span>
-                      <p className="font-mono font-medium tabular-nums">{pos.entryPrice.toFixed(4)}</p>
-                    </div>
-                    {pos.tpPrice && (
+                    <div className="grid grid-cols-2 gap-y-2 text-xs">
                       <div>
-                        <span className="text-muted-foreground">TP</span>
-                        <p className="font-mono font-medium tabular-nums text-gain">
-                          {pos.tpPrice.toFixed(4)}
+                        <span className="text-muted-foreground">Margin</span>
+                        <p className="font-mono font-medium tabular-nums">${pos.margin.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Entry</span>
+                        <p className="font-mono font-medium tabular-nums">{pos.entryPrice.toFixed(4)}</p>
+                      </div>
+                      {pos.tpPrice && (
+                        <div>
+                          <span className="text-muted-foreground">TP Target</span>
+                          <p className="font-mono font-medium tabular-nums text-gain">
+                            {pos.tpPrice.toFixed(4)}
+                            {tpDist != null && (
+                              <span className="ml-1 text-[10px] opacity-70">
+                                ({tpDist >= 0 ? "+" : ""}{tpDist.toFixed(1)}%)
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      )}
+                      {pos.slPrice && (
+                        <div>
+                          <span className="text-muted-foreground">SL Risk</span>
+                          <p className="font-mono font-medium tabular-nums text-loss">
+                            {pos.slPrice.toFixed(4)}
+                            {slDist != null && (
+                              <span className="ml-1 text-[10px] opacity-70">
+                                (-{Math.abs(slDist).toFixed(1)}%)
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-muted-foreground">Hold Time</span>
+                        <p className="flex items-center gap-1 font-mono font-medium tabular-nums text-[#E8622C]">
+                          <Clock className="h-3 w-3" />
+                          {formatHoldTime(pos.openedAt)}
                         </p>
                       </div>
-                    )}
-                    {pos.slPrice && (
                       <div>
-                        <span className="text-muted-foreground">SL</span>
-                        <p className="font-mono font-medium tabular-nums text-loss">
-                          {pos.slPrice.toFixed(4)}
+                        <span className="text-muted-foreground">Opened</span>
+                        <p className="font-mono font-medium tabular-nums">
+                          {formatDateTime(pos.openedAt)}
                         </p>
                       </div>
-                    )}
-                    <div className="col-span-2">
-                      <span className="text-muted-foreground">Opened</span>
-                      <p className="font-mono font-medium tabular-nums">
-                        {formatDateTime(pos.openedAt)}
-                      </p>
                     </div>
+                    <p className="mt-2 truncate text-xs text-muted-foreground" title={pos.marketTitle}>
+                      {pos.marketTitle}
+                    </p>
                   </div>
-                  <p className="mt-2 truncate text-xs text-muted-foreground" title={pos.marketTitle}>
-                    {pos.marketTitle}
-                  </p>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
@@ -712,6 +826,17 @@ export default function AscendDashboard() {
                   </option>
                 ))}
               </select>
+              <select
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-foreground backdrop-blur-sm focus:border-[#E8622C] focus:outline-none focus:ring-1 focus:ring-[#E8622C]"
+              >
+                <option value="all">All Sources</option>
+                <option value="Sniper">Sniper</option>
+                <option value="Auto-Trader">Auto-Trader</option>
+                <option value="Momentum">Momentum</option>
+                <option value="Re-entry">Re-entry</option>
+              </select>
             </div>
           </div>
 
@@ -727,18 +852,18 @@ export default function AscendDashboard() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1000px] text-sm">
+              <table className="w-full min-w-[600px] md:min-w-[1000px] text-sm">
                 <thead>
                   <tr className="border-b border-[#E8622C]/10 text-left text-xs uppercase tracking-wider text-muted-foreground">
                     <th className="pb-3 pr-3">Asset</th>
                     <th className="pb-3 pr-3">Side</th>
-                    <th className="pb-3 pr-3">Source</th>
+                    <th className="hidden pb-3 pr-3 md:table-cell">Source</th>
                     <th className="pb-3 pr-3 text-right">Margin</th>
-                    <th className="pb-3 pr-3 text-right">Lev.</th>
+                    <th className="hidden pb-3 pr-3 text-right md:table-cell">Lev.</th>
                     <th className="pb-3 pr-3 text-right">Entry</th>
                     <th className="pb-3 pr-3 text-right">Exit</th>
                     <th className="pb-3 pr-3 text-right">P&L</th>
-                    <th className="pb-3 pr-3 text-right">Duration</th>
+                    <th className="hidden pb-3 pr-3 text-right md:table-cell">Duration</th>
                     <th className="pb-3 pr-3 text-right">Closed</th>
                     <th className="pb-3 text-right">Reason</th>
                   </tr>
@@ -777,28 +902,23 @@ export default function AscendDashboard() {
                             {trade.side}
                           </span>
                         </td>
-                        <td className="py-3 pr-3">
-                          {trade.priceSource && (
-                            <Badge
-                              variant="outline"
-                              className={`text-[10px] font-medium ${
-                                trade.priceSource === "momentum"
-                                  ? "border-purple-500/30 text-purple-400"
-                                  : trade.priceSource === "auto_trader"
-                                    ? "border-blue-500/30 text-blue-400"
-                                    : trade.priceSource.includes("reentry")
-                                      ? "border-orange-500/30 text-orange-400"
-                                      : "border-white/10 text-muted-foreground"
-                              }`}
-                            >
-                              {trade.priceSource.replace(/_/g, " ")}
-                            </Badge>
-                          )}
+                        <td className="hidden py-3 pr-3 md:table-cell">
+                          {(() => {
+                            const label = mapSource(trade.priceSource)
+                            return (
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] font-medium ${sourceBadgeClasses(label)}`}
+                              >
+                                {label}
+                              </Badge>
+                            )
+                          })()}
                         </td>
                         <td className="py-3 pr-3 text-right font-mono tabular-nums">
                           ${trade.margin.toFixed(2)}
                         </td>
-                        <td className="py-3 pr-3 text-right font-mono tabular-nums">{trade.leverage}x</td>
+                        <td className="hidden py-3 pr-3 text-right font-mono tabular-nums md:table-cell">{trade.leverage}x</td>
                         <td className="py-3 pr-3 text-right font-mono tabular-nums">
                           {trade.entryPrice.toFixed(4)}
                         </td>
@@ -811,9 +931,9 @@ export default function AscendDashboard() {
                           }`}
                         >
                           <div>{trade.pnl != null ? formatPnl(pnl) : "—"}</div>
-                          <div className="text-xs opacity-70">{trade.pnl != null ? formatPct(pnlPct) : ""}</div>
+                          <div className="hidden text-xs opacity-70 md:block">{trade.pnl != null ? formatPct(pnlPct) : ""}</div>
                         </td>
-                        <td className="py-3 pr-3 text-right font-mono tabular-nums text-xs text-muted-foreground">
+                        <td className="hidden py-3 pr-3 text-right font-mono tabular-nums text-xs text-muted-foreground md:table-cell">
                           <div className="flex items-center justify-end gap-1">
                             <Clock className="h-3 w-3" />
                             {formatDuration(trade.openedAt, trade.closedAt)}

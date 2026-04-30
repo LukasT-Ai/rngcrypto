@@ -94,13 +94,6 @@ export function Navbar() {
 
         {/* Right: Subscribe CTA + Social links + mobile toggle */}
         <div className="flex items-center gap-3">
-          <Link
-            href="/subscribe"
-            className="hidden items-center gap-1.5 rounded-full border border-[#00FF88]/30 bg-[#00FF88]/5 px-4 py-1.5 text-xs font-medium text-[#00FF88] transition-all hover:border-[#00FF88]/50 hover:bg-[#00FF88]/10 md:inline-flex"
-          >
-            <Zap className="size-3" />
-            Subscribe
-          </Link>
           <a
             href="https://x.com/RnGcrYptO"
             target="_blank"
@@ -162,13 +155,6 @@ export function Navbar() {
                 </Link>
               )
             })}
-            <Link
-              href="/subscribe"
-              className="mt-2 flex items-center justify-center gap-2 rounded-lg bg-[#00FF88]/10 px-3 py-3 text-sm font-medium text-[#00FF88]"
-            >
-              <Zap className="size-4" />
-              Subscribe
-            </Link>
           </nav>
         </div>
       )}

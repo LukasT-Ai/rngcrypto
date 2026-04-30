@@ -144,8 +144,9 @@ function formatPct(val: number): string {
 
 function formatDuration(openedAt: string, closedAt: string | null): string {
   if (!closedAt) return "Open"
-  const ms = new Date(closedAt).getTime() - new Date(openedAt).getTime()
+  const ms = Math.abs(new Date(closedAt).getTime() - new Date(openedAt).getTime())
   const mins = Math.floor(ms / 60000)
+  if (mins < 1) return "<1m"
   if (mins < 60) return `${mins}m`
   const hrs = Math.floor(mins / 60)
   if (hrs < 24) return `${hrs}h ${mins % 60}m`
@@ -816,9 +817,9 @@ export default function AscendDashboard() {
                         </td>
                         <td className="py-3 pr-3 text-right text-xs text-muted-foreground">
                           {trade.closedAt && (
-                            <div className="flex items-center justify-end gap-1" title={formatDateTime(trade.closedAt)}>
+                            <div className="flex items-center justify-end gap-1" title={timeAgo(trade.closedAt)}>
                               <Calendar className="h-3 w-3" />
-                              {timeAgo(trade.closedAt)}
+                              {formatDateTime(trade.closedAt)}
                             </div>
                           )}
                         </td>

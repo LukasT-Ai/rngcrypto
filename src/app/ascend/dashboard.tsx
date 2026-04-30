@@ -300,7 +300,10 @@ export default function AscendDashboard() {
   }, [trades])
 
   const filteredTrades = useMemo(
-    () => (assetFilter === "all" ? trades : trades.filter((t) => t.asset === assetFilter)),
+    () => {
+      const list = assetFilter === "all" ? trades : trades.filter((t) => t.asset === assetFilter)
+      return [...list].sort((a, b) => new Date(b.closedAt ?? 0).getTime() - new Date(a.closedAt ?? 0).getTime())
+    },
     [trades, assetFilter]
   )
 

@@ -179,7 +179,6 @@ export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset }:
 
             {/* Footer */}
             <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
-              <span className="text-[10px] text-white/20">www.rngcrypto.com/ascend</span>
               <span className="text-[10px] text-white/20">Autonomous Event Perpetuals on Midnight</span>
               <span className="text-[10px] text-white/20">@rngcrypto</span>
             </div>

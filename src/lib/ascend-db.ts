@@ -190,6 +190,9 @@ export interface OpenPosition {
   slPrice: number | null;
   openedAt: string;
   priceSource: string | null;
+  markPrice: number | null;
+  unrealizedPnl: number | null;
+  unrealizedPnlPct: number | null;
 }
 
 export function getOpenPositions(): OpenPosition[] {
@@ -218,6 +221,9 @@ export function getOpenPositions(): OpenPosition[] {
       slPrice: r.sl_price as number | null,
       openedAt: r.opened_at as string,
       priceSource: r.price_source as string | null,
+      markPrice: null,
+      unrealizedPnl: null,
+      unrealizedPnlPct: null,
     }));
   });
 }

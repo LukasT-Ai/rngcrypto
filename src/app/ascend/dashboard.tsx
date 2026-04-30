@@ -110,6 +110,9 @@ interface OpenPosition {
   slPrice: number | null
   openedAt: string
   priceSource: string | null
+  markPrice: number | null
+  unrealizedPnl: number | null
+  unrealizedPnlPct: number | null
 }
 
 interface StrategyBreakdownEntry {
@@ -502,6 +505,10 @@ export default function AscendDashboard() {
 
   const openExposure = useMemo(() => {
     return openPositions.reduce((sum, p) => sum + p.margin, 0)
+  }, [openPositions])
+
+  const totalUnrealizedPnl = useMemo(() => {
+    return openPositions.reduce((sum, p) => sum + (p.unrealizedPnl ?? 0), 0)
   }, [openPositions])
 
   // Strategy breakdown: use API data or compute from trades
@@ -962,9 +969,18 @@ export default function AscendDashboard() {
                 10s
               </Badge>
             </div>
-            <span className="font-mono text-sm tabular-nums text-muted-foreground">
-              {openPositions.length} active
-            </span>
+            <div className="flex items-center gap-3">
+              {openPositions.length > 0 && totalUnrealizedPnl !== 0 && (
+                <span className={`font-mono text-sm font-semibold tabular-nums ${
+                  totalUnrealizedPnl >= 0 ? "text-gain" : "text-loss"
+                }`}>
+                  {totalUnrealizedPnl >= 0 ? "+" : ""}{totalUnrealizedPnl.toFixed(2)}
+                </span>
+              )}
+              <span className="font-mono text-sm tabular-nums text-muted-foreground">
+                {openPositions.length} active
+              </span>
+            </div>
           </div>
 
           {loadingLive ? (
@@ -1027,6 +1043,23 @@ export default function AscendDashboard() {
                         {pos.leverage}x
                       </span>
                     </div>
+                    {/* Unrealized P&L banner */}
+                    {pos.unrealizedPnl != null && (
+                      <div className={`mb-3 flex items-center justify-between rounded-md px-3 py-1.5 text-xs font-mono tabular-nums ${
+                        pos.unrealizedPnl >= 0
+                          ? "bg-gain-bg text-gain"
+                          : "bg-loss-bg text-loss"
+                      }`}>
+                        <span className="font-medium">
+                          {pos.unrealizedPnl >= 0 ? "+" : ""}{pos.unrealizedPnl.toFixed(2)} USDT
+                        </span>
+                        {pos.unrealizedPnlPct != null && (
+                          <span className="text-[10px] opacity-80">
+                            {pos.unrealizedPnlPct >= 0 ? "+" : ""}{pos.unrealizedPnlPct.toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-y-2 text-xs">
                       <div>
                         <span className="text-muted-foreground">Margin</span>
@@ -1036,6 +1069,18 @@ export default function AscendDashboard() {
                         <span className="text-muted-foreground">Entry</span>
                         <p className="font-mono font-medium tabular-nums">{pos.entryPrice.toFixed(4)}</p>
                       </div>
+                      {pos.markPrice != null && (
+                        <div>
+                          <span className="text-muted-foreground">Mark</span>
+                          <p className={`font-mono font-medium tabular-nums ${
+                            pos.unrealizedPnl != null
+                              ? pos.unrealizedPnl >= 0 ? "text-gain" : "text-loss"
+                              : ""
+                          }`}>
+                            {pos.markPrice.toFixed(4)}
+                          </p>
+                        </div>
+                      )}
                       {pos.tpPrice && (
                         <div>
                           <span className="text-muted-foreground">TP Target</span>

@@ -6,9 +6,19 @@ export const metadata: Metadata = {
   description:
     "Real-time performance dashboard for the Ascend autonomous trading bot. Live P&L, open positions, trade history, and asset breakdowns.",
   openGraph: {
-    title: "Live Trading | Ascend Bot Performance",
+    title: "Live Ascend Bot Trading | RnGcrypto",
     description:
-      "Real-time performance dashboard for the Ascend autonomous trading bot on event perpetuals.",
+      "Autonomous event perpetuals trading on Cardano. Live P&L, win rate, open positions, and full trade history.",
+    url: "https://www.rngcrypto.com/ascend",
+    siteName: "RnGcrypto",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Live Ascend Bot Trading | RnGcrypto",
+    description:
+      "Autonomous event perpetuals trading on Cardano. Live P&L, win rate, open positions, and full trade history.",
+    creator: "@rngcrypto",
   },
 }
 

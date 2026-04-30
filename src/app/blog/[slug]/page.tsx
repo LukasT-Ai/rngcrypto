@@ -5,6 +5,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { NewsletterForm } from "@/components/newsletter-form"
 import { MdxContent } from "@/components/mdx-content"
+import { ShareButtons } from "@/components/share-buttons"
 
 export function generateStaticParams() {
   return getAllPosts().map((post) => ({ slug: post.slug }))
@@ -77,12 +78,26 @@ export default async function BlogPostPage({
               {post.readTime}
             </div>
           </div>
+          <ShareButtons
+            url={`https://www.rngcrypto.com/blog/${slug}`}
+            title={post.title}
+            description={post.description}
+          />
         </header>
 
         <div className="mt-8">
           <MdxContent content={post.content} />
         </div>
       </article>
+
+      <div className="border-t border-border pt-6 space-y-2">
+        <p className="text-sm font-medium text-muted-foreground">Share this article</p>
+        <ShareButtons
+          url={`https://www.rngcrypto.com/blog/${slug}`}
+          title={post.title}
+          description={post.description}
+        />
+      </div>
 
       <div className="border-t border-border pt-6">
         <NewsletterForm variant="card" />

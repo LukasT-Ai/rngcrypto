@@ -30,6 +30,9 @@ import {
   RefreshCw,
   ExternalLink,
   Calendar,
+  Twitter,
+  Link2,
+  Check,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
@@ -301,6 +304,35 @@ export default function AscendDashboard() {
   const [assetFilter, setAssetFilter] = useState<string>("all")
   const [sourceFilter, setSourceFilter] = useState<string>("all")
   const [timeframe, setTimeframe] = useState<number>(90)
+  const [linkCopied, setLinkCopied] = useState(false)
+
+  const SHARE_URL = "https://www.rngcrypto.com/ascend"
+  const SHARE_TEXT = "Check out my live Ascend bot trading dashboard! \u{1F916}\u{1F4C8} #Cardano #ADA #ASCEND"
+
+  function shareOnTwitter() {
+    const text = encodeURIComponent(SHARE_TEXT)
+    const url = encodeURIComponent(SHARE_URL)
+    window.open(
+      `https://twitter.com/intent/tweet?text=${text}&url=${url}`,
+      "_blank",
+      "noopener,noreferrer"
+    )
+  }
+
+  async function copyShareLink() {
+    try {
+      await navigator.clipboard.writeText(SHARE_URL)
+    } catch {
+      const textarea = document.createElement("textarea")
+      textarea.value = SHARE_URL
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand("copy")
+      document.body.removeChild(textarea)
+    }
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
 
   // Queries
   const { data: overview, isLoading: loadingOverview } = useQuery<OverviewResponse>({
@@ -456,7 +488,32 @@ export default function AscendDashboard() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Share buttons */}
+          <button
+            onClick={shareOnTwitter}
+            className="inline-flex items-center justify-center size-9 rounded-full border border-white/[0.08] bg-white/[0.03] text-white/40 transition-all hover:border-[#E8622C]/30 hover:bg-[#E8622C]/10 hover:text-[#E8622C]"
+            aria-label="Share on X/Twitter"
+            title="Share on X"
+          >
+            <Twitter className="size-3.5" />
+          </button>
+          <button
+            onClick={copyShareLink}
+            className="inline-flex items-center justify-center size-9 rounded-full border border-white/[0.08] bg-white/[0.03] text-white/40 transition-all hover:border-[#E8622C]/30 hover:bg-[#E8622C]/10 hover:text-[#E8622C]"
+            aria-label="Copy link"
+            title="Copy link"
+          >
+            {linkCopied ? (
+              <Check className="size-3.5 text-[#00FF88]" />
+            ) : (
+              <Link2 className="size-3.5" />
+            )}
+          </button>
+          {linkCopied && (
+            <span className="text-xs text-[#00FF88] animate-in fade-in duration-200">Copied!</span>
+          )}
+          <div className="mx-1 h-5 w-px bg-white/[0.08]" />
           <a
             href="https://www.ascend.market"
             target="_blank"

@@ -89,6 +89,7 @@ export interface RecentTrade {
   closeReason: string | null;
   openedAt: string;
   closedAt: string | null;
+  priceSource: string | null;
 }
 
 export function getRecentTrades(limit = 10): RecentTrade[] {
@@ -97,7 +98,7 @@ export function getRecentTrades(limit = 10): RecentTrade[] {
       .prepare(
         `SELECT id, position_id, market_slug, market_title, side,
                 entry_price, exit_price, margin, leverage, pnl,
-                close_reason, opened_at, closed_at
+                close_reason, opened_at, closed_at, price_source
          FROM positions
          WHERE status = 'closed'
          ORDER BY closed_at DESC
@@ -119,6 +120,7 @@ export function getRecentTrades(limit = 10): RecentTrade[] {
       closeReason: r.close_reason as string | null,
       openedAt: r.opened_at as string,
       closedAt: r.closed_at as string | null,
+      priceSource: r.price_source as string | null,
     }));
   });
 }

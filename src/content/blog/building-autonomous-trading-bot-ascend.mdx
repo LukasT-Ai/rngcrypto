@@ -1,0 +1,83 @@
+---
+title: "Building an Autonomous Trading Bot on Ascend Market"
+description: "A deep dive into how I built an autonomous event perpetuals trading bot on Ascend Market's testnet. EMA crossovers, RSI filters, ATR-based sizing, and the lessons learned."
+date: "2026-04-10"
+category: "Trading"
+featured: false
+---
+
+## Why Build a Bot
+
+Event perpetuals are fast. Markets on Ascend run anywhere from 1 to 24 hours. New markets launch every few hours across crypto, commodities, stocks, and events. Manually monitoring all of these, calculating fair values, tracking crowd sentiment, and timing entries is not realistic.
+
+So I built a bot to do it.
+
+The goal was simple: identify mispriced markets where the crowd sentiment diverges from the actual reference price, take leveraged positions, and manage risk automatically.
+
+## The Core Strategy
+
+The bot runs a sniper strategy as its foundation. Every 10 seconds, it scans all active markets on Ascend and compares two things:
+
+1. **Fair value** calculated from the reference price and the market's strike distance
+2. **Current market price** driven by crowd sentiment
+
+When the gap between fair value and market price exceeds a threshold, the bot identifies an edge. If the market is pricing YES at $0.65 but the reference price math says fair value is $0.52, that is a potential short opportunity.
+
+But edge alone is not enough. The bot layers on additional filters.
+
+## Signal Stack
+
+**Crowd Analysis:** Every market has a crowd split showing how many traders are on YES vs NO. Extreme crowd imbalances (90/10 splits) combined with a price edge create the strongest signals. When everyone is on one side and the math disagrees, someone is wrong.
+
+**Kalshi and Polymarket Cross-Reference:** For markets with equivalent contracts on Kalshi or Polymarket, the bot pulls the external price as a sanity check. If Ascend is pricing BTC up at $0.70 but Kalshi's equivalent market is at $0.55, that convergence signal adds conviction.
+
+**Extended Momentum:** For longer horizon markets (4+ hours), the bot fetches 7 day candle data from Coinbase and computes RSI(14) and MACD(12,26,9). A bullish trend (RSI above 60, MACD histogram rising) adds confidence to YES positions. A bearish trend (RSI below 40, MACD histogram falling) adds confidence to NO positions.
+
+**Volatility Scaling:** The bot computes realized 24 hour volatility from log returns and adjusts take profit and stop loss levels accordingly. High volatility means wider stops to avoid noise. Low volatility means tighter targets for faster exits.
+
+## Risk Management
+
+This is where most bots fail. Edge detection is the easy part. Not blowing up is the hard part.
+
+**Position Sizing:** Base margin is $100 per trade, adjusted by confidence. High edge + strong crowd signal + momentum alignment = full size. Marginal setups get reduced to 60%.
+
+**Tiered Take Profit:** Instead of a single TP target, the bot uses a 4 tier ladder. It closes 25% of the position at each of 4 PnL thresholds (5%, 10%, 15%, 20%). This locks in profits progressively while letting winners run.
+
+**Stop Loss:** Hard stop at a fixed percentage loss, adjusted for volatility. No hoping, no averaging down, no "it will come back."
+
+**Re-Entry Controls:** After closing a position, the bot enforces a 5 minute cooldown before re-entering the same market. Maximum 3 re-entries per day per market. This prevents overtrading on choppy price action.
+
+**Max Hold Time:** If a position has been open for more than 80% of the market's remaining duration with minimal PnL, the bot exits. Time decay on event markets is real.
+
+## Position Monitoring
+
+Once a position is open, the bot does not just watch PnL. It actively monitors:
+
+- Crowd sentiment shifts every 2 minutes
+- RSI and MACD changes every 5 minutes for momentum positions  
+- Trend reversal detection (RSI hitting extremes + MACD histogram flipping)
+- Edge decay (the original edge shrinking below a threshold)
+
+If the trend reverses while a momentum position is open, the bot sends a Telegram alert and can trigger an early exit.
+
+## The Telegram Interface
+
+The bot reports to a Telegram channel with real time updates: trade entries, exits, PnL, daily summaries, and alerts. Commands let you check status, view open positions, see accuracy stats, or manually trigger a trade or close.
+
+This was important for debugging and trust. You want to see what the bot is doing in real time, especially when it is making decisions at 3am.
+
+## Lessons Learned
+
+**Crowd data is gold.** The single most predictive signal is extreme crowd imbalance combined with a reference price disagreement. When 85% of traders are on YES and the math says it should be 50/50, the crowd is usually wrong.
+
+**Momentum matters for longer markets.** A 1 hour market is noise trading. A 12 hour market is influenced by actual price trends. RSI and MACD add real value on longer horizons.
+
+**Volatility kills fixed targets.** A 10% TP that works in calm markets gets stopped out constantly during high volatility. Dynamic targets based on realized vol were one of the biggest improvements.
+
+**Rate limiting yourself is a feature.** The bot has a daily trade cap. Early versions traded too frequently and the win rate suffered. Fewer, higher conviction trades produce better results.
+
+## What Is Next
+
+The bot is live on testnet grinding through thousands of trades. The dashboard at rngcrypto.com shows real time stats, PnL timeline, and trade history. When Ascend goes to mainnet, the strategy and infrastructure will be battle tested.
+
+The code is not open source yet, but the approach is transparent. Everything described here is running right now on the Ascend testnet.

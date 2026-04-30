@@ -72,6 +72,7 @@ interface RecentTrade {
   closeReason: string | null
   openedAt: string
   closedAt: string | null
+  priceSource: string | null
 }
 
 interface PnlPoint {
@@ -721,11 +722,12 @@ export default function AscendDashboard() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-sm">
+              <table className="w-full min-w-[1000px] text-sm">
                 <thead>
                   <tr className="border-b border-[#E8622C]/10 text-left text-xs uppercase tracking-wider text-muted-foreground">
                     <th className="pb-3 pr-3">Asset</th>
                     <th className="pb-3 pr-3">Side</th>
+                    <th className="pb-3 pr-3">Source</th>
                     <th className="pb-3 pr-3 text-right">Margin</th>
                     <th className="pb-3 pr-3 text-right">Lev.</th>
                     <th className="pb-3 pr-3 text-right">Entry</th>
@@ -768,6 +770,24 @@ export default function AscendDashboard() {
                             )}
                             {trade.side}
                           </span>
+                        </td>
+                        <td className="py-3 pr-3">
+                          {trade.priceSource && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] font-medium ${
+                                trade.priceSource === "momentum"
+                                  ? "border-purple-500/30 text-purple-400"
+                                  : trade.priceSource === "auto_trader"
+                                    ? "border-blue-500/30 text-blue-400"
+                                    : trade.priceSource.includes("reentry")
+                                      ? "border-orange-500/30 text-orange-400"
+                                      : "border-white/10 text-muted-foreground"
+                              }`}
+                            >
+                              {trade.priceSource.replace(/_/g, " ")}
+                            </Badge>
+                          )}
                         </td>
                         <td className="py-3 pr-3 text-right font-mono tabular-nums">
                           ${trade.margin.toFixed(2)}

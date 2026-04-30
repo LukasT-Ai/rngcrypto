@@ -107,6 +107,15 @@ const posts: BlogPost[] = [
       "I started in crypto chasing pumps. Now I build trading bots, run a YouTube channel, and ship code daily. This is the story of how Web3 turned a retail degen into a full-time builder.",
     readingTime: 6,
   },
+  {
+    slug: "liqwid-finance-saga-full-story",
+    title: "The Liqwid Finance Saga: From cFund Backing to NIGHT Controversy to Redemption",
+    date: "Apr 29, 2026",
+    categories: ["DeFi", "Cardano"],
+    excerpt:
+      "The complete story of Liqwid Finance: cFund seed round, explosive growth, the NIGHT governance crisis, Hoskinson's intervention, DAO debt restructuring, and the path forward.",
+    readingTime: 12,
+  },
 ]
 
 const allCategories: Category[] = ["DeFi", "Trading", "NFTs", "Cardano", "Ethereum", "Opinion"]

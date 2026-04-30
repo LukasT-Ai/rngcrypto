@@ -31,9 +31,12 @@ import {
   ExternalLink,
   Calendar,
   Download,
-
   Link2,
   Check,
+  Shield,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { FlexCard } from "@/components/flex-card"
@@ -109,9 +112,20 @@ interface OpenPosition {
   priceSource: string | null
 }
 
+interface StrategyBreakdownEntry {
+  priceSource: string | null
+  trades: number
+  wins: number
+  losses: number
+  winRate: number
+  totalPnl: number
+  avgPnl: number
+}
+
 interface OverviewResponse {
   stats: OverallStats
   assets: AssetStats[]
+  strategyBreakdown?: StrategyBreakdownEntry[]
   recentTrades: RecentTrade[]
   dailyStats: { date: string; trades: number; wins: number; winRate: number; pnl: number }[]
 }
@@ -194,6 +208,53 @@ function timeAgo(d: string): string {
   if (hrs < 24) return `${hrs}h ago`
   const days = Math.floor(hrs / 24)
   return `${days}d ago`
+}
+
+// ---------------------------------------------------------------------------
+// Close reason colors for alert ticker
+// ---------------------------------------------------------------------------
+
+function closeReasonColor(reason: string | null): string {
+  switch (reason) {
+    case "settlement": return "text-gain"
+    case "market_expired": return "text-[#F59E0B]"
+    case "edge_flip": return "text-[#F97316]"
+    case "stop_loss": return "text-loss"
+    case "trailing_stop": return "text-[#3B82F6]"
+    default: return "text-muted-foreground"
+  }
+}
+
+function closeReasonDot(reason: string | null): string {
+  switch (reason) {
+    case "settlement": return "\u{1F7E2}"
+    case "market_expired": return "\u{1F7E1}"
+    case "edge_flip": return "\u{1F7E0}"
+    case "stop_loss": return "\u{1F534}"
+    case "trailing_stop": return "\u{1F535}"
+    default: return "⚪"
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Asset category mapping for risk exposure
+// ---------------------------------------------------------------------------
+
+function getAssetCategory(asset: string): string {
+  const upper = asset.toUpperCase()
+  if (["ADA", "BTC", "SNEK", "NIGHT", "ETH"].includes(upper)) return "Crypto"
+  if (["GOLD", "SILVER"].includes(upper)) return "Metals"
+  if (["OIL", "CRUDE OIL"].includes(upper)) return "Energy"
+  if (["TSLA", "NVDA"].includes(upper)) return "Stocks"
+  return "Other"
+}
+
+const CATEGORY_COLORS: Record<string, string> = {
+  Crypto: "#E8622C",
+  Metals: "#F59E0B",
+  Energy: "#10B981",
+  Stocks: "#8B5CF6",
+  Other: "#6B7280",
 }
 
 // ---------------------------------------------------------------------------
@@ -320,9 +381,10 @@ export default function AscendDashboard() {
   const [timeframe, setTimeframe] = useState<number>(90)
   const [linkCopied, setLinkCopied] = useState(false)
   const [flexCardOpen, setFlexCardOpen] = useState(false)
+  const [expandedTradeId, setExpandedTradeId] = useState<number | null>(null)
 
   const SHARE_URL = "https://www.rngcrypto.com/ascend"
-  const SHARE_TEXT = "Check out my live Ascend bot trading dashboard! \u{1F916}\u{1F4C8} #Cardano #ADA #ASCEND"
+  const SHARE_TEXT = "Autonomous bot trading event perpetuals on @AscendPerps \u{1F916}\n\n100% of platform fees go back to $ASCEND holders. Real yield, no gimmicks.\n\n#Cardano $ADA $ASCEND"
 
   function shareOnX() {
     const text = encodeURIComponent(SHARE_TEXT)
@@ -442,6 +504,82 @@ export default function AscendDashboard() {
     return openPositions.reduce((sum, p) => sum + p.margin, 0)
   }, [openPositions])
 
+  // Strategy breakdown: use API data or compute from trades
+  const strategyBreakdown = useMemo(() => {
+    if (overview?.strategyBreakdown?.length) return overview.strategyBreakdown
+    // Fallback: compute from trades array
+    if (!trades.length) return []
+    const map = new Map<string, { trades: number; wins: number; losses: number; totalPnl: number }>()
+    for (const t of trades) {
+      const key = t.priceSource ?? "null"
+      const entry = map.get(key) ?? { trades: 0, wins: 0, losses: 0, totalPnl: 0 }
+      entry.trades++
+      if ((t.pnl ?? 0) > 0) entry.wins++
+      else entry.losses++
+      entry.totalPnl += t.pnl ?? 0
+      map.set(key, entry)
+    }
+    return Array.from(map.entries()).map(([key, s]) => ({
+      priceSource: key === "null" ? null : key,
+      trades: s.trades,
+      wins: s.wins,
+      losses: s.losses,
+      winRate: Math.round((s.wins / s.trades) * 10000) / 100,
+      totalPnl: Math.round(s.totalPnl * 100) / 100,
+      avgPnl: Math.round((s.totalPnl / s.trades) * 100) / 100,
+    })).sort((a, b) => b.trades - a.trades)
+  }, [overview?.strategyBreakdown, trades])
+
+  // Risk exposure: group open positions by category
+  const exposureByCategory = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const pos of openPositions) {
+      const cat = getAssetCategory(pos.asset)
+      map.set(cat, (map.get(cat) ?? 0) + pos.margin)
+    }
+    return Array.from(map.entries())
+      .map(([category, margin]) => ({ category, margin }))
+      .sort((a, b) => b.margin - a.margin)
+  }, [openPositions])
+
+  // Max loss scenario
+  const maxLossScenario = useMemo(() => {
+    const DEFAULT_SL_PCT = 0.05
+    return openPositions.reduce((sum, pos) => {
+      const slPct = pos.slPrice
+        ? Math.abs(pos.entryPrice - pos.slPrice) / pos.entryPrice
+        : DEFAULT_SL_PCT
+      return sum + pos.margin * pos.leverage * slPct
+    }, 0)
+  }, [openPositions])
+
+  // Asset heatmap data: per-asset today stats
+  const assetHeatmap = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const map = new Map<string, { trades: number; pnl: number }>()
+    for (const t of trades) {
+      if (!t.closedAt?.startsWith(todayStr)) continue
+      const entry = map.get(t.asset) ?? { trades: 0, pnl: 0 }
+      entry.trades++
+      entry.pnl += t.pnl ?? 0
+      map.set(t.asset, entry)
+    }
+    // Also include assets from the overview that may not be in recent trades
+    for (const a of assets) {
+      if (!map.has(a.asset)) {
+        map.set(a.asset, { trades: 0, pnl: 0 })
+      }
+    }
+    return Array.from(map.entries())
+      .map(([asset, data]) => ({ asset, ...data }))
+      .sort((a, b) => b.trades - a.trades)
+  }, [trades, assets])
+
+  // Alert ticker: recent trades from live data
+  const alertTrades = useMemo(() => {
+    return (liveData?.recentTrades ?? []).slice(0, 5)
+  }, [liveData?.recentTrades])
+
   const avgHoldTimeToday = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10)
     const todayTrades = trades.filter(
@@ -558,6 +696,34 @@ export default function AscendDashboard() {
           </a>
         </div>
       </motion.div>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* Alert Ticker — recent trade events                                */}
+      {/* ----------------------------------------------------------------- */}
+      {alertTrades.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.02]"
+        >
+          <div className="flex items-center overflow-x-auto whitespace-nowrap px-4 py-2.5 scrollbar-hide" style={{ scrollBehavior: "smooth" }}>
+            <span className="mr-3 shrink-0 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Latest</span>
+            <div className="flex items-center gap-4">
+              {alertTrades.map((t) => {
+                const pnl = t.pnl ?? 0
+                const dot = closeReasonDot(t.closeReason)
+                const colorCls = closeReasonColor(t.closeReason)
+                return (
+                  <span key={t.id} className={`shrink-0 font-mono text-xs tabular-nums ${colorCls}`}>
+                    {dot} {t.asset} {t.side} {formatPnl(pnl)} ({t.closeReason ?? "unknown"})
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* ----------------------------------------------------------------- */}
       {/* 1. Hero Stats Bar — uniform grid                                  */}
@@ -737,6 +903,59 @@ export default function AscendDashboard() {
                 />
               </AreaChart>
             </ResponsiveContainer>
+          )}
+        </div>
+      </motion.div>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* Asset Activity Heatmap                                            */}
+      {/* ----------------------------------------------------------------- */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, delay: 0.17 }}
+      >
+        <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
+          <h2 className="mb-4 font-display text-lg font-semibold">Asset Activity Heatmap</h2>
+          {assetHeatmap.length === 0 ? (
+            <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+              No trade data today
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
+              {assetHeatmap.map((a) => {
+                const maxPnl = Math.max(...assetHeatmap.map((x) => Math.abs(x.pnl)), 1)
+                const intensity = a.trades === 0 ? 0 : Math.min(Math.abs(a.pnl) / maxPnl, 1)
+                const isPositive = a.pnl >= 0
+                const bgColor = a.trades === 0
+                  ? "bg-white/[0.03]"
+                  : isPositive
+                    ? `bg-gain`
+                    : `bg-loss`
+                const bgOpacity = a.trades === 0 ? 1 : 0.1 + intensity * 0.4
+                return (
+                  <div
+                    key={a.asset}
+                    className="relative overflow-hidden rounded-lg border border-white/5 p-3 text-center transition-colors hover:border-[#E8622C]/20"
+                    style={{
+                      backgroundColor: a.trades === 0
+                        ? "rgba(255,255,255,0.02)"
+                        : isPositive
+                          ? `rgba(0,255,136,${bgOpacity * 0.3})`
+                          : `rgba(255,59,92,${bgOpacity * 0.3})`,
+                    }}
+                  >
+                    <p className="font-display text-xs font-semibold">{a.asset}</p>
+                    <p className="mt-1 font-mono text-[10px] tabular-nums text-muted-foreground">{a.trades} trades</p>
+                    {a.trades > 0 && (
+                      <p className={`mt-0.5 font-mono text-xs font-semibold tabular-nums ${isPositive ? "text-gain" : "text-loss"}`}>
+                        {formatPnl(a.pnl)}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
       </motion.div>
@@ -958,85 +1177,169 @@ export default function AscendDashboard() {
                       trade.margin > 0
                         ? (pnl / trade.margin) * 100
                         : 0
+                    const isExpanded = expandedTradeId === trade.id
+                    const tradeSourceLabel = mapSource(trade.priceSource)
                     return (
-                      <tr
-                        key={trade.id}
-                        className={`border-b border-white/5 transition-colors ${
-                          isWin
-                            ? "bg-gain/[0.02] hover:bg-gain/[0.04]"
-                            : pnl < 0
-                              ? "bg-loss/[0.02] hover:bg-loss/[0.04]"
-                              : "hover:bg-white/[0.04]"
-                        }`}
-                      >
-                        <td className="py-3 pr-3 font-mono font-medium tabular-nums">{trade.asset}</td>
-                        <td className="py-3 pr-3">
-                          <span
-                            className={`inline-flex items-center gap-1 ${
-                              trade.side === "YES" ? "text-gain" : "text-loss"
-                            }`}
-                          >
-                            {trade.side === "YES" ? (
-                              <ArrowUpRight className="h-3.5 w-3.5" />
-                            ) : (
-                              <ArrowDownRight className="h-3.5 w-3.5" />
-                            )}
-                            {trade.side}
-                          </span>
-                        </td>
-                        <td className="hidden py-3 pr-3 md:table-cell">
-                          {(() => {
-                            const label = mapSource(trade.priceSource)
-                            return (
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] font-medium ${sourceBadgeClasses(label)}`}
-                              >
-                                {label}
-                              </Badge>
-                            )
-                          })()}
-                        </td>
-                        <td className="py-3 pr-3 text-right font-mono tabular-nums">
-                          ${trade.margin.toFixed(2)}
-                        </td>
-                        <td className="hidden py-3 pr-3 text-right font-mono tabular-nums md:table-cell">{trade.leverage}x</td>
-                        <td className="py-3 pr-3 text-right font-mono tabular-nums">
-                          {trade.entryPrice.toFixed(4)}
-                        </td>
-                        <td className="py-3 pr-3 text-right font-mono tabular-nums">
-                          {trade.exitPrice?.toFixed(4) ?? "—"}
-                        </td>
-                        <td
-                          className={`py-3 pr-3 text-right font-mono font-semibold tabular-nums ${
-                            isWin ? "text-gain" : "text-loss"
+                      <React.Fragment key={trade.id}>
+                        <tr
+                          onClick={() => setExpandedTradeId(isExpanded ? null : trade.id)}
+                          className={`cursor-pointer border-b border-white/5 transition-colors ${
+                            isExpanded
+                              ? isWin ? "bg-gain/[0.06]" : pnl < 0 ? "bg-loss/[0.06]" : "bg-white/[0.06]"
+                              : isWin
+                                ? "bg-gain/[0.02] hover:bg-gain/[0.04]"
+                                : pnl < 0
+                                  ? "bg-loss/[0.02] hover:bg-loss/[0.04]"
+                                  : "hover:bg-white/[0.04]"
                           }`}
                         >
-                          <div>{trade.pnl != null ? formatPnl(pnl) : "—"}</div>
-                          <div className="hidden text-xs opacity-70 md:block">{trade.pnl != null ? formatPct(pnlPct) : ""}</div>
-                        </td>
-                        <td className="hidden py-3 pr-3 text-right font-mono tabular-nums text-xs text-muted-foreground md:table-cell">
-                          <div className="flex items-center justify-end gap-1">
-                            <Clock className="h-3 w-3" />
-                            {formatDuration(trade.openedAt, trade.closedAt)}
-                          </div>
-                        </td>
-                        <td className="py-3 pr-3 text-right text-xs text-muted-foreground">
-                          {trade.closedAt && (
-                            <div className="flex items-center justify-end gap-1" title={timeAgo(trade.closedAt)}>
-                              <Calendar className="h-3 w-3" />
-                              {formatDateTime(trade.closedAt)}
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-3 text-right">
-                          {trade.closeReason && (
-                            <Badge variant="secondary" className="text-xs">
-                              {trade.closeReason}
+                          <td className="py-3 pr-3 font-mono font-medium tabular-nums">
+                            <span className="flex items-center gap-1">
+                              {isExpanded ? <ChevronUp className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+                              {trade.asset}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-3">
+                            <span
+                              className={`inline-flex items-center gap-1 ${
+                                trade.side === "YES" ? "text-gain" : "text-loss"
+                              }`}
+                            >
+                              {trade.side === "YES" ? (
+                                <ArrowUpRight className="h-3.5 w-3.5" />
+                              ) : (
+                                <ArrowDownRight className="h-3.5 w-3.5" />
+                              )}
+                              {trade.side}
+                            </span>
+                          </td>
+                          <td className="hidden py-3 pr-3 md:table-cell">
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] font-medium ${sourceBadgeClasses(tradeSourceLabel)}`}
+                            >
+                              {tradeSourceLabel}
                             </Badge>
-                          )}
-                        </td>
-                      </tr>
+                          </td>
+                          <td className="py-3 pr-3 text-right font-mono tabular-nums">
+                            ${trade.margin.toFixed(2)}
+                          </td>
+                          <td className="hidden py-3 pr-3 text-right font-mono tabular-nums md:table-cell">{trade.leverage}x</td>
+                          <td className="py-3 pr-3 text-right font-mono tabular-nums">
+                            {trade.entryPrice.toFixed(4)}
+                          </td>
+                          <td className="py-3 pr-3 text-right font-mono tabular-nums">
+                            {trade.exitPrice?.toFixed(4) ?? "---"}
+                          </td>
+                          <td
+                            className={`py-3 pr-3 text-right font-mono font-semibold tabular-nums ${
+                              isWin ? "text-gain" : "text-loss"
+                            }`}
+                          >
+                            <div>{trade.pnl != null ? formatPnl(pnl) : "---"}</div>
+                            <div className="hidden text-xs opacity-70 md:block">{trade.pnl != null ? formatPct(pnlPct) : ""}</div>
+                          </td>
+                          <td className="hidden py-3 pr-3 text-right font-mono tabular-nums text-xs text-muted-foreground md:table-cell">
+                            <div className="flex items-center justify-end gap-1">
+                              <Clock className="h-3 w-3" />
+                              {formatDuration(trade.openedAt, trade.closedAt)}
+                            </div>
+                          </td>
+                          <td className="py-3 pr-3 text-right text-xs text-muted-foreground">
+                            {trade.closedAt && (
+                              <div className="flex items-center justify-end gap-1" title={timeAgo(trade.closedAt)}>
+                                <Calendar className="h-3 w-3" />
+                                {formatDateTime(trade.closedAt)}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 text-right">
+                            {trade.closeReason && (
+                              <Badge variant="secondary" className="text-xs">
+                                {trade.closeReason}
+                              </Badge>
+                            )}
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={11} className="p-0">
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                transition={{ duration: 0.2 }}
+                                className={`border-b border-white/5 px-6 py-4 ${
+                                  isWin ? "bg-gain/[0.04]" : pnl < 0 ? "bg-loss/[0.04]" : "bg-white/[0.03]"
+                                }`}
+                              >
+                                <div className="mb-3 text-sm font-medium text-white/70">{trade.marketTitle}</div>
+                                <div className="grid grid-cols-2 gap-4 text-xs sm:grid-cols-4">
+                                  <div>
+                                    <span className="text-muted-foreground">Entry Time (EST)</span>
+                                    <p className="font-mono font-medium tabular-nums">{formatDateTime(trade.openedAt)}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Exit Time (EST)</span>
+                                    <p className="font-mono font-medium tabular-nums">{trade.closedAt ? formatDateTime(trade.closedAt) : "---"}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Hold Duration</span>
+                                    <p className="flex items-center gap-1 font-mono font-medium tabular-nums text-[#E8622C]">
+                                      <Clock className="h-3 w-3" />
+                                      {formatDuration(trade.openedAt, trade.closedAt)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Price Source</span>
+                                    <div className="mt-0.5">
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-[10px] font-medium ${sourceBadgeClasses(tradeSourceLabel)}`}
+                                      >
+                                        {tradeSourceLabel}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                </div>
+                                {trade.exitPrice != null && (
+                                  <div className="mt-4">
+                                    <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                                      <span>Entry: {trade.entryPrice.toFixed(4)}</span>
+                                      <span>Exit: {trade.exitPrice.toFixed(4)}</span>
+                                    </div>
+                                    <div className="relative h-3 w-full overflow-hidden rounded-full bg-white/5">
+                                      {(() => {
+                                        const minP = Math.min(trade.entryPrice, trade.exitPrice)
+                                        const maxP = Math.max(trade.entryPrice, trade.exitPrice)
+                                        const range = maxP - minP
+                                        const pad = range * 0.3 || 0.01
+                                        const lo = minP - pad
+                                        const hi = maxP + pad
+                                        const span = hi - lo
+                                        const entryPct = ((trade.entryPrice - lo) / span) * 100
+                                        const exitPct = ((trade.exitPrice - lo) / span) * 100
+                                        const leftPct = Math.min(entryPct, exitPct)
+                                        const widthPct = Math.abs(exitPct - entryPct)
+                                        return (
+                                          <div
+                                            className={`absolute top-0 h-full rounded-full ${isWin ? "bg-gain" : "bg-loss"}`}
+                                            style={{ left: `${leftPct}%`, width: `${widthPct}%`, opacity: 0.6 }}
+                                          />
+                                        )
+                                      })()}
+                                    </div>
+                                    <div className="mt-1 flex items-center justify-center gap-2 text-xs">
+                                      <span className="font-mono tabular-nums">{trade.entryPrice.toFixed(4)}</span>
+                                      <span className={isWin ? "text-gain" : "text-loss"}>{"-->"}</span>
+                                      <span className="font-mono tabular-nums">{trade.exitPrice.toFixed(4)}</span>
+                                    </div>
+                                  </div>
+                                )}
+                              </motion.div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     )
                   })}
                 </tbody>

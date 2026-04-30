@@ -82,9 +82,19 @@ export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset }:
     }
   }
 
-  function shareOnX() {
+  async function shareOnX() {
+    const dataUrl = await captureImage()
+    if (dataUrl) {
+      try {
+        const res = await fetch(dataUrl)
+        const blob = await res.blob()
+        await navigator.clipboard.write([
+          new ClipboardItem({ "image/png": blob }),
+        ])
+      } catch { /* best effort — image in clipboard for paste */ }
+    }
     const text = encodeURIComponent(
-      `RnG Ascend Bot Stats 🤖\n\n💰 P&L: ${pnlSign}$${Math.abs(pnl).toFixed(2)}\n🎯 Win Rate: ${stats?.winRate ?? 0}%\n📊 Trades: ${stats?.totalTrades ?? 0}\n\nFully autonomous event perpetuals trading on #Cardano\n\n#ADA #ASCEND $ADA $ASCEND`
+      `${pnlSign}$${Math.abs(pnl).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} P&L | ${stats?.winRate ?? 0}% Win Rate | ${stats?.totalTrades ?? 0} Trades\n\nFully autonomous bot trading event perpetuals on @AscendPerps\n\n100% of platform fees go back to $ASCEND holders. Real yield, no gimmicks.\n\n#Cardano $ADA $ASCEND`
     )
     const url = encodeURIComponent("https://www.rngcrypto.com/ascend")
     window.open(
@@ -122,9 +132,8 @@ export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset }:
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-[#00FF88]">RnG</span>
-                <span className="text-lg font-bold text-white">crYptO</span>
-                <span className="text-xs text-white/30 ml-1">×</span>
+                <span className="text-lg font-bold"><span className="text-[#00FF88]">RnG</span><span className="text-white">crYptO</span></span>
+                <span className="text-xs text-white/30">×</span>
                 <span className="text-sm font-semibold text-[#E8622C]">ASCEND</span>
               </div>
               <div className="flex items-center gap-2">
@@ -203,8 +212,9 @@ export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset }:
           </button>
         </div>
 
-        {/* Close hint */}
-        <p className="text-xs text-white/30">Click outside to close</p>
+        {/* Hints */}
+        <p className="text-xs text-white/40">Share on X copies the image to your clipboard — just paste it in the tweet</p>
+        <p className="text-xs text-white/20">Click outside to close</p>
       </div>
     </div>
   )

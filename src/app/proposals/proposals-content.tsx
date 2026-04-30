@@ -1,7 +1,8 @@
 "use client"
 
+import { useState } from "react"
 import { motion } from "framer-motion"
-import { FileText, Download, ExternalLink, Lightbulb } from "lucide-react"
+import { FileText, Download, ExternalLink, Lightbulb, Link2, Check } from "lucide-react"
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -26,6 +27,46 @@ const proposals = [
     tags: ["Ascend", "Arbiter", "Cardano", "Midnight", "DeFi"],
   },
 ]
+
+function ShareButtons({ title }: { title: string }) {
+  const [copied, setCopied] = useState(false)
+  const url = typeof window !== "undefined" ? window.location.href : ""
+  const text = `Check out "${title}" — a community partnership proposal for the Cardano ecosystem`
+
+  const shareX = () => {
+    window.open(
+      `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
+      "_blank"
+    )
+  }
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="flex gap-3">
+      <button
+        onClick={shareX}
+        className="inline-flex items-center gap-2 text-sm font-medium text-zinc-300 hover:text-white transition-colors"
+      >
+        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+        </svg>
+        Share
+      </button>
+      <button
+        onClick={copyLink}
+        className="inline-flex items-center gap-2 text-sm font-medium text-zinc-300 hover:text-[#00FF88] transition-colors"
+      >
+        {copied ? <Check className="w-4 h-4 text-[#00FF88]" /> : <Link2 className="w-4 h-4" />}
+        {copied ? "Copied!" : "Copy Link"}
+      </button>
+    </div>
+  )
+}
 
 export default function ProposalsContent() {
   return (
@@ -90,6 +131,8 @@ export default function ProposalsContent() {
                 <div className="flex items-center justify-between pt-2">
                   <span className="text-xs text-zinc-500">{proposal.date}</span>
                   <div className="flex gap-3">
+                    <ShareButtons title={proposal.title} />
+                    <span className="w-px bg-zinc-700" />
                     <a
                       href={proposal.pdfUrl}
                       target="_blank"

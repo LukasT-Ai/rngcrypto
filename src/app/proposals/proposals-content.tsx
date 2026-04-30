@@ -31,7 +31,7 @@ const proposals = [
 function ShareButtons({ title }: { title: string }) {
   const [copied, setCopied] = useState(false)
   const url = typeof window !== "undefined" ? window.location.href : ""
-  const text = `Check out "${title}" — a community partnership proposal for the Cardano ecosystem`
+  const text = `Check out "${title}" — a community partnership proposal for the Cardano ecosystem\n\n@ARBITERxyz @ascendperps`
 
   const shareX = () => {
     window.open(

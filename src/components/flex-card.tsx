@@ -134,7 +134,7 @@ export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset }:
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold"><span className="text-[#00FF88]">RnG</span><span className="text-white">crYptO</span></span>
                 <span className="text-xs text-white/30">×</span>
-                <span className="text-sm font-semibold text-[#E8622C]">ASCEND</span>
+                <span className="text-sm font-semibold text-[#E8622C]">Ascend.Market</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-[#00FF88] animate-pulse" />

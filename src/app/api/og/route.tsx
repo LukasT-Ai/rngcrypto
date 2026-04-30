@@ -126,7 +126,7 @@ export async function GET(req: NextRequest) {
           }}
         >
           <span style={{ color: "#6B7280", fontSize: "18px" }}>
-            rngcrypto.withlukas.com
+            www.rngcrypto.com
           </span>
           <span style={{ color: "#374151" }}>|</span>
           <span style={{ color: "#6B7280", fontSize: "18px" }}>

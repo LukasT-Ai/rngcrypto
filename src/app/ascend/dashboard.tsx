@@ -553,18 +553,15 @@ export default function AscendDashboard() {
     }, 0)
   }, [openPositions])
 
-  // Asset heatmap data: per-asset today stats
+  // Asset heatmap data: per-asset stats across all filtered trades
   const assetHeatmap = useMemo(() => {
-    const todayStr = new Date().toISOString().slice(0, 10)
     const map = new Map<string, { trades: number; pnl: number }>()
-    for (const t of trades) {
-      if (!t.closedAt?.startsWith(todayStr)) continue
+    for (const t of filteredTrades) {
       const entry = map.get(t.asset) ?? { trades: 0, pnl: 0 }
       entry.trades++
       entry.pnl += t.pnl ?? 0
       map.set(t.asset, entry)
     }
-    // Also include assets from the overview that may not be in recent trades
     for (const a of assets) {
       if (!map.has(a.asset)) {
         map.set(a.asset, { trades: 0, pnl: 0 })
@@ -573,7 +570,7 @@ export default function AscendDashboard() {
     return Array.from(map.entries())
       .map(([asset, data]) => ({ asset, ...data }))
       .sort((a, b) => b.trades - a.trades)
-  }, [trades, assets])
+  }, [filteredTrades, assets])
 
   // Alert ticker: recent trades from live data
   const alertTrades = useMemo(() => {
@@ -919,7 +916,7 @@ export default function AscendDashboard() {
           <h2 className="mb-4 font-display text-lg font-semibold">Asset Activity Heatmap</h2>
           {assetHeatmap.length === 0 ? (
             <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
-              No trade data today
+              No trade data
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">

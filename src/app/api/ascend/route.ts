@@ -9,6 +9,7 @@ import {
   getPnlTimeline,
   getHourlyTradeRate,
   getDailyStats,
+  getStrategyBreakdown,
 } from "@/lib/ascend-db";
 
 const CACHE_PATH = path.join(process.cwd(), "data", "stats-cache.json");
@@ -61,6 +62,7 @@ export async function GET(req: NextRequest) {
           memCached("overview", () => ({
             stats: getOverallStats(),
             assets: getAssetBreakdown(),
+            strategyBreakdown: getStrategyBreakdown(),
             recentTrades: getRecentTrades(10),
             dailyStats: getDailyStats(14),
           }));

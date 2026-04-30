@@ -300,6 +300,47 @@ export interface DailyStat {
   pnl: number;
 }
 
+export interface StrategyStats {
+  priceSource: string | null;
+  trades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  totalPnl: number;
+  avgPnl: number;
+}
+
+export function getStrategyBreakdown(): StrategyStats[] {
+  return withDb((db) => {
+    const rows = db
+      .prepare(
+        `SELECT
+           price_source,
+           COUNT(*)                                    AS trades,
+           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END)  AS wins,
+           SUM(CASE WHEN pnl <= 0 THEN 1 ELSE 0 END) AS losses,
+           ROUND(SUM(CASE WHEN pnl > 0 THEN 1.0 ELSE 0 END) / COUNT(*) * 100, 2) AS winRate,
+           ROUND(SUM(pnl), 2)                         AS totalPnl,
+           ROUND(AVG(pnl), 2)                         AS avgPnl
+         FROM positions
+         WHERE status = 'closed'
+         GROUP BY price_source
+         ORDER BY COUNT(*) DESC`
+      )
+      .all() as { price_source: string | null; trades: number; wins: number; losses: number; winRate: number; totalPnl: number; avgPnl: number }[];
+
+    return rows.map((r) => ({
+      priceSource: r.price_source,
+      trades: r.trades,
+      wins: r.wins,
+      losses: r.losses,
+      winRate: r.winRate,
+      totalPnl: r.totalPnl,
+      avgPnl: r.avgPnl,
+    }));
+  });
+}
+
 export function getDailyStats(days = 14): DailyStat[] {
   return withDb((db) => {
     const rows = db

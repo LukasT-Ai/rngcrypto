@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import React, { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { motion } from "framer-motion"
 import Image from "next/image"
@@ -1428,6 +1428,189 @@ export default function AscendDashboard() {
                   </div>
                 )
               })}
+            </div>
+          )}
+        </div>
+      </motion.div>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* 6. Strategy Performance                                           */}
+      {/* ----------------------------------------------------------------- */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, delay: 0.32 }}
+      >
+        <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
+          <h2 className="mb-4 font-display text-lg font-semibold">Strategy Performance</h2>
+          {strategyBreakdown.length === 0 ? (
+            <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+              No strategy data yet
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {strategyBreakdown.map((s) => {
+                const label = mapSource(s.priceSource)
+                const badgeCls = sourceBadgeClasses(label)
+                const isPositive = s.totalPnl >= 0
+                // Extract accent color from badge classes for the card border
+                const accentMatch = badgeCls.match(/border-([^\s/]+)/)
+                return (
+                  <div
+                    key={s.priceSource ?? "sniper"}
+                    className={`rounded-lg border p-4 transition-colors hover:shadow-lg ${badgeCls.replace(/text-[^\s]+/g, "").replace(/bg-[^\s]+/g, "")} bg-white/[0.03]`}
+                    style={{
+                      borderColor: label === "Auto-Trader" ? "rgba(232,98,44,0.2)" :
+                                   label === "Sniper" ? "rgba(6,182,212,0.2)" :
+                                   label === "Momentum" ? "rgba(168,85,247,0.2)" :
+                                   label === "Re-entry" ? "rgba(245,158,11,0.2)" :
+                                   "rgba(255,255,255,0.06)",
+                    }}
+                  >
+                    <div className="mb-3 flex items-center justify-between">
+                      <Badge
+                        variant="outline"
+                        className={`text-xs font-medium ${badgeCls}`}
+                      >
+                        {label}
+                      </Badge>
+                      <span className="font-mono text-xs tabular-nums text-muted-foreground">{s.trades} trades</span>
+                    </div>
+                    <div className="mb-3">
+                      <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>Win Rate</span>
+                        <span className="font-mono tabular-nums">{s.winRate}%</span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-white/5">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${s.winRate}%` }}
+                          transition={{ duration: 0.8, ease: "easeOut" }}
+                          className="h-full rounded-full"
+                          style={{
+                            backgroundColor: label === "Auto-Trader" ? "#E8622C" :
+                                             label === "Sniper" ? "#06B6D4" :
+                                             label === "Momentum" ? "#A855F7" :
+                                             label === "Re-entry" ? "#F59E0B" :
+                                             "#6B7280",
+                            opacity: 0.7,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-muted-foreground">Total P&L</span>
+                        <p className={`font-mono font-semibold tabular-nums ${isPositive ? "text-gain" : "text-loss"}`}>
+                          {formatPnl(s.totalPnl)}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Avg P&L</span>
+                        <p className={`font-mono font-semibold tabular-nums ${s.avgPnl >= 0 ? "text-gain" : "text-loss"}`}>
+                          {formatPnl(s.avgPnl)}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Wins</span>
+                        <p className="font-mono font-medium tabular-nums text-gain">{s.wins}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Losses</span>
+                        <p className="font-mono font-medium tabular-nums text-loss">{s.losses}</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </motion.div>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* 7. Risk Exposure                                                  */}
+      {/* ----------------------------------------------------------------- */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, delay: 0.34 }}
+      >
+        <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Shield className="h-5 w-5 text-[#E8622C]" />
+            <h2 className="font-display text-lg font-semibold">Risk Exposure</h2>
+          </div>
+
+          {openPositions.length === 0 ? (
+            <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+              No open positions, no active risk
+            </div>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-3">
+              {/* Exposure by Category */}
+              <div className="lg:col-span-2">
+                <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Exposure by Category</h3>
+                <div className="space-y-3">
+                  {exposureByCategory.map((cat) => {
+                    const maxMargin = Math.max(...exposureByCategory.map((c) => c.margin), 1)
+                    const barWidth = (cat.margin / maxMargin) * 100
+                    const color = CATEGORY_COLORS[cat.category] ?? "#6B7280"
+                    return (
+                      <div key={cat.category}>
+                        <div className="mb-1 flex items-center justify-between text-xs">
+                          <span className="font-medium" style={{ color }}>{cat.category}</span>
+                          <span className="font-mono tabular-nums text-muted-foreground">${cat.margin.toFixed(2)}</span>
+                        </div>
+                        <div className="h-3 w-full overflow-hidden rounded-full bg-white/5">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${barWidth}%` }}
+                            transition={{ duration: 0.8, ease: "easeOut" }}
+                            className="h-full rounded-full"
+                            style={{ backgroundColor: color, opacity: 0.7 }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Risk Metrics */}
+              <div className="space-y-4">
+                {/* Max Loss Scenario */}
+                <div className="rounded-lg border border-loss/20 bg-loss/[0.05] p-4">
+                  <div className="flex items-center gap-2 text-xs font-medium text-loss">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Max Loss Scenario
+                  </div>
+                  <p className="mt-1 font-mono text-xl font-bold tabular-nums text-loss">
+                    -${maxLossScenario.toFixed(2)}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">If all positions hit stop-loss</p>
+                </div>
+
+                {/* Capital Utilization */}
+                <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="text-xs font-medium text-muted-foreground">Capital Deployed</div>
+                  <p className="mt-1 font-mono text-xl font-bold tabular-nums text-[#E8622C]">
+                    ${openExposure.toFixed(2)}
+                  </p>
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min((openExposure / Math.max(openExposure + 500, 1)) * 100, 100)}%` }}
+                      transition={{ duration: 0.8, ease: "easeOut" }}
+                      className="h-full rounded-full bg-[#E8622C]"
+                      style={{ opacity: 0.7 }}
+                    />
+                  </div>
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {openPositions.length} position{openPositions.length !== 1 ? "s" : ""} across {exposureByCategory.length} categor{exposureByCategory.length !== 1 ? "ies" : "y"}
+                  </p>
+                </div>
+              </div>
             </div>
           )}
         </div>

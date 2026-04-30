@@ -147,7 +147,7 @@ function formatPct(val: number): string {
 
 function formatDuration(openedAt: string, closedAt: string | null): string {
   if (!closedAt) return "Open"
-  const ms = Math.abs(new Date(closedAt).getTime() - new Date(openedAt).getTime())
+  const ms = Math.abs(asUTC(closedAt).getTime() - asUTC(openedAt).getTime())
   const mins = Math.floor(ms / 60000)
   if (mins < 1) return "<1m"
   if (mins < 60) return `${mins}m`
@@ -158,11 +158,15 @@ function formatDuration(openedAt: string, closedAt: string | null): string {
 }
 
 function formatDate(d: string): string {
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  return asUTC(d).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" })
+}
+
+function asUTC(d: string): Date {
+  return d.endsWith("Z") || d.includes("+") ? new Date(d) : new Date(d + "Z")
 }
 
 function formatDateTime(d: string): string {
-  return new Date(d).toLocaleString("en-US", {
+  return asUTC(d).toLocaleString("en-US", {
     timeZone: "America/New_York",
     month: "short",
     day: "numeric",
@@ -172,7 +176,7 @@ function formatDateTime(d: string): string {
 }
 
 function timeAgo(d: string): string {
-  const ms = Date.now() - new Date(d).getTime()
+  const ms = Date.now() - asUTC(d).getTime()
   const mins = Math.floor(ms / 60000)
   if (mins < 1) return "just now"
   if (mins < 60) return `${mins}m ago`
@@ -210,7 +214,7 @@ function sourceBadgeClasses(label: string): string {
 }
 
 function formatHoldTime(openedAt: string): string {
-  const ms = Date.now() - new Date(openedAt).getTime()
+  const ms = Date.now() - asUTC(openedAt).getTime()
   const mins = Math.floor(ms / 60000)
   if (mins < 1) return "<1m"
   if (mins < 60) return `${mins}m`
@@ -376,7 +380,7 @@ export default function AscendDashboard() {
       if (sourceFilter !== "all") {
         list = list.filter((t) => mapSource(t.priceSource) === sourceFilter)
       }
-      return [...list].sort((a, b) => new Date(b.closedAt ?? 0).getTime() - new Date(a.closedAt ?? 0).getTime())
+      return [...list].sort((a, b) => asUTC(b.closedAt ?? "1970-01-01").getTime() - asUTC(a.closedAt ?? "1970-01-01").getTime())
     },
     [trades, assetFilter, sourceFilter]
   )
@@ -434,7 +438,7 @@ export default function AscendDashboard() {
     )
     if (todayTrades.length === 0) return "N/A"
     const totalMs = todayTrades.reduce((sum, t) => {
-      return sum + (new Date(t.closedAt!).getTime() - new Date(t.openedAt).getTime())
+      return sum + (asUTC(t.closedAt!).getTime() - asUTC(t.openedAt).getTime())
     }, 0)
     const avgMs = totalMs / todayTrades.length
     const mins = Math.floor(avgMs / 60000)

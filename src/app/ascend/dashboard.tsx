@@ -160,6 +160,7 @@ function formatDate(d: string): string {
 
 function formatDateTime(d: string): string {
   return new Date(d).toLocaleString("en-US", {
+    timeZone: "America/New_York",
     month: "short",
     day: "numeric",
     hour: "2-digit",

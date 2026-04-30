@@ -553,24 +553,12 @@ export default function AscendDashboard() {
     }, 0)
   }, [openPositions])
 
-  // Asset heatmap data: per-asset stats across all filtered trades
+  // Asset heatmap data: use overview assets (all trades, not capped by limit)
   const assetHeatmap = useMemo(() => {
-    const map = new Map<string, { trades: number; pnl: number }>()
-    for (const t of filteredTrades) {
-      const entry = map.get(t.asset) ?? { trades: 0, pnl: 0 }
-      entry.trades++
-      entry.pnl += t.pnl ?? 0
-      map.set(t.asset, entry)
-    }
-    for (const a of assets) {
-      if (!map.has(a.asset)) {
-        map.set(a.asset, { trades: 0, pnl: 0 })
-      }
-    }
-    return Array.from(map.entries())
-      .map(([asset, data]) => ({ asset, ...data }))
+    return assets
+      .map((a) => ({ asset: a.asset, trades: a.trades, pnl: a.totalPnl }))
       .sort((a, b) => b.trades - a.trades)
-  }, [filteredTrades, assets])
+  }, [assets])
 
   // Alert ticker: recent trades from live data
   const alertTrades = useMemo(() => {

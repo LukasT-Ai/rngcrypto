@@ -332,7 +332,7 @@ const ecosystemProjects = [
   },
   {
     name: "Strike Finance",
-    handle: "@strikecardano",
+    handle: "@strikeperps",
     description: "Decentralized perpetual futures on Cardano mainnet. Up to 50x leverage on crypto, commodities, and metals.",
     href: "/strike",
     color: "#22D3EE",
@@ -557,7 +557,7 @@ function SocialProof() {
           </a>
 
           <a
-            href="https://x.com/strikecardano"
+            href="https://x.com/strikeperps"
             target="_blank"
             rel="noopener noreferrer"
             className="group flex items-center gap-3 text-white/40 transition-colors hover:text-[#22D3EE]/80"
@@ -565,7 +565,7 @@ function SocialProof() {
             <Zap className="size-5" />
             <div>
               <p className="text-sm font-semibold text-white/60 group-hover:text-white/90">
-                @strikecardano
+                @strikeperps
               </p>
               <p className="text-xs text-white/30">Trading on Strike</p>
             </div>

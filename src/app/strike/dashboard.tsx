@@ -381,7 +381,7 @@ export default function StrikeDashboard() {
   const [expandedTradeId, setExpandedTradeId] = useState<number | null>(null)
 
   const SHARE_URL = "https://www.rngcrypto.com/strike"
-  const SHARE_TEXT = "Autonomous bot trading perpetual futures on @strikecardano \u{1F916}\n\nDecentralized perps on Cardano. Real yield from $STRIKE staking.\n\n#Cardano $ADA $STRIKE"
+  const SHARE_TEXT = "Autonomous bot trading perpetual futures on @strikeperps \u{1F916}\n\nDecentralized perps on Cardano. Real yield from $STRIKE staking.\n\n#Cardano $ADA $STRIKE"
 
   function shareOnX() {
     const text = encodeURIComponent(SHARE_TEXT)
@@ -685,12 +685,12 @@ export default function StrikeDashboard() {
             strikefinance.org
           </a>
           <a
-            href="https://x.com/strikecardano"
+            href="https://x.com/strikeperps"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-xs font-medium text-white/50 transition-all hover:border-white/[0.15] hover:text-white/70"
           >
-            @strikecardano
+            @strikeperps
           </a>
         </div>
       </motion.div>

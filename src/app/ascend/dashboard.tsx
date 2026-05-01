@@ -162,14 +162,16 @@ const fetchJson = async <T,>(url: string): Promise<T> => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatPnl(val: number): string {
-  const sign = val >= 0 ? "+" : ""
-  return `${sign}${val.toFixed(2)}`
+function formatPnl(val: number | null | undefined): string {
+  const v = val ?? 0
+  const sign = v >= 0 ? "+" : ""
+  return `${sign}${v.toFixed(2)}`
 }
 
-function formatPct(val: number): string {
-  const sign = val >= 0 ? "+" : ""
-  return `${sign}${val.toFixed(1)}%`
+function formatPct(val: number | null | undefined): string {
+  const v = val ?? 0
+  const sign = v >= 0 ? "+" : ""
+  return `${sign}${v.toFixed(1)}%`
 }
 
 function formatDuration(openedAt: string, closedAt: string | null): string {
@@ -513,7 +515,19 @@ export default function AscendDashboard() {
 
   // Strategy breakdown: use API data or compute from trades
   const strategyBreakdown = useMemo(() => {
-    if (overview?.strategyBreakdown?.length) return overview.strategyBreakdown
+    if (overview?.strategyBreakdown?.length) {
+      // Normalize: push data may use snake_case price_source or miss winRate
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return overview.strategyBreakdown.map((s: any) => ({
+        priceSource: (s.priceSource ?? s.price_source ?? null) as string | null,
+        trades: (s.trades ?? 0) as number,
+        wins: (s.wins ?? 0) as number,
+        losses: (s.losses ?? 0) as number,
+        winRate: (s.winRate ?? (s.trades ? Math.round((s.wins / s.trades) * 10000) / 100 : 0)) as number,
+        totalPnl: (s.totalPnl ?? 0) as number,
+        avgPnl: (s.avgPnl ?? 0) as number,
+      }))
+    }
     // Fallback: compute from trades array
     if (!trades.length) return []
     const map = new Map<string, { trades: number; wins: number; losses: number; totalPnl: number }>()
@@ -1509,12 +1523,12 @@ export default function AscendDashboard() {
                     <div className="mb-3">
                       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
                         <span>Win Rate</span>
-                        <span className="font-mono tabular-nums">{s.winRate}%</span>
+                        <span className="font-mono tabular-nums">{s.winRate ?? 0}%</span>
                       </div>
                       <div className="h-2 w-full overflow-hidden rounded-full bg-white/5">
                         <motion.div
                           initial={{ width: 0 }}
-                          animate={{ width: `${s.winRate}%` }}
+                          animate={{ width: `${s.winRate ?? 0}%` }}
                           transition={{ duration: 0.8, ease: "easeOut" }}
                           className="h-full rounded-full"
                           style={{

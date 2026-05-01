@@ -14,7 +14,7 @@ import {
 import { useQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 
-type AscendStats = {
+type BotStats = {
   totalTrades: number
   wins: number
   losses: number
@@ -32,26 +32,33 @@ function StatCard({
   subtext,
   color = "green",
   delay = 0,
+  accent = "green",
 }: {
   label: string
   value: string
   subtext?: string
   color?: "green" | "white" | "red"
   delay?: number
+  accent?: "green" | "cyan"
 }) {
   const colorMap = {
     green: "text-[#00FF88]",
     white: "text-white",
     red: "text-[#FF3B5C]",
   }
+  const accentColor = accent === "cyan" ? "#22D3EE" : "#00FF88"
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.5, ease: "easeOut" }}
-      className="group relative overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 backdrop-blur-sm transition-all duration-300 hover:border-[#00FF88]/20 hover:bg-white/[0.04]"
+      className="group relative overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 backdrop-blur-sm transition-all duration-300 hover:bg-white/[0.04]"
+      style={{ ["--stat-accent" as string]: accentColor }}
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-[#00FF88]/[0.02] to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+      <div
+        className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        style={{ background: `linear-gradient(to bottom right, ${accentColor}05, transparent)` }}
+      />
       <p className="relative text-xs font-medium uppercase tracking-widest text-white/40">
         {label}
       </p>
@@ -80,7 +87,7 @@ function LivePulse() {
 }
 
 function AscendPreview() {
-  const { data } = useQuery<AscendStats>({
+  const { data } = useQuery<BotStats>({
     queryKey: ["ascend-homepage"],
     queryFn: async () => {
       const res = await fetch("/api/ascend?view=overview")
@@ -133,7 +140,7 @@ function AscendPreview() {
             </span>
           </div>
           <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Autonomous Trading Bot
+            Ascend Event Perpetuals Bot
           </h2>
           <p className="mt-3 max-w-xl text-white/40">
             14-source evaluation engine trading event perpetuals on Midnight.
@@ -193,6 +200,127 @@ function AscendPreview() {
   )
 }
 
+function StrikePreview() {
+  const { data } = useQuery<BotStats>({
+    queryKey: ["strike-homepage"],
+    queryFn: async () => {
+      const res = await fetch("/api/strike?view=overview")
+      if (!res.ok) throw new Error("Failed to fetch")
+      const json = await res.json()
+      return json.stats
+    },
+    refetchInterval: 30_000,
+    retry: false,
+  })
+
+  const { data: liveData } = useQuery<LiveStats>({
+    queryKey: ["strike-live-homepage"],
+    queryFn: async () => {
+      const res = await fetch("/api/strike?view=live")
+      if (!res.ok) throw new Error("Failed to fetch")
+      return res.json()
+    },
+    refetchInterval: 15_000,
+    retry: false,
+  })
+
+  const stats = data
+  const openCount = liveData?.openPositions?.length ?? 0
+  const hasTrades = stats && stats.totalTrades > 0
+
+  return (
+    <section className="relative py-24">
+      <div className="mx-auto max-w-7xl px-4 lg:px-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+          className="mb-12 flex flex-col items-center text-center"
+        >
+          <div className="mb-4 flex items-center gap-2 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/5 px-4 py-1.5">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#22D3EE] opacity-75" />
+              <span className="relative inline-flex size-2 rounded-full bg-[#22D3EE]" />
+            </span>
+            <span className="text-xs font-medium text-[#22D3EE]">
+              Live on Strike Finance
+            </span>
+          </div>
+          <div className="mb-3">
+            <Image
+              src="/strike/Logo_full text_strikefinance.jpeg"
+              alt="Strike Finance"
+              width={240}
+              height={130}
+              className="rounded-xl"
+            />
+          </div>
+          <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            Perpetuals Trading Bot
+          </h2>
+          <p className="mt-3 max-w-xl text-white/40">
+            Multi-timeframe TA engine trading perpetual futures on Cardano mainnet.
+            Real money, real results.
+          </p>
+        </motion.div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Total P&L"
+            value={hasTrades ? `${(stats.totalPnl >= 0 ? "+" : "")}${stats.totalPnl.toLocaleString()} ADA` : "--"}
+            subtext="Mainnet"
+            color={hasTrades ? (stats.totalPnl >= 0 ? "green" : "red") : "white"}
+            delay={0.1}
+            accent="cyan"
+          />
+          <StatCard
+            label="Win Rate"
+            value={hasTrades ? `${stats.winRate}%` : "--"}
+            subtext={hasTrades ? `${stats.wins}W / ${stats.losses}L` : "Warming up"}
+            color={hasTrades ? "green" : "white"}
+            delay={0.2}
+            accent="cyan"
+          />
+          <StatCard
+            label="Total Trades"
+            value={hasTrades ? stats.totalTrades.toLocaleString() : "0"}
+            subtext={hasTrades ? "And counting" : "Just deployed"}
+            color="white"
+            delay={0.3}
+            accent="cyan"
+          />
+          <StatCard
+            label="Open Now"
+            value={String(openCount)}
+            subtext="Positions"
+            color="white"
+            delay={0.4}
+            accent="cyan"
+          />
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.5, duration: 0.5 }}
+          className="mt-8 flex justify-center"
+        >
+          <Link
+            href="/strike"
+            className="group flex items-center gap-2 rounded-full border border-[#22D3EE]/30 bg-[#22D3EE]/5 px-6 py-3 text-sm font-medium text-[#22D3EE] transition-all hover:border-[#22D3EE]/60 hover:bg-[#22D3EE]/10"
+          >
+            <BarChart3 className="size-4" />
+            View Full Dashboard
+            <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+          </Link>
+        </motion.div>
+      </div>
+    </section>
+  )
+}
+
 const ecosystemProjects = [
   {
     name: "Ascend Market",
@@ -201,6 +329,14 @@ const ecosystemProjects = [
     href: "/ascend",
     color: "#E8622C",
     icon: TrendingUp,
+  },
+  {
+    name: "Strike Finance",
+    handle: "@strikecardano",
+    description: "Decentralized perpetual futures on Cardano mainnet. Up to 50x leverage on crypto, commodities, and metals.",
+    href: "/strike",
+    color: "#22D3EE",
+    icon: Zap,
   },
   {
     name: "Good Vibes Club",
@@ -215,7 +351,7 @@ const ecosystemProjects = [
     handle: "@laborable",
     description: "Leading DeFi lending and borrowing protocol on Cardano",
     href: "/projects#liqwid",
-    color: "#22D3EE",
+    color: "#3B82F6",
     icon: Zap,
   },
 ]
@@ -240,7 +376,7 @@ function ProjectsPreview() {
           </p>
         </motion.div>
 
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {ecosystemProjects.map((project, i) => (
             <motion.div
               key={project.name}
@@ -419,6 +555,21 @@ function SocialProof() {
               <p className="text-xs text-white/30">Trading on Ascend</p>
             </div>
           </a>
+
+          <a
+            href="https://x.com/strikecardano"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group flex items-center gap-3 text-white/40 transition-colors hover:text-[#22D3EE]/80"
+          >
+            <Zap className="size-5" />
+            <div>
+              <p className="text-sm font-semibold text-white/60 group-hover:text-white/90">
+                @strikecardano
+              </p>
+              <p className="text-xs text-white/30">Trading on Strike</p>
+            </div>
+          </a>
         </div>
       </div>
     </section>
@@ -539,6 +690,9 @@ export default function HomePage() {
 
       {/* Ascend Bot Stats */}
       <AscendPreview />
+
+      {/* Strike Bot Stats */}
+      <StrikePreview />
 
       {/* Projects */}
       <ProjectsPreview />

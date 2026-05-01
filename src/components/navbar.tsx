@@ -11,6 +11,7 @@ import {
   Menu,
   X,
   Zap,
+  TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -18,6 +19,7 @@ import { useState, useEffect } from "react"
 
 const navItems = [
   { href: "/ascend", label: "Ascend", icon: BarChart3 },
+  { href: "/strike", label: "Strike", icon: TrendingUp },
   { href: "/projects", label: "Projects", icon: Layers },
   { href: "/proposals", label: "Proposals", icon: Zap },
   { href: "/blog", label: "Blog", icon: PenSquare },
@@ -70,8 +72,9 @@ export function Navbar() {
           {navItems.map((item) => {
             const isActive = pathname.startsWith(item.href)
             const isAscend = item.href === "/ascend"
-            const activeColor = isAscend ? "text-[#E8622C]" : "text-[#00FF88]"
-            const activeBar = isAscend ? "via-[#E8622C]" : "via-[#00FF88]"
+            const isStrike = item.href === "/strike"
+            const activeColor = isAscend ? "text-[#E8622C]" : isStrike ? "text-[#22D3EE]" : "text-[#00FF88]"
+            const activeBar = isAscend ? "via-[#E8622C]" : isStrike ? "via-[#22D3EE]" : "via-[#00FF88]"
             return (
               <Link
                 key={item.href}
@@ -136,9 +139,12 @@ export function Navbar() {
                   ? pathname === "/"
                   : pathname.startsWith(item.href)
               const isAscend = item.href === "/ascend"
+              const isStrike = item.href === "/strike"
               const mobileActiveClass = isAscend
                 ? "bg-[#E8622C]/10 text-[#E8622C]"
-                : "bg-[#00FF88]/10 text-[#00FF88]"
+                : isStrike
+                  ? "bg-[#22D3EE]/10 text-[#22D3EE]"
+                  : "bg-[#00FF88]/10 text-[#00FF88]"
               return (
                 <Link
                   key={item.href}

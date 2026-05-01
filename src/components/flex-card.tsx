@@ -12,6 +12,43 @@ function XIcon({ className }: { className?: string }) {
   )
 }
 
+type Variant = "ascend" | "strike"
+
+const VARIANTS: Record<Variant, {
+  name: string
+  accent: string
+  accentAlt: string
+  handle: string
+  token: string
+  unit: string
+  tagline: string
+  url: string
+  gradient: string
+}> = {
+  ascend: {
+    name: "Ascend.Market",
+    accent: "#E8622C",
+    accentAlt: "#FF8C42",
+    handle: "@AscendPerps",
+    token: "$ASCEND",
+    unit: "USDT",
+    tagline: "Autonomous Event Perpetuals on Midnight",
+    url: "https://www.rngcrypto.com/ascend",
+    gradient: "from-[#E8622C] via-[#FF8C42] to-[#00FF88]",
+  },
+  strike: {
+    name: "Strike Finance",
+    accent: "#22D3EE",
+    accentAlt: "#06B6D4",
+    handle: "@strikeperps",
+    token: "$STRIKE",
+    unit: "ADA",
+    tagline: "Autonomous Perpetual Futures on Cardano",
+    url: "https://www.rngcrypto.com/strike",
+    gradient: "from-[#22D3EE] via-[#06B6D4] to-[#00FF88]",
+  },
+}
+
 interface FlexCardProps {
   open: boolean
   onClose: () => void
@@ -27,15 +64,17 @@ interface FlexCardProps {
   } | null
   openPositionCount: number
   bestAsset: string | null
+  variant?: Variant
 }
 
-export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset }: FlexCardProps) {
+export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset, variant = "ascend" }: FlexCardProps) {
   const cardRef = useRef<HTMLDivElement>(null)
   const [downloading, setDownloading] = useState(false)
   const [copied, setCopied] = useState(false)
 
   if (!open) return null
 
+  const v = VARIANTS[variant]
   const pnl = stats?.totalPnl ?? 0
   const pnlColor = pnl >= 0 ? "#00FF88" : "#FF3B5C"
   const pnlSign = pnl >= 0 ? "+" : ""
@@ -58,7 +97,7 @@ export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset }:
     const dataUrl = await captureImage()
     if (dataUrl) {
       const link = document.createElement("a")
-      link.download = `rng-ascend-stats-${new Date().toISOString().slice(0, 10)}.png`
+      link.download = `rng-${variant}-stats-${new Date().toISOString().slice(0, 10)}.png`
       link.href = dataUrl
       link.click()
     }
@@ -94,9 +133,9 @@ export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset }:
       } catch { /* best effort — image in clipboard for paste */ }
     }
     const text = encodeURIComponent(
-      `${pnlSign}$${Math.abs(pnl).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} P&L | ${stats?.winRate ?? 0}% Win Rate | ${stats?.totalTrades ?? 0} Trades\n\nFully autonomous bot trading event perpetuals on @AscendPerps\n\n100% of platform fees go back to $ASCEND holders. Real yield, no gimmicks.\n\n#Cardano $ADA $ASCEND`
+      `${pnlSign}$${Math.abs(pnl).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} P&L | ${stats?.winRate ?? 0}% Win Rate | ${stats?.totalTrades ?? 0} Trades\n\nFully autonomous bot trading perpetual futures on ${v.handle}\n\n100% of platform fees go back to ${v.token} holders. Real yield, no gimmicks.\n\n#Cardano $ADA ${v.token}`
     )
-    const url = encodeURIComponent("https://www.rngcrypto.com/ascend")
+    const url = encodeURIComponent(v.url)
     window.open(
       `https://x.com/intent/tweet?text=${text}&url=${url}`,
       "_blank",
@@ -126,15 +165,15 @@ export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset }:
           {/* Dark overlay */}
           <div className="absolute inset-0 bg-gradient-to-b from-[#06080F]/60 via-[#06080F]/40 to-[#06080F]/80" />
           {/* Top accent */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#E8622C] via-[#FF8C42] to-[#00FF88]" />
+          <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${v.gradient}`} />
 
           <div className="relative px-8 py-7">
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold"><span className="text-[#00FF88]">RnG</span><span className="text-white">crYptO</span></span>
-                <span className="text-xs text-white/30">×</span>
-                <span className="text-sm font-semibold text-[#E8622C]">Ascend.Market</span>
+                <span className="text-xs text-white/30">&times;</span>
+                <span className="text-sm font-semibold" style={{ color: v.accent }}>{v.name}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-[#00FF88] animate-pulse" />
@@ -151,13 +190,13 @@ export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset }:
               >
                 {pnlSign}${Math.abs(pnl).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
-              <p className="text-xs text-white/30 mt-1">USDT</p>
+              <p className="text-xs text-white/30 mt-1">{v.unit}</p>
             </div>
 
             {/* Stats Grid */}
             <div className="grid grid-cols-4 gap-3 mb-5">
-              <StatBox label="Win Rate" value={`${stats?.winRate ?? 0}%`} accent="#E8622C" />
-              <StatBox label="Trades" value={`${stats?.totalTrades ?? 0}`} accent="#FF8C42" />
+              <StatBox label="Win Rate" value={`${stats?.winRate ?? 0}%`} accent={v.accent} />
+              <StatBox label="Trades" value={`${stats?.totalTrades ?? 0}`} accent={v.accentAlt} />
               <StatBox label="W / L" value={`${stats?.wins ?? 0} / ${stats?.losses ?? 0}`} accent="#00FF88" />
               <StatBox label="Open" value={`${openPositionCount}`} accent="#22D3EE" />
             </div>
@@ -173,13 +212,13 @@ export function FlexCard({ open, onClose, stats, openPositionCount, bestAsset }:
             {bestAsset && (
               <div className="text-center mb-4">
                 <span className="text-xs text-white/30">Best Asset: </span>
-                <span className="text-xs font-semibold text-[#E8622C]">{bestAsset}</span>
+                <span className="text-xs font-semibold" style={{ color: v.accent }}>{bestAsset}</span>
               </div>
             )}
 
             {/* Footer */}
             <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
-              <span className="text-[10px] text-white/20">Autonomous Event Perpetuals on Midnight</span>
+              <span className="text-[10px] text-white/20">{v.tagline}</span>
               <span className="text-[10px] text-white/20">@rngcrypto</span>
             </div>
           </div>

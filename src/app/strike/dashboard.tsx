@@ -1754,6 +1754,7 @@ export default function StrikeDashboard() {
         stats={stats ?? null}
         openPositionCount={openPositions.length}
         bestAsset={bestAsset}
+        variant="strike"
       />
     </div>
   )

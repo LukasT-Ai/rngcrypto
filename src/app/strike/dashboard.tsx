@@ -163,10 +163,14 @@ const fetchJson = async <T,>(url: string): Promise<T> => {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function fmtNum(val: number): string {
+  return val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 function formatPnl(val: number | null | undefined): string {
   const v = val ?? 0
   const sign = v >= 0 ? "+" : ""
-  return `${sign}${v.toFixed(2)}`
+  return `${sign}${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function formatPct(val: number | null | undefined): string {
@@ -362,7 +366,7 @@ function PnlTooltip({ active, payload, label }: {
     <div className="rounded-lg border border-[#22D3EE]/20 bg-[#0A0E17]/95 px-4 py-3 shadow-xl backdrop-blur-md">
       <p className="mb-1 text-xs text-muted-foreground">{label}</p>
       <p className={`font-mono text-sm font-semibold tabular-nums ${cumulative >= 0 ? "text-gain" : "text-loss"}`}>
-        {formatPnl(cumulative)} USDT
+        {formatPnl(cumulative)} USD
       </p>
     </div>
   )
@@ -736,7 +740,7 @@ export default function StrikeDashboard() {
           value={`$${accountValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           icon={BarChart3}
           color="text-[#22D3EE]"
-          sub="USDT (testnet)"
+          sub="USD"
         />
         <StatCard
           label="Total P&L"
@@ -763,7 +767,7 @@ export default function StrikeDashboard() {
           value={stats ? `${stats.totalTrades}` : "0"}
           icon={Activity}
           color="text-white/90"
-          sub={stats && stats.totalTrades > 0 ? `Avg: ${formatPnl(stats.avgPnl)} USDT` : "Warming up"}
+          sub={stats && stats.totalTrades > 0 ? `Avg: ${formatPnl(stats.avgPnl)} USD` : "Warming up"}
         />
         <StatCard
           label="Open Positions"
@@ -790,7 +794,7 @@ export default function StrikeDashboard() {
         <div className="flex items-center gap-2">
           <span className="text-white/40">Today</span>
           <span className={`font-mono font-semibold tabular-nums ${dailySummary.todayPnl >= 0 ? "text-gain" : "text-loss"}`}>
-            {formatPnl(dailySummary.todayPnl)} USDT
+            {formatPnl(dailySummary.todayPnl)} USD
           </span>
           <span className="font-mono text-xs tabular-nums text-white/40">
             ({dailySummary.todayWins}W / {dailySummary.todayLosses}L)
@@ -800,21 +804,21 @@ export default function StrikeDashboard() {
         <div className="flex items-center gap-2">
           <span className="text-white/40">This Week</span>
           <span className={`font-mono font-semibold tabular-nums ${dailySummary.weekPnl >= 0 ? "text-gain" : "text-loss"}`}>
-            {formatPnl(dailySummary.weekPnl)} USDT
+            {formatPnl(dailySummary.weekPnl)} USD
           </span>
         </div>
         <div className="h-4 w-px bg-[#22D3EE]/20" />
         <div className="flex items-center gap-2">
           <span className="text-white/40">This Month</span>
           <span className={`font-mono font-semibold tabular-nums ${dailySummary.monthPnl >= 0 ? "text-gain" : "text-loss"}`}>
-            {formatPnl(dailySummary.monthPnl)} USDT
+            {formatPnl(dailySummary.monthPnl)} USD
           </span>
         </div>
         <div className="h-4 w-px bg-[#22D3EE]/20" />
         <div className="flex items-center gap-2">
           <span className="text-white/40">Open Exposure</span>
           <span className="font-mono font-semibold tabular-nums text-[#06B6D4]">
-            ${openExposure.toFixed(2)}
+            ${fmtNum(openExposure)}
           </span>
         </div>
         <div className="h-4 w-px bg-[#22D3EE]/20" />
@@ -865,7 +869,7 @@ export default function StrikeDashboard() {
             <div className="flex h-72 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <BarChart3 className="h-8 w-8 text-white/10" />
               <span>No trade data yet — bot is warming up</span>
-              <span className="text-xs text-white/20">Account balance: ${accountValue.toFixed(2)}</span>
+              <span className="text-xs text-white/20">Account balance: ${fmtNum(accountValue)}</span>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={320}>
@@ -977,7 +981,7 @@ export default function StrikeDashboard() {
                 <span className={`font-mono text-sm font-semibold tabular-nums ${
                   totalUnrealizedPnl >= 0 ? "text-gain" : "text-loss"
                 }`}>
-                  {totalUnrealizedPnl >= 0 ? "+" : ""}{totalUnrealizedPnl.toFixed(2)}
+                  {totalUnrealizedPnl >= 0 ? "+" : ""}{fmtNum(totalUnrealizedPnl)}
                 </span>
               )}
               <span className="font-mono text-sm tabular-nums text-muted-foreground">
@@ -1054,7 +1058,7 @@ export default function StrikeDashboard() {
                           : "bg-loss-bg text-loss"
                       }`}>
                         <span className="font-medium">
-                          {pos.unrealizedPnl >= 0 ? "+" : ""}{pos.unrealizedPnl.toFixed(2)} USDT
+                          {pos.unrealizedPnl >= 0 ? "+" : ""}{fmtNum(pos.unrealizedPnl)} USD
                         </span>
                         {pos.unrealizedPnlPct != null && (
                           <span className="text-[10px] opacity-80">
@@ -1066,7 +1070,7 @@ export default function StrikeDashboard() {
                     <div className="grid grid-cols-2 gap-y-2 text-xs">
                       <div>
                         <span className="text-muted-foreground">Margin</span>
-                        <p className="font-mono font-medium tabular-nums">${pos.margin.toFixed(2)}</p>
+                        <p className="font-mono font-medium tabular-nums">${fmtNum(pos.margin)}</p>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Entry</span>
@@ -1271,7 +1275,7 @@ export default function StrikeDashboard() {
                             </Badge>
                           </td>
                           <td className="py-3 pr-3 text-right font-mono tabular-nums">
-                            ${trade.margin.toFixed(2)}
+                            ${fmtNum(trade.margin)}
                           </td>
                           <td className="hidden py-3 pr-3 text-right font-mono tabular-nums md:table-cell">{trade.leverage}x</td>
                           <td className="py-3 pr-3 text-right font-mono tabular-nums">
@@ -1441,7 +1445,7 @@ export default function StrikeDashboard() {
                           </span>
                         </span>
                         <span className={`font-mono font-semibold tabular-nums ${isPositive ? "text-gain" : "text-loss"}`}>
-                          {formatPnl(a.totalPnl)} USDT
+                          {formatPnl(a.totalPnl)} USD
                         </span>
                       </div>
                     </div>
@@ -1607,7 +1611,7 @@ export default function StrikeDashboard() {
                       <div key={cat.category}>
                         <div className="mb-1 flex items-center justify-between text-xs">
                           <span className="font-medium" style={{ color }}>{cat.category}</span>
-                          <span className="font-mono tabular-nums text-muted-foreground">${cat.margin.toFixed(2)}</span>
+                          <span className="font-mono tabular-nums text-muted-foreground">${fmtNum(cat.margin)}</span>
                         </div>
                         <div className="h-3 w-full overflow-hidden rounded-full bg-white/5">
                           <motion.div
@@ -1633,7 +1637,7 @@ export default function StrikeDashboard() {
                     Max Loss Scenario
                   </div>
                   <p className="mt-1 font-mono text-xl font-bold tabular-nums text-loss">
-                    -${maxLossScenario.toFixed(2)}
+                    -${fmtNum(maxLossScenario)}
                   </p>
                   <p className="mt-0.5 text-[10px] text-muted-foreground">If all positions hit stop-loss</p>
                 </div>
@@ -1642,7 +1646,7 @@ export default function StrikeDashboard() {
                 <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
                   <div className="text-xs font-medium text-muted-foreground">Capital Deployed</div>
                   <p className="mt-1 font-mono text-xl font-bold tabular-nums text-[#22D3EE]">
-                    ${openExposure.toFixed(2)}
+                    ${fmtNum(openExposure)}
                   </p>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
                     <motion.div
@@ -1745,7 +1749,7 @@ export default function StrikeDashboard() {
         transition={{ delay: 0.5 }}
         className="pb-4 text-center text-xs text-muted-foreground"
       >
-        Data sourced from Strike Finance testnet. All values in USDT. Auto-refreshes every 10-60s.
+        Data sourced from Strike Finance mainnet. All values in USD. Auto-refreshes every 10-60s.
       </motion.p>
 
       <FlexCard

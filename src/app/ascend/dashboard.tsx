@@ -162,10 +162,14 @@ const fetchJson = async <T,>(url: string): Promise<T> => {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function fmtNum(val: number): string {
+  return val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 function formatPnl(val: number | null | undefined): string {
   const v = val ?? 0
   const sign = v >= 0 ? "+" : ""
-  return `${sign}${v.toFixed(2)}`
+  return `${sign}${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function formatPct(val: number | null | undefined): string {
@@ -823,7 +827,7 @@ export default function AscendDashboard() {
         <div className="flex items-center gap-2">
           <span className="text-white/40">Open Exposure</span>
           <span className="font-mono font-semibold tabular-nums text-[#F07B3F]">
-            ${openExposure.toFixed(2)}
+            ${fmtNum(openExposure)}
           </span>
         </div>
         <div className="h-4 w-px bg-[#E8622C]/20" />
@@ -988,7 +992,7 @@ export default function AscendDashboard() {
                 <span className={`font-mono text-sm font-semibold tabular-nums ${
                   totalUnrealizedPnl >= 0 ? "text-gain" : "text-loss"
                 }`}>
-                  {totalUnrealizedPnl >= 0 ? "+" : ""}{totalUnrealizedPnl.toFixed(2)}
+                  {totalUnrealizedPnl >= 0 ? "+" : ""}{fmtNum(totalUnrealizedPnl)}
                 </span>
               )}
               <span className="font-mono text-sm tabular-nums text-muted-foreground">
@@ -1065,7 +1069,7 @@ export default function AscendDashboard() {
                           : "bg-loss-bg text-loss"
                       }`}>
                         <span className="font-medium">
-                          {pos.unrealizedPnl >= 0 ? "+" : ""}{pos.unrealizedPnl.toFixed(2)} USDT
+                          {pos.unrealizedPnl >= 0 ? "+" : ""}{fmtNum(pos.unrealizedPnl)} USDT
                         </span>
                         {pos.unrealizedPnlPct != null && (
                           <span className="text-[10px] opacity-80">
@@ -1077,7 +1081,7 @@ export default function AscendDashboard() {
                     <div className="grid grid-cols-2 gap-y-2 text-xs">
                       <div>
                         <span className="text-muted-foreground">Margin</span>
-                        <p className="font-mono font-medium tabular-nums">${pos.margin.toFixed(2)}</p>
+                        <p className="font-mono font-medium tabular-nums">${fmtNum(pos.margin)}</p>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Entry</span>
@@ -1266,7 +1270,7 @@ export default function AscendDashboard() {
                             </Badge>
                           </td>
                           <td className="py-3 pr-3 text-right font-mono tabular-nums">
-                            ${trade.margin.toFixed(2)}
+                            ${fmtNum(trade.margin)}
                           </td>
                           <td className="hidden py-3 pr-3 text-right font-mono tabular-nums md:table-cell">{trade.leverage}x</td>
                           <td className="py-3 pr-3 text-right font-mono tabular-nums">
@@ -1604,7 +1608,7 @@ export default function AscendDashboard() {
                       <div key={cat.category}>
                         <div className="mb-1 flex items-center justify-between text-xs">
                           <span className="font-medium" style={{ color }}>{cat.category}</span>
-                          <span className="font-mono tabular-nums text-muted-foreground">${cat.margin.toFixed(2)}</span>
+                          <span className="font-mono tabular-nums text-muted-foreground">${fmtNum(cat.margin)}</span>
                         </div>
                         <div className="h-3 w-full overflow-hidden rounded-full bg-white/5">
                           <motion.div
@@ -1630,7 +1634,7 @@ export default function AscendDashboard() {
                     Max Loss Scenario
                   </div>
                   <p className="mt-1 font-mono text-xl font-bold tabular-nums text-loss">
-                    -${maxLossScenario.toFixed(2)}
+                    -${fmtNum(maxLossScenario)}
                   </p>
                   <p className="mt-0.5 text-[10px] text-muted-foreground">If all positions hit stop-loss</p>
                 </div>
@@ -1639,7 +1643,7 @@ export default function AscendDashboard() {
                 <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
                   <div className="text-xs font-medium text-muted-foreground">Capital Deployed</div>
                   <p className="mt-1 font-mono text-xl font-bold tabular-nums text-[#E8622C]">
-                    ${openExposure.toFixed(2)}
+                    ${fmtNum(openExposure)}
                   </p>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
                     <motion.div

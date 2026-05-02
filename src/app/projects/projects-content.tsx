@@ -805,9 +805,9 @@ export function ProjectsContent() {
         ))}
       </div>
 
-      <FeaturedHypeCard />
       <FeaturedAscendCard />
       <FeaturedStrikeCard />
+      <FeaturedHypeCard />
 
       <AnimatePresence mode="popLayout">
         <motion.div

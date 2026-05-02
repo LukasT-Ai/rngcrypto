@@ -6,6 +6,8 @@ import { ExternalLink } from "lucide-react"
 
 const exploreLinks = [
   { href: "/ascend", label: "Ascend" },
+  { href: "/strike", label: "Strike" },
+  { href: "/hype", label: "Hype" },
   { href: "/projects", label: "Projects" },
   { href: "/blog", label: "Blog" },
   { href: "/about", label: "About" },
@@ -30,7 +32,7 @@ export function Footer() {
               <span className="text-foreground">crYptO</span>
             </Link>
             <p className="mt-3 max-w-xs text-sm leading-relaxed text-muted-foreground">
-              Web3 creator, DeFi degen, and builder of autonomous trading bots.
+              Web3 creator, DeFi degen, and builder of autonomous trading agents.
             </p>
             <div className="mt-4 flex items-center gap-4">
               <a
@@ -100,7 +102,7 @@ export function Footer() {
               Stay in the loop
             </h3>
             <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
-              Trading bot updates, DeFi alpha, and Web3 insights.
+              Trading agent updates, DeFi alpha, and Web3 insights.
             </p>
             <form
               onSubmit={(e) => {

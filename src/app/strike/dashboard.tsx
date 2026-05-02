@@ -385,7 +385,7 @@ export default function StrikeDashboard() {
   const [expandedTradeId, setExpandedTradeId] = useState<number | null>(null)
 
   const SHARE_URL = "https://www.rngcrypto.com/strike"
-  const SHARE_TEXT = "Autonomous bot trading perpetual futures on @strikeperps \u{1F916}\n\nDecentralized perps on Cardano. Real yield from $STRIKE staking.\n\n#Cardano $ADA $STRIKE"
+  const SHARE_TEXT = "Autonomous agent trading perpetual futures on @strikeperps \u{1F916}\n\nDecentralized perps on Cardano. Real yield from $STRIKE staking.\n\n#Cardano $ADA $STRIKE"
 
   function shareOnX() {
     const text = encodeURIComponent(SHARE_TEXT)
@@ -619,7 +619,7 @@ export default function StrikeDashboard() {
           </div>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="font-display text-3xl font-bold tracking-tight text-[#22D3EE]">Strike Bot</h1>
+              <h1 className="font-display text-3xl font-bold tracking-tight text-[#22D3EE]">Strike Agent</h1>
               <Badge variant="secondary" className="gap-1.5 bg-[#22D3EE]/15 text-[#22D3EE] border border-[#22D3EE]/30 text-xs">
                 <span className="relative flex size-1.5">
                   <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#22D3EE] opacity-75" />
@@ -868,7 +868,7 @@ export default function StrikeDashboard() {
           ) : timeline.length === 0 ? (
             <div className="flex h-72 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <BarChart3 className="h-8 w-8 text-white/10" />
-              <span>No trade data yet — bot is warming up</span>
+              <span>No trade data yet — agent is warming up</span>
               <span className="text-xs text-white/20">Account balance: ${fmtNum(accountValue)}</span>
             </div>
           ) : (
@@ -1202,7 +1202,7 @@ export default function StrikeDashboard() {
           ) : filteredTrades.length === 0 ? (
             <div className="flex h-24 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
               <Activity className="h-5 w-5 text-white/10" />
-              {trades.length === 0 ? "No trades yet — bot is warming up" : "No trades found"}
+              {trades.length === 0 ? "No trades yet — agent is warming up" : "No trades found"}
             </div>
           ) : (
             <div className="overflow-x-auto">

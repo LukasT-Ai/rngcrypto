@@ -12,6 +12,7 @@ import {
   X,
   Zap,
   TrendingUp,
+  Activity,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -20,6 +21,7 @@ import { useState, useEffect } from "react"
 const navItems = [
   { href: "/ascend", label: "Ascend", icon: BarChart3 },
   { href: "/strike", label: "Strike", icon: TrendingUp },
+  { href: "/hype", label: "Hype", icon: Activity },
   { href: "/projects", label: "Projects", icon: Layers },
   { href: "/proposals", label: "Proposals", icon: Zap },
   { href: "/blog", label: "Blog", icon: PenSquare },
@@ -73,8 +75,9 @@ export function Navbar() {
             const isActive = pathname.startsWith(item.href)
             const isAscend = item.href === "/ascend"
             const isStrike = item.href === "/strike"
-            const activeColor = isAscend ? "text-[#E8622C]" : isStrike ? "text-[#22D3EE]" : "text-[#00FF88]"
-            const activeBar = isAscend ? "via-[#E8622C]" : isStrike ? "via-[#22D3EE]" : "via-[#00FF88]"
+            const isHype = item.href === "/hype"
+            const activeColor = isAscend ? "text-[#E8622C]" : isStrike ? "text-[#22D3EE]" : isHype ? "text-[#7BEBC2]" : "text-[#00FF88]"
+            const activeBar = isAscend ? "via-[#E8622C]" : isStrike ? "via-[#22D3EE]" : isHype ? "via-[#7BEBC2]" : "via-[#00FF88]"
             return (
               <Link
                 key={item.href}
@@ -140,11 +143,14 @@ export function Navbar() {
                   : pathname.startsWith(item.href)
               const isAscend = item.href === "/ascend"
               const isStrike = item.href === "/strike"
+              const isHype = item.href === "/hype"
               const mobileActiveClass = isAscend
                 ? "bg-[#E8622C]/10 text-[#E8622C]"
                 : isStrike
                   ? "bg-[#22D3EE]/10 text-[#22D3EE]"
-                  : "bg-[#00FF88]/10 text-[#00FF88]"
+                  : isHype
+                    ? "bg-[#7BEBC2]/10 text-[#7BEBC2]"
+                    : "bg-[#00FF88]/10 text-[#00FF88]"
               return (
                 <Link
                   key={item.href}

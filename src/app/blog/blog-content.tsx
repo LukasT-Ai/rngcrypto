@@ -46,11 +46,11 @@ const posts: BlogPost[] = [
   },
   {
     slug: "building-autonomous-trading-bot-ascend",
-    title: "Building an Autonomous Trading Bot on Ascend Market",
+    title: "Building an Autonomous Trading Agent on Ascend Market",
     date: "Apr 10, 2026",
     categories: ["Trading"],
     excerpt:
-      "A deep dive into how I built an autonomous event perpetuals trading bot on Ascend Market's testnet. EMA crossovers, RSI filters, ATR-based sizing, and the lessons learned from letting code trade for you.",
+      "A deep dive into how I built an autonomous event perpetuals trading agent on Ascend Market's testnet. EMA crossovers, RSI filters, ATR-based sizing, and the lessons learned from letting code trade for you.",
     readingTime: 8,
   },
   {
@@ -104,7 +104,7 @@ const posts: BlogPost[] = [
     date: "Jan 5, 2026",
     categories: ["Opinion"],
     excerpt:
-      "I started in crypto chasing pumps. Now I build trading bots, run a YouTube channel, and ship code daily. This is the story of how Web3 turned a retail degen into a full-time builder.",
+      "I started in crypto chasing pumps. Now I build trading agents, run a YouTube channel, and ship code daily. This is the story of how Web3 turned a retail degen into a full-time builder.",
     readingTime: 6,
   },
   {
@@ -338,7 +338,7 @@ export default function BlogContent() {
               Get the alpha straight to your inbox
             </h2>
             <p className="text-muted-foreground mt-2">
-              Web3 insights, bot updates, and market takes. No spam.
+              Web3 insights, agent updates, and market takes. No spam.
             </p>
             <div className="mt-6 flex gap-3 max-w-md mx-auto">
               <input

@@ -140,7 +140,7 @@ function AscendPreview() {
             </span>
           </div>
           <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Ascend Event Perpetuals Bot
+            Ascend Event Perpetuals Agent
           </h2>
           <p className="mt-3 max-w-xl text-white/40">
             14-source evaluation engine trading event perpetuals on Midnight.
@@ -257,7 +257,7 @@ function StrikePreview() {
             />
           </div>
           <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Perpetuals Trading Bot
+            Perpetuals Trading Agent
           </h2>
           <p className="mt-3 max-w-xl text-white/40">
             Multi-timeframe TA engine trading perpetual futures on Cardano mainnet.
@@ -313,6 +313,92 @@ function StrikePreview() {
           >
             <BarChart3 className="size-4" />
             View Full Dashboard
+            <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+          </Link>
+        </motion.div>
+      </div>
+    </section>
+  )
+}
+
+function HypePreview() {
+  return (
+    <section className="relative py-24">
+      <div className="mx-auto max-w-7xl px-4 lg:px-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+          className="mb-12 flex flex-col items-center text-center"
+        >
+          <div className="mb-4 flex items-center gap-2 rounded-full border border-[#7BEBC2]/20 bg-[#7BEBC2]/5 px-4 py-1.5">
+            <span className="text-xs font-medium text-[#7BEBC2]">
+              Coming Soon
+            </span>
+          </div>
+          <div className="mb-3">
+            <Image
+              src="/hype/HYPE_LOGO_400x400.jpg"
+              alt="Hyperliquid"
+              width={120}
+              height={120}
+              className="rounded-2xl"
+            />
+          </div>
+          <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            Hype Agent
+          </h2>
+          <p className="mt-3 max-w-xl text-white/40">
+            Autonomous perpetual futures trading on Hyperliquid.
+            Multi-timeframe TA engine with EMA+RSI+ATR strategy.
+          </p>
+        </motion.div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Exchange"
+            value="Hyperliquid"
+            color="white"
+            delay={0.1}
+            accent="green"
+          />
+          <StatCard
+            label="Strategy"
+            value="EMA+RSI+ATR"
+            color="green"
+            delay={0.2}
+            accent="green"
+          />
+          <StatCard
+            label="Max Leverage"
+            value="5x"
+            color="white"
+            delay={0.3}
+            accent="green"
+          />
+          <StatCard
+            label="Risk / Trade"
+            value="1%"
+            color="white"
+            delay={0.4}
+            accent="green"
+          />
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.5, duration: 0.5 }}
+          className="mt-8 flex justify-center"
+        >
+          <Link
+            href="/hype"
+            className="group flex items-center gap-2 rounded-full border border-[#7BEBC2]/30 bg-[#7BEBC2]/5 px-6 py-3 text-sm font-medium text-[#7BEBC2] transition-all hover:border-[#7BEBC2]/60 hover:bg-[#7BEBC2]/10"
+          >
+            <BarChart3 className="size-4" />
+            View Dashboard
             <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
           </Link>
         </motion.div>
@@ -449,7 +535,7 @@ function LatestContent() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {[
             {
-              title: "Building an Autonomous Trading Bot on Ascend Market",
+              title: "Building an Autonomous Trading Agent on Ascend Market",
               tag: "Build Log",
               date: "Apr 2026",
               excerpt:
@@ -601,7 +687,7 @@ export default function HomePage() {
             <div className="absolute -bottom-1 -right-1 flex items-center gap-1 rounded-full bg-[#06080F] px-2 py-1 ring-1 ring-white/10">
               <LivePulse />
               <span className="text-[10px] font-medium text-[#00FF88]">
-                Bot Live
+                Agent Live
               </span>
             </div>
           </motion.div>
@@ -656,7 +742,7 @@ export default function HomePage() {
               className="group flex items-center justify-center gap-2 rounded-full bg-[#00FF88] px-8 py-3.5 text-sm font-semibold text-[#06080F] transition-all hover:bg-[#00FF88]/90 hover:shadow-[0_0_30px_rgba(0,255,136,0.3)]"
             >
               <BarChart3 className="size-4" />
-              Live Bot Performance
+              Live Agent Performance
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
             </Link>
             <Link
@@ -688,11 +774,14 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Ascend Bot Stats */}
+      {/* Ascend Agent Stats */}
       <AscendPreview />
 
-      {/* Strike Bot Stats */}
+      {/* Strike Agent Stats */}
       <StrikePreview />
+
+      {/* Hype Agent Preview */}
+      <HypePreview />
 
       {/* Projects */}
       <ProjectsPreview />

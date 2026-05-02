@@ -325,6 +325,290 @@ function FeaturedAscendCard() {
   )
 }
 
+type StrikeOverview = {
+  stats: {
+    totalTrades: number
+    wins: number
+    losses: number
+    winRate: number
+    totalPnl: number
+    avgPnl: number
+    bestTrade: number
+    worstTrade: number
+  }
+}
+
+type StrikeLive = {
+  openPositions: { id: string }[]
+}
+
+function FeaturedStrikeCard() {
+  const { data: overview } = useQuery<StrikeOverview>({
+    queryKey: ["strike-overview"],
+    queryFn: async () => {
+      const res = await fetch("/api/strike?view=overview")
+      if (!res.ok) throw new Error("Failed to fetch")
+      return res.json()
+    },
+    refetchInterval: 30_000,
+    retry: false,
+  })
+
+  const { data: live } = useQuery<StrikeLive>({
+    queryKey: ["strike-live"],
+    queryFn: async () => {
+      const res = await fetch("/api/strike?view=live")
+      if (!res.ok) throw new Error("Failed to fetch")
+      return res.json()
+    },
+    refetchInterval: 15_000,
+    retry: false,
+  })
+
+  const stats = overview?.stats
+  const openCount = live?.openPositions?.length ?? 0
+  const hasTrades = stats && stats.totalTrades > 0
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="relative mb-10 overflow-hidden rounded-2xl border border-[#22D3EE]/20 bg-gradient-to-br from-[#22D3EE]/[0.06] via-[#06080F] to-[#06080F] p-8"
+    >
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-center">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ring-white/[0.08]">
+              <TrendingUp className="size-5 text-white/70" />
+            </div>
+            <h2 className="font-display text-xl font-bold tracking-tight lg:text-2xl">
+              Strike Finance
+            </h2>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22D3EE]/30 bg-[#22D3EE]/20 px-2.5 py-0.5 text-xs font-medium text-[#22D3EE]">
+              <span className="relative flex size-1.5">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#22D3EE] opacity-75" />
+                <span className="relative inline-flex size-1.5 rounded-full bg-[#22D3EE]" />
+              </span>
+              LIVE
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-white/40">Perpetual Futures on Cardano Mainnet</p>
+          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-white/60">
+            Decentralized perpetual futures trading on Cardano via Strike Finance. Multi-timeframe TA engine with up to 50x leverage on ADA/USD and SNEK/USD pairs. Real money, real results.
+          </p>
+
+          <div className="mt-6 flex flex-wrap gap-6">
+            <div className="text-center">
+              <div className="font-mono text-lg font-bold text-white/90">
+                {hasTrades ? stats.totalTrades.toLocaleString() : "---"}
+              </div>
+              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total Trades</div>
+            </div>
+            <div className="text-center">
+              <div className="font-mono text-lg font-bold text-[#22D3EE]">
+                {hasTrades ? `${stats.winRate}%` : "---"}
+              </div>
+              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Win Rate</div>
+            </div>
+            <div className="text-center">
+              <div className="font-mono text-lg font-bold text-white/90">
+                {openCount}
+              </div>
+              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Open Positions</div>
+            </div>
+            <div className="text-center">
+              <div className={`font-mono text-lg font-bold ${hasTrades && stats.totalPnl >= 0 ? "text-gain" : hasTrades ? "text-loss" : "text-white/90"}`}>
+                {hasTrades
+                  ? `${stats.totalPnl >= 0 ? "+" : ""}${stats.totalPnl.toLocaleString()} ADA`
+                  : "---"}
+              </div>
+              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total PnL</div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              href="/strike"
+              className="inline-flex items-center gap-2 rounded-full bg-[#22D3EE] px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              Live Dashboard
+              <ArrowRight className="size-4" />
+            </Link>
+            <a
+              href="https://x.com/strikeperps"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80"
+            >
+              <ExternalLink className="size-3.5" />
+              View on X
+            </a>
+          </div>
+        </div>
+
+        <div className="hidden w-[300px] shrink-0 lg:block">
+          <div className="relative h-[200px] w-full overflow-hidden rounded-xl">
+            <Image
+              src="/strike/Logo_full text_strikefinance.jpeg"
+              alt="Strike Finance perpetual futures"
+              fill
+              className="object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#06080F]/60 to-transparent" />
+          </div>
+        </div>
+      </div>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-[#22D3EE]/40 to-transparent" />
+    </motion.div>
+  )
+}
+
+type HypeOverview = {
+  stats: {
+    totalTrades: number
+    wins: number
+    losses: number
+    winRate: number
+    totalPnl: number
+    accountValue: number
+  }
+}
+
+type HypeLive = {
+  openPositions: { asset: string }[]
+  accountValue: number
+}
+
+function FeaturedHypeCard() {
+  const { data: overview } = useQuery<HypeOverview>({
+    queryKey: ["hype-overview"],
+    queryFn: async () => {
+      const res = await fetch("/api/hype?view=overview")
+      if (!res.ok) throw new Error("Failed to fetch")
+      return res.json()
+    },
+    refetchInterval: 30_000,
+    retry: false,
+  })
+
+  const { data: live } = useQuery<HypeLive>({
+    queryKey: ["hype-live"],
+    queryFn: async () => {
+      const res = await fetch("/api/hype?view=live")
+      if (!res.ok) throw new Error("Failed to fetch")
+      return res.json()
+    },
+    refetchInterval: 15_000,
+    retry: false,
+  })
+
+  const stats = overview?.stats
+  const openCount = live?.openPositions?.length ?? 0
+  const hasTrades = stats && stats.totalTrades > 0
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="relative mb-10 overflow-hidden rounded-2xl border border-[#7BEBC2]/20 bg-gradient-to-br from-[#0E2E2E]/40 via-[#06080F] to-[#06080F] p-8"
+    >
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-center">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3">
+            <div className="relative size-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-[#7BEBC2]/20">
+              <Image
+                src="/hype/HYPE_LOGO_400x400.jpg"
+                alt="Hyperliquid"
+                fill
+                className="object-cover"
+              />
+            </div>
+            <h2 className="font-display text-xl font-bold tracking-tight lg:text-2xl">
+              Hype Agent
+            </h2>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#7BEBC2]/30 bg-[#7BEBC2]/20 px-2.5 py-0.5 text-xs font-medium text-[#7BEBC2]">
+              <span className="relative flex size-1.5">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#7BEBC2] opacity-75" />
+                <span className="relative inline-flex size-1.5 rounded-full bg-[#7BEBC2]" />
+              </span>
+              LIVE
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-white/40">Perpetual Futures on Hyperliquid</p>
+          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-white/60">
+            Multi-timeframe technical analysis engine trading perpetual futures on Hyperliquid. EMA+RSI+ATR strategy with dynamic position sizing and strict risk management. Full transparency, every trade tracked.
+          </p>
+
+          <div className="mt-6 flex flex-wrap gap-6">
+            <div className="text-center">
+              <div className="font-mono text-lg font-bold text-white/90">
+                {hasTrades ? stats.totalTrades.toLocaleString() : "---"}
+              </div>
+              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total Trades</div>
+            </div>
+            <div className="text-center">
+              <div className="font-mono text-lg font-bold text-[#7BEBC2]">
+                {hasTrades ? `${stats.winRate}%` : "---"}
+              </div>
+              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Win Rate</div>
+            </div>
+            <div className="text-center">
+              <div className="font-mono text-lg font-bold text-white/90">
+                {openCount}
+              </div>
+              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Open Positions</div>
+            </div>
+            <div className="text-center">
+              <div className={`font-mono text-lg font-bold ${hasTrades && stats.totalPnl >= 0 ? "text-gain" : hasTrades ? "text-loss" : "text-white/90"}`}>
+                {hasTrades
+                  ? `${stats.totalPnl >= 0 ? "+" : ""}${stats.totalPnl.toLocaleString()} USDC`
+                  : "---"}
+              </div>
+              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total PnL</div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              href="/hype"
+              className="inline-flex items-center gap-2 rounded-full bg-[#7BEBC2] px-6 py-2.5 text-sm font-semibold text-[#0E2E2E] transition-opacity hover:opacity-90"
+            >
+              Live Dashboard
+              <ArrowRight className="size-4" />
+            </Link>
+            <a
+              href="https://x.com/HyperliquidX"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80"
+            >
+              <ExternalLink className="size-3.5" />
+              View on X
+            </a>
+          </div>
+        </div>
+
+        <div className="hidden w-[300px] shrink-0 lg:block">
+          <div className="relative h-[200px] w-full overflow-hidden rounded-xl">
+            <Image
+              src="/hype/HYPE_LOGO_400x400.jpg"
+              alt="Hyperliquid logo"
+              fill
+              className="object-contain bg-[#0E2E2E] p-6"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#06080F]/40 to-transparent" />
+          </div>
+        </div>
+      </div>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-[#7BEBC2]/40 to-transparent" />
+    </motion.div>
+  )
+}
+
 function ProjectCard({ project }: { project: Project }) {
   const chainColor = chainColors[project.chain]
 
@@ -475,7 +759,7 @@ export function ProjectsContent() {
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-white/50">
           The Web3 journey across Cardano, Midnight, Ethereum, and Bitcoin.
-          From autonomous trading bots to NFT communities, DeFi protocols
+          From autonomous trading agents to NFT communities, DeFi protocols
           to Layer 1 infrastructure.
         </p>
 
@@ -495,7 +779,7 @@ export function ProjectsContent() {
             { value: "6", label: "Active Projects" },
             { value: "4", label: "Blockchains" },
             { value: "$32M+", label: "Ecosystem TVL" },
-            { value: "24/7", label: "Bot Uptime" },
+            { value: "24/7", label: "Agent Uptime" },
           ].map((stat) => (
             <div key={stat.label} className="text-center">
               <div className="font-mono text-2xl font-bold text-[#00FF88]">{stat.value}</div>
@@ -521,7 +805,9 @@ export function ProjectsContent() {
         ))}
       </div>
 
+      <FeaturedHypeCard />
       <FeaturedAscendCard />
+      <FeaturedStrikeCard />
 
       <AnimatePresence mode="popLayout">
         <motion.div

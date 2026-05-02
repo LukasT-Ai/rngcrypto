@@ -393,7 +393,7 @@ export default function AscendDashboard() {
   const [expandedTradeId, setExpandedTradeId] = useState<number | null>(null)
 
   const SHARE_URL = "https://www.rngcrypto.com/ascend"
-  const SHARE_TEXT = "Autonomous bot trading event perpetuals on @AscendPerps \u{1F916}\n\n100% of platform fees go back to $ASCEND holders. Real yield, no gimmicks.\n\n#Cardano $ADA $ASCEND"
+  const SHARE_TEXT = "Autonomous agent trading event perpetuals on @AscendPerps \u{1F916}\n\n100% of platform fees go back to $ASCEND holders. Real yield, no gimmicks.\n\n#Cardano $ADA $ASCEND"
 
   function shareOnX() {
     const text = encodeURIComponent(SHARE_TEXT)
@@ -628,7 +628,7 @@ export default function AscendDashboard() {
           </div>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="font-display text-3xl font-bold tracking-tight text-[#E8622C]">Ascend Bot</h1>
+              <h1 className="font-display text-3xl font-bold tracking-tight text-[#E8622C]">Ascend Agent</h1>
               <Badge variant="secondary" className="gap-1.5 bg-[#E8622C]/15 text-[#E8622C] border border-[#E8622C]/30 text-xs">
                 <span className="relative flex size-1.5">
                   <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#E8622C] opacity-75" />

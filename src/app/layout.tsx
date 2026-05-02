@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     template: "%s | RnGcrYptO",
   },
   description:
-    "Web3 creator, DeFi degen, and builder of autonomous trading bots across Cardano, Ethereum, Midnight, and Bitcoin. Follow the journey through Ascend Market, Good Vibes Club, Arbiter, Liqwid Finance, and Midnight.",
+    "Web3 creator, DeFi degen, and builder of autonomous trading agents across Cardano, Ethereum, Midnight, and Bitcoin. Follow the journey through Ascend Market, Good Vibes Club, Arbiter, Liqwid Finance, and Midnight.",
   keywords: [
     "RnGcrYptO",
     "Cardano",
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     "DeFi",
     "Web3",
     "NFT",
-    "trading bot",
+    "trading agent",
     "Ascend Market",
     "Good Vibes Club",
     "Arbiter",
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "RnGcrYptO | Web3, DeFi & Autonomous Trading",
     description:
-      "Web3 creator, DeFi degen, and builder of autonomous trading bots. Live bot performance, NFT collections, and the Web3 journey.",
+      "Web3 creator, DeFi degen, and builder of autonomous trading agents. Live agent performance, NFT collections, and the Web3 journey.",
     url: "https://rngcrypto.com",
     siteName: "RnGcrYptO",
     images: [
@@ -66,7 +66,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "RnGcrYptO | Web3, DeFi & Autonomous Trading",
     description:
-      "Autonomous trading bots, NFTs, DeFi, and the Web3 journey. Live bot stats on-site.",
+      "Autonomous trading agents, NFTs, DeFi, and the Web3 journey. Live agent stats on-site.",
     creator: "@RnGcrYptO",
     images: ["/og-image.svg"],
   },
@@ -94,7 +94,7 @@ export default function RootLayout({
                 "https://www.youtube.com/@RnGcrYptO",
               ],
               description:
-                "Web3 builder, DeFi degen, and autonomous trading bot developer across Cardano, Ethereum, Midnight, and Bitcoin.",
+                "Web3 builder, DeFi degen, and autonomous trading agent developer across Cardano, Ethereum, Midnight, and Bitcoin.",
               knowsAbout: [
                 "DeFi",
                 "Autonomous Trading",

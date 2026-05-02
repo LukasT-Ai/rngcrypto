@@ -45,9 +45,9 @@ const milestones = [
   },
   {
     year: "2024",
-    title: "Started building bots",
+    title: "Started building agents",
     description:
-      "First autonomous trading code. Let the bot do the work, track everything transparently.",
+      "First autonomous trading code. Let the agent do the work, track everything transparently.",
   },
   {
     year: "2025",
@@ -79,7 +79,7 @@ const focuses = [
     icon: Bot,
     title: "Autonomous Trading",
     description:
-      "Building bots that trade event perpetuals on Ascend Market. Fully autonomous, data-driven, no manual intervention.",
+      "Building agents that trade event perpetuals on Ascend Market. Fully autonomous, data-driven, no manual intervention.",
     href: "/ascend",
     internal: true,
   },
@@ -87,7 +87,7 @@ const focuses = [
     icon: Twitter,
     title: "Content Creation",
     description:
-      "Sharing the Web3 journey on X and YouTube. Market takes, DeFi breakdowns, bot updates.",
+      "Sharing the Web3 journey on X and YouTube. Market takes, DeFi breakdowns, agent updates.",
     href: "https://x.com/RnGcrYptO",
     internal: false,
   },
@@ -160,10 +160,10 @@ export default function AboutContent() {
             <span className="text-[#00FF88]">RnG</span>crYptO
           </h1>
           <p className="text-lg text-muted-foreground">
-            Web3 Builder &middot; DeFi Degen &middot; Bot Builder
+            Web3 Builder &middot; DeFi Degen &middot; Agent Builder
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
-            {["SINCE 2021", "MULTI-CHAIN", "BOT BUILDER", "DeFi"].map((badge) => (
+            {["SINCE 2021", "MULTI-CHAIN", "AGENT BUILDER", "DeFi"].map((badge) => (
               <span
                 key={badge}
                 className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-mono text-xs text-white/50"
@@ -196,7 +196,7 @@ export default function AboutContent() {
       >
         {[
           {
-            label: "Total Bot Trades",
+            label: "Total Agent Trades",
             value: botStats ? botStats.totalTrades.toLocaleString() : "900+",
           },
           {

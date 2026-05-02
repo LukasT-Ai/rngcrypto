@@ -310,7 +310,7 @@ function FeaturedAscendCard() {
         <div className="hidden w-[300px] shrink-0 lg:block">
           <div className="relative h-[200px] w-full overflow-hidden rounded-xl">
             <Image
-              src="/avatar/ascend_liquid_staking.jpg"
+              src="/avatar/Project_Ascend.png"
               alt="Ascend Market event perpetuals"
               fill
               className="object-cover"
@@ -594,10 +594,10 @@ function FeaturedHypeCard() {
         <div className="hidden w-[300px] shrink-0 lg:block">
           <div className="relative h-[200px] w-full overflow-hidden rounded-xl">
             <Image
-              src="/hype/HYPE_LOGO_400x400.jpg"
-              alt="Hyperliquid logo"
+              src="/hype/Project_Hype.png"
+              alt="Hype Agent"
               fill
-              className="object-contain bg-[#0E2E2E] p-6"
+              className="object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#06080F]/40 to-transparent" />
           </div>

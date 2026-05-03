@@ -840,18 +840,24 @@ export default function HypeDashboard() {
                       <span className="text-muted-foreground">Mark</span>
                       <p className="font-mono font-medium tabular-nums">${fmtPrice(pos.markPrice)}</p>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Funding</span>
-                      <p className="font-mono font-medium tabular-nums">{fmtNum(pos.fundingAccrued)}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Hold Time</span>
-                      <p className="font-mono font-medium tabular-nums">{formatHoldTime(pos.openedAt)}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Opened</span>
-                      <p className="font-mono font-medium tabular-nums">{formatOpenedDate(pos.openedAt)}</p>
-                    </div>
+                    {pos.fundingAccrued !== 0 && (
+                      <div>
+                        <span className="text-muted-foreground">Funding</span>
+                        <p className="font-mono font-medium tabular-nums">{fmtNum(pos.fundingAccrued)}</p>
+                      </div>
+                    )}
+                    {pos.openedAt && (
+                      <div>
+                        <span className="text-muted-foreground">Hold Time</span>
+                        <p className="font-mono font-medium tabular-nums">{formatHoldTime(pos.openedAt)}</p>
+                      </div>
+                    )}
+                    {pos.openedAt && (
+                      <div>
+                        <span className="text-muted-foreground">Opened</span>
+                        <p className="font-mono font-medium tabular-nums">{formatOpenedDate(pos.openedAt)}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

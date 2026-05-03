@@ -140,12 +140,11 @@ function sideLabel(s: string): string {
   return s === "A" ? "long" : "short";
 }
 
+const TRADE_HISTORY_CUTOFF = new Date("2026-05-03T00:00:00Z").getTime();
+
 function processFillsIntoTrades(fills: HlFill[]): ProcessedTrade[] {
-  // Each fill with non-zero closedPnl represents a closing event.
-  // We treat these as individual "trades" since Hyperliquid already
-  // computes closedPnl per fill.
   return fills
-    .filter((f) => parseFloat(f.closedPnl) !== 0)
+    .filter((f) => parseFloat(f.closedPnl) !== 0 && f.time >= TRADE_HISTORY_CUTOFF)
     .sort((a, b) => b.time - a.time)
     .map((f) => ({
       id: f.hash,

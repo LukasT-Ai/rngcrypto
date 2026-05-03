@@ -34,6 +34,8 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Wallet,
   DollarSign,
 } from "lucide-react"
@@ -102,6 +104,7 @@ interface OpenPosition {
   unrealizedPnl: number
   marginUsed: number
   liquidationPrice: number | null
+  strategy: string | null
 }
 
 interface OverviewResponse {
@@ -255,6 +258,7 @@ export default function HypeDashboard() {
   const [timeframe, setTimeframe] = useState<number>(90)
   const [linkCopied, setLinkCopied] = useState(false)
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null)
+  const [tradesPage, setTradesPage] = useState(1)
 
   const SHARE_URL = "https://www.rngcrypto.com/hype"
   const SHARE_TEXT = "Autonomous perps trading agent on @HyperliquidX \u{1F916}\n\nEMA+RSI+ATR strategy, fully transparent, every trade tracked live.\n\n#Hyperliquid #DeFi #Trading"
@@ -666,6 +670,88 @@ export default function HypeDashboard() {
         </div>
       </motion.div>
 
+      {/* Risk Exposure */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, delay: 0.14 }}
+      >
+        <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Shield className="h-5 w-5 text-[#7BEBC2]" />
+            <h2 className="font-display text-lg font-semibold">Risk Exposure</h2>
+          </div>
+          {openPositions.length === 0 ? (
+            <div className="flex h-24 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Shield className="h-5 w-5 text-white/20" />
+              No open positions, no active risk
+            </div>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Exposure by Asset</h3>
+                <div className="space-y-3">
+                  {openPositions.map((pos) => {
+                    const maxMargin = Math.max(...openPositions.map((p) => p.marginUsed), 1)
+                    const barWidth = (pos.marginUsed / maxMargin) * 100
+                    return (
+                      <div key={`${pos.asset}-${pos.side}`}>
+                        <div className="mb-1 flex items-center justify-between text-xs">
+                          <span className="font-medium text-[#7BEBC2]">
+                            {pos.asset} <span className={pos.side === "long" ? "text-gain" : "text-loss"}>{pos.side.toUpperCase()}</span>
+                          </span>
+                          <span className="font-mono tabular-nums text-muted-foreground">${fmtNum(pos.marginUsed)}</span>
+                        </div>
+                        <div className="h-3 w-full overflow-hidden rounded-full bg-white/5">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${barWidth}%` }}
+                            transition={{ duration: 0.8, ease: "easeOut" }}
+                            className="h-full rounded-full bg-[#7BEBC2]"
+                            style={{ opacity: 0.7 }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="text-xs font-medium text-muted-foreground">Total Margin Used</div>
+                  <p className="mt-1 font-mono text-xl font-bold tabular-nums text-[#7BEBC2]">
+                    ${fmtNum(openExposure)}
+                  </p>
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {openPositions.length} position{openPositions.length !== 1 ? "s" : ""} open
+                  </p>
+                </div>
+                {liveData && (
+                  <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="text-xs font-medium text-muted-foreground">Available Balance</div>
+                    <p className="mt-1 font-mono text-xl font-bold tabular-nums text-white/90">
+                      ${fmtNum(liveData.withdrawable)}
+                    </p>
+                    <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min((openExposure / Math.max(liveData.accountValue, 1)) * 100, 100)}%` }}
+                        transition={{ duration: 0.8, ease: "easeOut" }}
+                        className="h-full rounded-full bg-[#7BEBC2]"
+                        style={{ opacity: 0.7 }}
+                      />
+                    </div>
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      {((openExposure / Math.max(liveData.accountValue, 1)) * 100).toFixed(1)}% utilized
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+
       {/* Asset Activity Heatmap */}
       {assetHeatmap.length > 0 && (
         <motion.div
@@ -768,6 +854,11 @@ export default function HypeDashboard() {
                       >
                         {pos.side.toUpperCase()}
                       </Badge>
+                      {pos.strategy && (
+                        <Badge variant="outline" className="text-[10px] font-medium border-[#7BEBC2]/30 text-[#7BEBC2]">
+                          {pos.strategy.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                        </Badge>
+                      )}
                     </div>
                     <span className={`rounded-full px-2 py-0.5 text-xs font-mono font-medium tabular-nums ${
                       pos.leverage >= 6
@@ -836,7 +927,7 @@ export default function HypeDashboard() {
               <Filter className="h-3.5 w-3.5 text-muted-foreground" />
               <select
                 value={assetFilter}
-                onChange={(e) => setAssetFilter(e.target.value)}
+                onChange={(e) => { setAssetFilter(e.target.value); setTradesPage(1) }}
                 className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-foreground backdrop-blur-sm focus:border-[#7BEBC2] focus:outline-none focus:ring-1 focus:ring-[#7BEBC2]"
               >
                 <option value="all">All Assets</option>
@@ -860,7 +951,11 @@ export default function HypeDashboard() {
               <Activity className="h-5 w-5 text-white/20" />
               {hasData ? "No trades found for this filter" : "No trades yet — waiting for first trade"}
             </div>
-          ) : (
+          ) : (() => {
+            const TRADES_PER_PAGE = 20
+            const totalTradesPages = Math.ceil(filteredTrades.length / TRADES_PER_PAGE)
+            const paginatedTrades = filteredTrades.slice((tradesPage - 1) * TRADES_PER_PAGE, tradesPage * TRADES_PER_PAGE)
+            return (<>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[600px] text-sm">
                 <thead>
@@ -875,7 +970,7 @@ export default function HypeDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredTrades.map((trade) => {
+                  {paginatedTrades.map((trade) => {
                     const pnl = trade.pnl ?? 0
                     const isWin = pnl > 0
                     const isExpanded = expandedTradeId === trade.id
@@ -977,7 +1072,32 @@ export default function HypeDashboard() {
                 </tbody>
               </table>
             </div>
-          )}
+            {totalTradesPages > 1 && (
+              <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-4">
+                <p className="text-xs text-muted-foreground">
+                  Showing {(tradesPage - 1) * TRADES_PER_PAGE + 1}–{Math.min(tradesPage * TRADES_PER_PAGE, filteredTrades.length)} of {filteredTrades.length}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setTradesPage((p) => Math.max(1, p - 1))}
+                    disabled={tradesPage === 1}
+                    className="rounded-md border border-white/10 bg-white/5 p-1.5 text-xs transition-colors hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="text-xs font-medium tabular-nums">{tradesPage} / {totalTradesPages}</span>
+                  <button
+                    onClick={() => setTradesPage((p) => Math.min(totalTradesPages, p + 1))}
+                    disabled={tradesPage === totalTradesPages}
+                    className="rounded-md border border-white/10 bg-white/5 p-1.5 text-xs transition-colors hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+            </>)
+          })()}
         </div>
       </motion.div>
 
@@ -1046,83 +1166,6 @@ export default function HypeDashboard() {
                   </div>
                 )
               })}
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Risk Exposure */}
-      {openPositions.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, delay: 0.34 }}
-        >
-          <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <Shield className="h-5 w-5 text-[#7BEBC2]" />
-              <h2 className="font-display text-lg font-semibold">Risk Exposure</h2>
-            </div>
-            <div className="grid gap-6 lg:grid-cols-3">
-              <div className="lg:col-span-2">
-                <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Exposure by Asset</h3>
-                <div className="space-y-3">
-                  {openPositions.map((pos) => {
-                    const maxMargin = Math.max(...openPositions.map((p) => p.marginUsed), 1)
-                    const barWidth = (pos.marginUsed / maxMargin) * 100
-                    return (
-                      <div key={`${pos.asset}-${pos.side}`}>
-                        <div className="mb-1 flex items-center justify-between text-xs">
-                          <span className="font-medium text-[#7BEBC2]">
-                            {pos.asset} <span className={pos.side === "long" ? "text-gain" : "text-loss"}>{pos.side.toUpperCase()}</span>
-                          </span>
-                          <span className="font-mono tabular-nums text-muted-foreground">${fmtNum(pos.marginUsed)}</span>
-                        </div>
-                        <div className="h-3 w-full overflow-hidden rounded-full bg-white/5">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${barWidth}%` }}
-                            transition={{ duration: 0.8, ease: "easeOut" }}
-                            className="h-full rounded-full bg-[#7BEBC2]"
-                            style={{ opacity: 0.7 }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
-                  <div className="text-xs font-medium text-muted-foreground">Total Margin Used</div>
-                  <p className="mt-1 font-mono text-xl font-bold tabular-nums text-[#7BEBC2]">
-                    ${fmtNum(openExposure)}
-                  </p>
-                  <p className="mt-1 text-[10px] text-muted-foreground">
-                    {openPositions.length} position{openPositions.length !== 1 ? "s" : ""} open
-                  </p>
-                </div>
-                {liveData && (
-                  <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
-                    <div className="text-xs font-medium text-muted-foreground">Available Balance</div>
-                    <p className="mt-1 font-mono text-xl font-bold tabular-nums text-white/90">
-                      ${fmtNum(liveData.withdrawable)}
-                    </p>
-                    <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.min((openExposure / Math.max(liveData.accountValue, 1)) * 100, 100)}%` }}
-                        transition={{ duration: 0.8, ease: "easeOut" }}
-                        className="h-full rounded-full bg-[#7BEBC2]"
-                        style={{ opacity: 0.7 }}
-                      />
-                    </div>
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      {((openExposure / Math.max(liveData.accountValue, 1)) * 100).toFixed(1)}% utilized
-                    </p>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         </motion.div>

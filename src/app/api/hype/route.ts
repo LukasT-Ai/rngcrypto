@@ -1,7 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
+import Database from "better-sqlite3";
+import path from "path";
+import { existsSync } from "fs";
 
 const WALLET = "0xedEDeb617112E8dA52294f12C1950A06CD5C2286";
 const HL_API = "https://api.hyperliquid.xyz/info";
+
+const BOT_DB_PATH = path.resolve("C:/Users/Lukas/crypto-bot/data/rng-daytrader.db");
+
+function getTrackedStrategies(): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!existsSync(BOT_DB_PATH)) return map;
+  try {
+    const db = new Database(BOT_DB_PATH, { readonly: true, fileMustExist: true });
+    const row = db.prepare("SELECT value FROM bot_state WHERE key = ?").get("tracked_positions") as { value: string } | undefined;
+    db.close();
+    if (!row?.value) return map;
+    const positions = JSON.parse(row.value) as Array<{ symbol?: string; strategy?: string; side?: string }>;
+    for (const p of positions) {
+      if (p.symbol && p.strategy) {
+        const asset = p.symbol.replace(/\/USDC.*$/, "");
+        map.set(`${asset}-${p.side}`, p.strategy);
+      }
+    }
+  } catch { /* db not available */ }
+  return map;
+}
 
 // ---------------------------------------------------------------------------
 // In-memory cache (30s TTL)
@@ -318,13 +342,16 @@ export async function GET(req: NextRequest) {
           ]);
           const trades = processFillsIntoTrades(fills);
 
+          const strategyMap = getTrackedStrategies();
           const openPositions = state.assetPositions
             .filter((p) => parseFloat(p.position.szi) !== 0)
             .map((p) => {
               const size = parseFloat(p.position.szi);
+              const side = size > 0 ? "long" : "short";
+              const asset = p.position.coin;
               return {
-                asset: p.position.coin,
-                side: size > 0 ? "long" : "short",
+                asset,
+                side,
                 entryPrice: parseFloat(p.position.entryPx),
                 size: Math.abs(size),
                 leverage: p.position.leverage.value,
@@ -333,6 +360,7 @@ export async function GET(req: NextRequest) {
                 liquidationPrice: p.position.liquidationPx
                   ? parseFloat(p.position.liquidationPx)
                   : null,
+                strategy: strategyMap.get(`${asset}-${side}`) ?? null,
               };
             });
 

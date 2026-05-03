@@ -35,6 +35,8 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { FlexCard } from "@/components/flex-card"
@@ -383,6 +385,7 @@ export default function StrikeDashboard() {
   const [linkCopied, setLinkCopied] = useState(false)
   const [flexCardOpen, setFlexCardOpen] = useState(false)
   const [expandedTradeId, setExpandedTradeId] = useState<number | null>(null)
+  const [tradesPage, setTradesPage] = useState(1)
 
   const SHARE_URL = "https://www.rngcrypto.com/strike"
   const SHARE_TEXT = "Autonomous agent trading perpetual futures on @strikeperps \u{1F916}\n\nDecentralized perps on Cardano. Real yield from $STRIKE staking.\n\n#Cardano $ADA $STRIKE"
@@ -459,6 +462,10 @@ export default function StrikeDashboard() {
     },
     [trades, assetFilter, strategyFilter]
   )
+
+  const TRADES_PER_PAGE = 20
+  const totalTradesPages = Math.ceil(filteredTrades.length / TRADES_PER_PAGE)
+  const paginatedTrades = filteredTrades.slice((tradesPage - 1) * TRADES_PER_PAGE, tradesPage * TRADES_PER_PAGE)
 
   const bestAsset = useMemo(() => {
     if (!assets.length) return "N/A"
@@ -911,6 +918,95 @@ export default function StrikeDashboard() {
       </motion.div>
 
       {/* ----------------------------------------------------------------- */}
+      {/* Risk Exposure                                                     */}
+      {/* ----------------------------------------------------------------- */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, delay: 0.14 }}
+      >
+        <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Shield className="h-5 w-5 text-[#22D3EE]" />
+            <h2 className="font-display text-lg font-semibold">Risk Exposure</h2>
+          </div>
+
+          {openPositions.length === 0 ? (
+            <div className="flex h-24 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
+              <Shield className="h-5 w-5 text-white/10" />
+              No open positions, no active risk
+            </div>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-3">
+              {/* Exposure by Category */}
+              <div className="lg:col-span-2">
+                <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Exposure by Category</h3>
+                <div className="space-y-3">
+                  {exposureByCategory.map((cat) => {
+                    const maxMargin = Math.max(...exposureByCategory.map((c) => c.margin), 1)
+                    const barWidth = (cat.margin / maxMargin) * 100
+                    const color = CATEGORY_COLORS[cat.category] ?? "#6B7280"
+                    return (
+                      <div key={cat.category}>
+                        <div className="mb-1 flex items-center justify-between text-xs">
+                          <span className="font-medium" style={{ color }}>{cat.category}</span>
+                          <span className="font-mono tabular-nums text-muted-foreground">${fmtNum(cat.margin)}</span>
+                        </div>
+                        <div className="h-3 w-full overflow-hidden rounded-full bg-white/5">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${barWidth}%` }}
+                            transition={{ duration: 0.8, ease: "easeOut" }}
+                            className="h-full rounded-full"
+                            style={{ backgroundColor: color, opacity: 0.7 }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Risk Metrics */}
+              <div className="space-y-4">
+                {/* Max Loss Scenario */}
+                <div className="rounded-lg border border-loss/20 bg-loss/[0.05] p-4">
+                  <div className="flex items-center gap-2 text-xs font-medium text-loss">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Max Loss Scenario
+                  </div>
+                  <p className="mt-1 font-mono text-xl font-bold tabular-nums text-loss">
+                    -${fmtNum(maxLossScenario)}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">If all positions hit stop-loss</p>
+                </div>
+
+                {/* Capital Utilization */}
+                <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="text-xs font-medium text-muted-foreground">Capital Deployed</div>
+                  <p className="mt-1 font-mono text-xl font-bold tabular-nums text-[#22D3EE]">
+                    ${fmtNum(openExposure)}
+                  </p>
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min((openExposure / Math.max(accountValue, 1)) * 100, 100)}%` }}
+                      transition={{ duration: 0.8, ease: "easeOut" }}
+                      className="h-full rounded-full bg-[#22D3EE]"
+                      style={{ opacity: 0.7 }}
+                    />
+                  </div>
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {openPositions.length} position{openPositions.length !== 1 ? "s" : ""} across {exposureByCategory.length} categor{exposureByCategory.length !== 1 ? "ies" : "y"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+
+      {/* ----------------------------------------------------------------- */}
       {/* Asset Activity Heatmap                                            */}
       {/* ----------------------------------------------------------------- */}
       <motion.div
@@ -1167,7 +1263,7 @@ export default function StrikeDashboard() {
               <Filter className="h-3.5 w-3.5 text-muted-foreground" />
               <select
                 value={assetFilter}
-                onChange={(e) => setAssetFilter(e.target.value)}
+                onChange={(e) => { setAssetFilter(e.target.value); setTradesPage(1) }}
                 className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-foreground backdrop-blur-sm focus:border-[#22D3EE] focus:outline-none focus:ring-1 focus:ring-[#22D3EE]"
               >
                 <option value="all">All Assets</option>
@@ -1179,7 +1275,7 @@ export default function StrikeDashboard() {
               </select>
               <select
                 value={strategyFilter}
-                onChange={(e) => setStrategyFilter(e.target.value)}
+                onChange={(e) => { setStrategyFilter(e.target.value); setTradesPage(1) }}
                 className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-foreground backdrop-blur-sm focus:border-[#22D3EE] focus:outline-none focus:ring-1 focus:ring-[#22D3EE]"
               >
                 <option value="all">All Strategies</option>
@@ -1205,6 +1301,7 @@ export default function StrikeDashboard() {
               {trades.length === 0 ? "No trades yet — agent is warming up" : "No trades found"}
             </div>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[600px] md:min-w-[1000px] text-sm">
                 <thead>
@@ -1222,7 +1319,7 @@ export default function StrikeDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredTrades.map((trade) => {
+                  {paginatedTrades.map((trade) => {
                     const pnl = trade.pnl ?? 0
                     const isWin = pnl > 0
                     const pnlPct =
@@ -1391,6 +1488,31 @@ export default function StrikeDashboard() {
                 </tbody>
               </table>
             </div>
+            {totalTradesPages > 1 && (
+              <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-4">
+                <p className="text-xs text-muted-foreground">
+                  Showing {(tradesPage - 1) * TRADES_PER_PAGE + 1}&ndash;{Math.min(tradesPage * TRADES_PER_PAGE, filteredTrades.length)} of {filteredTrades.length}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setTradesPage((p) => Math.max(1, p - 1))}
+                    disabled={tradesPage === 1}
+                    className="rounded-md border border-white/10 bg-white/5 p-1.5 text-xs transition-colors hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="text-xs font-medium tabular-nums">{tradesPage} / {totalTradesPages}</span>
+                  <button
+                    onClick={() => setTradesPage((p) => Math.min(totalTradesPages, p + 1))}
+                    disabled={tradesPage === totalTradesPages}
+                    className="rounded-md border border-white/10 bg-white/5 p-1.5 text-xs transition-colors hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </div>
       </motion.div>
@@ -1573,95 +1695,6 @@ export default function StrikeDashboard() {
                   </div>
                 )
               })}
-            </div>
-          )}
-        </div>
-      </motion.div>
-
-      {/* ----------------------------------------------------------------- */}
-      {/* 7. Risk Exposure                                                  */}
-      {/* ----------------------------------------------------------------- */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, delay: 0.34 }}
-      >
-        <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Shield className="h-5 w-5 text-[#22D3EE]" />
-            <h2 className="font-display text-lg font-semibold">Risk Exposure</h2>
-          </div>
-
-          {openPositions.length === 0 ? (
-            <div className="flex h-24 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
-              <Shield className="h-5 w-5 text-white/10" />
-              No open positions, no active risk
-            </div>
-          ) : (
-            <div className="grid gap-6 lg:grid-cols-3">
-              {/* Exposure by Category */}
-              <div className="lg:col-span-2">
-                <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Exposure by Category</h3>
-                <div className="space-y-3">
-                  {exposureByCategory.map((cat) => {
-                    const maxMargin = Math.max(...exposureByCategory.map((c) => c.margin), 1)
-                    const barWidth = (cat.margin / maxMargin) * 100
-                    const color = CATEGORY_COLORS[cat.category] ?? "#6B7280"
-                    return (
-                      <div key={cat.category}>
-                        <div className="mb-1 flex items-center justify-between text-xs">
-                          <span className="font-medium" style={{ color }}>{cat.category}</span>
-                          <span className="font-mono tabular-nums text-muted-foreground">${fmtNum(cat.margin)}</span>
-                        </div>
-                        <div className="h-3 w-full overflow-hidden rounded-full bg-white/5">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${barWidth}%` }}
-                            transition={{ duration: 0.8, ease: "easeOut" }}
-                            className="h-full rounded-full"
-                            style={{ backgroundColor: color, opacity: 0.7 }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Risk Metrics */}
-              <div className="space-y-4">
-                {/* Max Loss Scenario */}
-                <div className="rounded-lg border border-loss/20 bg-loss/[0.05] p-4">
-                  <div className="flex items-center gap-2 text-xs font-medium text-loss">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    Max Loss Scenario
-                  </div>
-                  <p className="mt-1 font-mono text-xl font-bold tabular-nums text-loss">
-                    -${fmtNum(maxLossScenario)}
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">If all positions hit stop-loss</p>
-                </div>
-
-                {/* Capital Utilization */}
-                <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
-                  <div className="text-xs font-medium text-muted-foreground">Capital Deployed</div>
-                  <p className="mt-1 font-mono text-xl font-bold tabular-nums text-[#22D3EE]">
-                    ${fmtNum(openExposure)}
-                  </p>
-                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.min((openExposure / Math.max(accountValue, 1)) * 100, 100)}%` }}
-                      transition={{ duration: 0.8, ease: "easeOut" }}
-                      className="h-full rounded-full bg-[#22D3EE]"
-                      style={{ opacity: 0.7 }}
-                    />
-                  </div>
-                  <p className="mt-1 text-[10px] text-muted-foreground">
-                    {openPositions.length} position{openPositions.length !== 1 ? "s" : ""} across {exposureByCategory.length} categor{exposureByCategory.length !== 1 ? "ies" : "y"}
-                  </p>
-                </div>
-              </div>
             </div>
           )}
         </div>

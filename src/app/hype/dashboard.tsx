@@ -365,7 +365,7 @@ export default function HypeDashboard() {
   const filteredTrades = useMemo(
     () => {
       const list = assetFilter === "all" ? trades : trades.filter((t) => t.asset === assetFilter)
-      return [...list].sort((a, b) => new Date(b.closedAt).getTime() - new Date(a.closedAt).getTime())
+      return [...list].sort((a, b) => new Date(b.closedAt ?? 0).getTime() - new Date(a.closedAt ?? 0).getTime())
     },
     [trades, assetFilter]
   )
@@ -1162,45 +1162,71 @@ export default function HypeDashboard() {
                                   isWin ? "bg-gain/[0.04]" : pnl < 0 ? "bg-loss/[0.04]" : "bg-white/[0.03]"
                                 }`}
                               >
-                                <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+                                <div className="mb-3 text-sm font-medium text-white/70">
                                   {trade.asset} {trade.side?.toUpperCase()} @ {trade.leverage || 1}x leverage
                                 </div>
                                 <div className="grid grid-cols-2 gap-4 text-xs sm:grid-cols-4">
                                   <div>
-                                    <span className="text-muted-foreground">Entry Time</span>
+                                    <span className="text-muted-foreground">Entry Time (EST)</span>
                                     <p className="font-mono font-medium tabular-nums">{trade.openedAt ? formatDateTime(trade.openedAt) : "—"}</p>
                                   </div>
                                   <div>
-                                    <span className="text-muted-foreground">Exit Time</span>
+                                    <span className="text-muted-foreground">Exit Time (EST)</span>
                                     <p className="font-mono font-medium tabular-nums">{trade.closedAt ? formatDateTime(trade.closedAt) : "—"}</p>
                                   </div>
                                   <div>
                                     <span className="text-muted-foreground">Hold Duration</span>
-                                    <p className="font-mono font-medium tabular-nums">{duration}</p>
+                                    <p className="flex items-center gap-1 font-mono font-medium tabular-nums text-[#7BEBC2]">
+                                      <Clock className="h-3 w-3" />
+                                      {duration}
+                                    </p>
                                   </div>
                                   <div>
                                     <span className="text-muted-foreground">Strategy</span>
-                                    <p className="font-mono font-medium tabular-nums">{trade.strategy || "—"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Entry</span>
-                                    <p className="font-mono font-medium tabular-nums">{trade.entryPrice ? `$${fmtPrice(trade.entryPrice)}` : "—"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Exit</span>
-                                    <p className="font-mono font-medium tabular-nums">{trade.exitPrice ? `$${fmtPrice(trade.exitPrice)}` : "—"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Close Reason</span>
-                                    <p className="font-mono font-medium tabular-nums">{trade.closeReason || "—"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Net P&L</span>
-                                    <p className={`font-mono font-medium tabular-nums ${isWin ? "text-gain" : "text-loss"}`}>
-                                      {formatPnl(pnl)} USDC
-                                    </p>
+                                    <div className="mt-0.5">
+                                      {trade.strategy
+                                        ? <Badge variant="outline" className="text-[10px] font-medium border-[#7BEBC2]/30 text-[#7BEBC2]">
+                                            {trade.strategy.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                                          </Badge>
+                                        : <span className="font-mono font-medium tabular-nums">—</span>
+                                      }
+                                    </div>
                                   </div>
                                 </div>
+                                {trade.exitPrice != null && trade.entryPrice != null && trade.entryPrice > 0 && (
+                                  <div className="mt-4">
+                                    <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                                      <span>Entry: ${fmtPrice(trade.entryPrice)}</span>
+                                      <span>Exit: ${fmtPrice(trade.exitPrice)}</span>
+                                    </div>
+                                    <div className="relative h-3 w-full overflow-hidden rounded-full bg-white/5">
+                                      {(() => {
+                                        const minP = Math.min(trade.entryPrice, trade.exitPrice)
+                                        const maxP = Math.max(trade.entryPrice, trade.exitPrice)
+                                        const range = maxP - minP
+                                        const pad = range * 0.3 || 0.01
+                                        const lo = minP - pad
+                                        const hi = maxP + pad
+                                        const span = hi - lo
+                                        const entryPct = ((trade.entryPrice - lo) / span) * 100
+                                        const exitPct = ((trade.exitPrice - lo) / span) * 100
+                                        const leftPct = Math.min(entryPct, exitPct)
+                                        const widthPct = Math.abs(exitPct - entryPct)
+                                        return (
+                                          <div
+                                            className={`absolute top-0 h-full rounded-full ${isWin ? "bg-gain" : "bg-loss"}`}
+                                            style={{ left: `${leftPct}%`, width: `${widthPct}%`, opacity: 0.6 }}
+                                          />
+                                        )
+                                      })()}
+                                    </div>
+                                    <div className="mt-1 flex items-center justify-center gap-2 text-xs">
+                                      <span className="font-mono tabular-nums">${fmtPrice(trade.entryPrice)}</span>
+                                      <span className={isWin ? "text-gain" : "text-loss"}>{"-->"}</span>
+                                      <span className="font-mono tabular-nums">${fmtPrice(trade.exitPrice)}</span>
+                                    </div>
+                                  </div>
+                                )}
                               </motion.div>
                             </td>
                           </tr>

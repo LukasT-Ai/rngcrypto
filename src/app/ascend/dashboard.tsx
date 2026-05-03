@@ -643,7 +643,7 @@ export default function AscendDashboard() {
             <p className="mt-0.5 text-sm text-muted-foreground">
               Autonomous event perpetuals trading on{" "}
               <a
-                href="https://www.ascend.market"
+                href="https://testnet.ascend.market/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[#E8622C] underline-offset-4 hover:underline"
@@ -691,7 +691,7 @@ export default function AscendDashboard() {
           )}
           <div className="mx-1 h-5 w-px bg-white/[0.08]" />
           <a
-            href="https://www.ascend.market"
+            href="https://testnet.ascend.market/"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-full border border-[#E8622C]/30 bg-[#E8622C]/10 px-4 py-2 text-xs font-medium text-[#E8622C] transition-all hover:border-[#E8622C]/50 hover:bg-[#E8622C]/15"

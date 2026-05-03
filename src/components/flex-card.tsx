@@ -12,7 +12,7 @@ function XIcon({ className }: { className?: string }) {
   )
 }
 
-type Variant = "ascend" | "strike"
+type Variant = "ascend" | "strike" | "hype"
 
 const VARIANTS: Record<Variant, {
   name: string
@@ -46,6 +46,17 @@ const VARIANTS: Record<Variant, {
     tagline: "Autonomous Perpetual Futures on Cardano",
     url: "https://www.rngcrypto.com/strike",
     gradient: "from-[#22D3EE] via-[#06B6D4] to-[#00FF88]",
+  },
+  hype: {
+    name: "Hyperliquid",
+    accent: "#7BEBC2",
+    accentAlt: "#00FF88",
+    handle: "@HyperliquidX",
+    token: "$HYPE",
+    unit: "USDC",
+    tagline: "Autonomous Perpetual Futures on Hyperliquid",
+    url: "https://www.rngcrypto.com/hype",
+    gradient: "from-[#7BEBC2] via-[#00FF88] to-[#00CC6A]",
   },
 }
 

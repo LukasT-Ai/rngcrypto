@@ -38,8 +38,10 @@ import {
   ChevronRight,
   Wallet,
   DollarSign,
+  Download,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { FlexCard } from "@/components/flex-card"
 
 function XIcon({ className }: { className?: string }) {
   return (
@@ -284,6 +286,7 @@ export default function HypeDashboard() {
   const [assetFilter, setAssetFilter] = useState<string>("all")
   const [timeframe, setTimeframe] = useState<number>(90)
   const [linkCopied, setLinkCopied] = useState(false)
+  const [flexCardOpen, setFlexCardOpen] = useState(false)
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null)
   const [tradesPage, setTradesPage] = useState(1)
 
@@ -442,7 +445,7 @@ export default function HypeDashboard() {
             <p className="mt-0.5 text-sm text-muted-foreground">
               Autonomous perpetual futures trading on{" "}
               <a
-                href="https://hyperliquid.xyz"
+                href="https://app.hyperliquid.xyz/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[#7BEBC2] underline-offset-4 hover:underline"
@@ -453,6 +456,14 @@ export default function HypeDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setFlexCardOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#00FF88]/10 border border-[#00FF88]/30 px-3.5 py-1.5 text-xs font-medium text-[#00FF88] hover:bg-[#00FF88]/20 hover:border-[#00FF88]/50 hover:shadow-[0_0_16px_rgba(0,255,136,0.25)] transition-all"
+            title="Share stats card"
+          >
+            <Download className="size-3" />
+            Flex
+          </button>
           <button
             onClick={shareOnX}
             className="inline-flex items-center justify-center size-9 rounded-full bg-[#00FF88]/10 border border-[#00FF88]/30 text-[#00FF88] hover:bg-[#00FF88]/20 hover:border-[#00FF88]/60 hover:shadow-[0_0_12px_rgba(0,255,136,0.3)] transition-all"
@@ -478,7 +489,7 @@ export default function HypeDashboard() {
           )}
           <div className="mx-1 h-5 w-px bg-white/[0.08]" />
           <a
-            href="https://hyperliquid.xyz"
+            href="https://app.hyperliquid.xyz/"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-full border border-[#7BEBC2]/30 bg-[#7BEBC2]/10 px-4 py-2 text-xs font-medium text-[#7BEBC2] transition-all hover:border-[#7BEBC2]/50 hover:bg-[#7BEBC2]/15"
@@ -1230,7 +1241,7 @@ export default function HypeDashboard() {
             </div>
           </div>
           <a
-            href="https://hyperliquid.xyz"
+            href="https://app.hyperliquid.xyz/"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex shrink-0 items-center gap-2 rounded-full bg-[#7BEBC2] px-5 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90"
@@ -1250,6 +1261,15 @@ export default function HypeDashboard() {
       >
         Data sourced from Hyperliquid mainnet API. All values in USDC. Auto-refreshes every 10-60s.
       </motion.p>
+
+      <FlexCard
+        open={flexCardOpen}
+        onClose={() => setFlexCardOpen(false)}
+        stats={stats ?? null}
+        openPositionCount={openPositions.length}
+        bestAsset={bestAsset}
+        variant="hype"
+      />
     </div>
   )
 }

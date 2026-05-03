@@ -825,6 +825,7 @@ export default function HypeDashboard() {
                           : pos.strategy.includes("Sniper") || pos.strategy.includes("sniper") ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
                           : pos.strategy.includes("Trend") || pos.strategy.includes("trend") ? "border-cyan-500/30 text-cyan-400 bg-cyan-500/10"
                           : pos.strategy.includes("Funding") || pos.strategy.includes("funding") ? "border-blue-500/30 text-blue-400 bg-blue-500/10"
+                          : pos.strategy === "adopted" ? "border-yellow-500/30 text-yellow-400 bg-yellow-500/10"
                           : "border-[#7BEBC2]/30 text-[#7BEBC2]"
                         }`}>
                           {pos.strategy.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}

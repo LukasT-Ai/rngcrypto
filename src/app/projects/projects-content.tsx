@@ -313,7 +313,7 @@ function FeaturedAscendCard() {
               src="/avatar/Project_Ascend3.png"
               alt="Ascend Market event perpetuals"
               fill
-              className="object-contain p-2"
+              className="object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#06080F]/60 to-transparent" />
           </div>

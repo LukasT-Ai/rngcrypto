@@ -239,6 +239,7 @@ function mapStrategy(strategy: string | null): string {
     "grid": "Grid",
     "dca": "DCA",
     "funding-capture": "Funding",
+    "mean-reversion": "Mean Reversion",
     "auto_trader": "Auto-Trader",
     "momentum": "Momentum",
   }
@@ -261,6 +262,8 @@ function strategyBadgeClasses(label: string): string {
       return "border-blue-500/30 text-blue-400 bg-blue-500/10"
     case "Momentum":
       return "border-purple-500/30 text-purple-400 bg-purple-500/10"
+    case "Mean Reversion":
+      return "border-orange-500/30 text-orange-400 bg-orange-500/10"
     default:
       return "border-white/10 text-muted-foreground"
   }

@@ -11,6 +11,9 @@ const BOT_DB_PATH = path.resolve("C:/Users/Lukas/crypto-bot/data/rng-daytrader.d
 interface TrackedPositionInfo {
   strategy: string;
   openedAt: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  takeProfitLevels: Array<{ price: number; sizePct: number; hit: boolean }>;
 }
 
 function getTrackedPositions(): Map<string, TrackedPositionInfo> {
@@ -21,15 +24,42 @@ function getTrackedPositions(): Map<string, TrackedPositionInfo> {
     const row = db.prepare("SELECT value FROM bot_state WHERE key = ?").get("tracked_positions") as { value: string } | undefined;
     db.close();
     if (!row?.value) return map;
-    const positions = JSON.parse(row.value) as Array<{ symbol?: string; strategy?: string; side?: string; openedAt?: number }>;
+    const positions = JSON.parse(row.value) as Array<{
+      symbol?: string; strategy?: string; side?: string; openedAt?: number;
+      stopLoss?: string; takeProfit?: string;
+      takeProfitLevels?: Array<{ price: string; sizePct: number; hit: boolean }>;
+    }>;
     for (const p of positions) {
       if (p.symbol && p.strategy) {
         const asset = p.symbol.replace(/\/USDC.*$/, "");
-        map.set(`${asset}-${p.side}`, { strategy: p.strategy, openedAt: p.openedAt ?? 0 });
+        map.set(`${asset}-${p.side}`, {
+          strategy: p.strategy,
+          openedAt: p.openedAt ?? 0,
+          stopLoss: p.stopLoss ? parseFloat(p.stopLoss) : null,
+          takeProfit: p.takeProfit ? parseFloat(p.takeProfit) : null,
+          takeProfitLevels: (p.takeProfitLevels ?? []).map(l => ({
+            price: parseFloat(l.price), sizePct: l.sizePct, hit: l.hit,
+          })),
+        });
       }
     }
   } catch { /* db not available */ }
   return map;
+}
+
+function getClosedTrades(limit: number = 50): Array<Record<string, unknown>> {
+  if (!existsSync(BOT_DB_PATH)) return [];
+  try {
+    const db = new Database(BOT_DB_PATH, { readonly: true, fileMustExist: true });
+    const rows = db.prepare(
+      `SELECT id, symbol, side, entry_price, exit_price, size, pnl, pnl_pct,
+              leverage, strategy, reason, close_reason, opened_at, closed_at, mfe, mae
+       FROM trades WHERE closed_at IS NOT NULL
+       ORDER BY closed_at DESC LIMIT ?`
+    ).all(limit) as Array<Record<string, unknown>>;
+    db.close();
+    return rows;
+  } catch { return []; }
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +344,29 @@ export async function GET(req: NextRequest) {
           200
         );
         body = await memCached(`trades-${limit}`, async () => {
+          const dbTrades = getClosedTrades(limit);
+          if (dbTrades.length > 0) {
+            const trades = dbTrades.map((r) => ({
+              id: r.id as string,
+              asset: (r.symbol as string).replace(/\/USDC.*$/, ""),
+              side: r.side as string,
+              entryPrice: r.entry_price as number,
+              exitPrice: r.exit_price as number | null,
+              size: r.size as number,
+              pnl: r.pnl as number | null,
+              pnlPct: r.pnl_pct as number | null,
+              leverage: r.leverage as number,
+              strategy: r.strategy as string,
+              reason: r.reason as string | null,
+              closeReason: r.close_reason as string | null,
+              openedAt: r.opened_at ? new Date(r.opened_at as number).toISOString() : null,
+              closedAt: r.closed_at ? new Date(r.closed_at as number).toISOString() : null,
+              fee: 0,
+              mfe: r.mfe as number | null,
+              mae: r.mae as number | null,
+            }));
+            return { trades };
+          }
           const fills = await getUserFills();
           const trades = processFillsIntoTrades(fills);
           return { trades: trades.slice(0, limit) };
@@ -372,7 +425,9 @@ export async function GET(req: NextRequest) {
                 entryPrice,
                 markPrice,
                 size: absSize,
-                leverage: p.position.leverage.value,
+                leverage: marginUsed > 0
+                  ? Math.round(absSize * entryPrice / marginUsed)
+                  : p.position.leverage.value,
                 unrealizedPnl,
                 marginUsed,
                 liquidationPrice: p.position.liquidationPx
@@ -382,14 +437,37 @@ export async function GET(req: NextRequest) {
                 roe,
                 fundingAccrued: parseFloat(p.position.cumFunding?.sinceOpen ?? "0"),
                 openedAt: tracked?.openedAt ?? null,
+                stopLoss: tracked?.stopLoss ?? null,
+                takeProfit: tracked?.takeProfit ?? null,
+                takeProfitLevels: tracked?.takeProfitLevels ?? [],
               };
             });
+
+          const dbRecent = getClosedTrades(5);
+          const recentTrades = dbRecent.length > 0
+            ? dbRecent.map((r) => ({
+                id: r.id as string,
+                asset: (r.symbol as string).replace(/\/USDC.*$/, ""),
+                side: r.side as string,
+                entryPrice: r.entry_price as number,
+                exitPrice: r.exit_price as number | null,
+                size: r.size as number,
+                pnl: r.pnl as number | null,
+                pnlPct: r.pnl_pct as number | null,
+                leverage: r.leverage as number,
+                strategy: r.strategy as string,
+                closeReason: r.close_reason as string | null,
+                openedAt: r.opened_at ? new Date(r.opened_at as number).toISOString() : null,
+                closedAt: r.closed_at ? new Date(r.closed_at as number).toISOString() : null,
+                fee: 0,
+              }))
+            : trades.slice(0, 5);
 
           return {
             openPositions,
             accountValue: parseFloat(state.marginSummary.accountValue),
             withdrawable: parseFloat(state.withdrawable),
-            recentTrades: trades.slice(0, 5),
+            recentTrades,
           };
         });
         break;

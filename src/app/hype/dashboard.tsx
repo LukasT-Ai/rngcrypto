@@ -81,13 +81,16 @@ interface Trade {
   asset: string
   side: string
   entryPrice: number
-  exitPrice: number
+  exitPrice: number | null
   size: number
-  pnl: number
+  pnl: number | null
+  pnlPct: number | null
   leverage: number | null
-  openedAt: string
-  closedAt: string
-  closeReason: string
+  strategy: string | null
+  reason: string | null
+  closeReason: string | null
+  openedAt: string | null
+  closedAt: string | null
   fee: number
 }
 
@@ -111,6 +114,9 @@ interface OpenPosition {
   roe: number
   fundingAccrued: number
   openedAt: number | null
+  stopLoss: number | null
+  takeProfit: number | null
+  takeProfitLevels: Array<{ price: number; sizePct: number; hit: boolean }>
 }
 
 interface OverviewResponse {
@@ -155,7 +161,10 @@ function formatHoldTime(openedAt: number | null): string {
   const diff = Date.now() - openedAt
   const days = Math.floor(diff / 86_400_000)
   const hours = Math.floor((diff % 86_400_000) / 3_600_000)
-  return days > 0 ? `${days}d ${hours}h` : `${hours}h`
+  const mins = Math.floor((diff % 3_600_000) / 60_000)
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${mins}m`
+  return `${mins}m`
 }
 
 function formatOpenedDate(openedAt: number | null): string {
@@ -811,7 +820,13 @@ export default function HypeDashboard() {
                         {pos.side.toUpperCase()}
                       </Badge>
                       {pos.strategy && (
-                        <Badge variant="outline" className="text-[10px] font-medium border-[#7BEBC2]/30 text-[#7BEBC2]">
+                        <Badge variant="outline" className={`text-[10px] font-medium ${
+                          pos.strategy === "Mean-Reversion" ? "border-orange-500/30 text-orange-400 bg-orange-500/10"
+                          : pos.strategy.includes("Sniper") || pos.strategy.includes("sniper") ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
+                          : pos.strategy.includes("Trend") || pos.strategy.includes("trend") ? "border-cyan-500/30 text-cyan-400 bg-cyan-500/10"
+                          : pos.strategy.includes("Funding") || pos.strategy.includes("funding") ? "border-blue-500/30 text-blue-400 bg-blue-500/10"
+                          : "border-[#7BEBC2]/30 text-[#7BEBC2]"
+                        }`}>
                           {pos.strategy.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                         </Badge>
                       )}
@@ -849,18 +864,54 @@ export default function HypeDashboard() {
                     </div>
                     <div>
                       <span className="text-muted-foreground">Mark</span>
-                      <p className="font-mono font-medium tabular-nums">${fmtPrice(pos.markPrice)}</p>
+                      <p className={`font-mono font-medium tabular-nums ${
+                        pos.unrealizedPnl >= 0 ? "text-gain" : "text-loss"
+                      }`}>${fmtPrice(pos.markPrice)}</p>
                     </div>
+                    {pos.liquidationPrice != null && (
+                      <div>
+                        <span className="text-muted-foreground">Liq. Price</span>
+                        <p className="font-mono font-medium tabular-nums text-loss">${fmtPrice(pos.liquidationPrice)}</p>
+                      </div>
+                    )}
+                    {pos.takeProfit != null && (
+                      <div>
+                        <span className="text-muted-foreground">TP Target</span>
+                        <p className="font-mono font-medium tabular-nums text-gain">
+                          ${fmtPrice(pos.takeProfit)}
+                          <span className="ml-1 text-[10px] opacity-70">
+                            ({pos.side === "long"
+                              ? `+${(((pos.takeProfit - pos.entryPrice) / pos.entryPrice) * 100).toFixed(1)}%`
+                              : `+${(((pos.entryPrice - pos.takeProfit) / pos.entryPrice) * 100).toFixed(1)}%`
+                            })
+                          </span>
+                        </p>
+                      </div>
+                    )}
+                    {pos.stopLoss != null && (
+                      <div>
+                        <span className="text-muted-foreground">SL Risk</span>
+                        <p className="font-mono font-medium tabular-nums text-loss">
+                          ${fmtPrice(pos.stopLoss)}
+                          <span className="ml-1 text-[10px] opacity-70">
+                            (-{(Math.abs((pos.entryPrice - pos.stopLoss) / pos.entryPrice) * 100).toFixed(1)}%)
+                          </span>
+                        </p>
+                      </div>
+                    )}
                     {pos.fundingAccrued !== 0 && (
                       <div>
                         <span className="text-muted-foreground">Funding</span>
-                        <p className="font-mono font-medium tabular-nums">{fmtNum(pos.fundingAccrued)}</p>
+                        <p className={`font-mono font-medium tabular-nums ${pos.fundingAccrued >= 0 ? "text-gain" : "text-loss"}`}>{fmtNum(pos.fundingAccrued)}</p>
                       </div>
                     )}
                     {pos.openedAt && (
                       <div>
                         <span className="text-muted-foreground">Hold Time</span>
-                        <p className="font-mono font-medium tabular-nums">{formatHoldTime(pos.openedAt)}</p>
+                        <p className="flex items-center gap-1 font-mono font-medium tabular-nums text-[#7BEBC2]">
+                          <Clock className="h-3 w-3" />
+                          {formatHoldTime(pos.openedAt)}
+                        </p>
                       </div>
                     )}
                     {pos.openedAt && (
@@ -1005,20 +1056,33 @@ export default function HypeDashboard() {
               <table className="w-full min-w-[600px] text-sm">
                 <thead>
                   <tr className="border-b border-[#7BEBC2]/10 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                    <th className="pb-3 pr-3">Asset</th>
+                    <th className="pb-3 pr-3">Symbol</th>
                     <th className="pb-3 pr-3">Side</th>
-                    <th className="pb-3 pr-3 text-right">Size</th>
-                    <th className="pb-3 pr-3 text-right">Price</th>
+                    <th className="pb-3 pr-3">Strategy</th>
+                    <th className="pb-3 pr-3 text-right">Lev.</th>
+                    <th className="pb-3 pr-3 text-right">Entry</th>
+                    <th className="pb-3 pr-3 text-right">Exit</th>
                     <th className="pb-3 pr-3 text-right">P&L</th>
-                    <th className="pb-3 pr-3 text-right">Fee</th>
-                    <th className="pb-3 text-right">Time</th>
+                    <th className="pb-3 pr-3 text-right">Duration</th>
+                    <th className="pb-3 text-right">Closed</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedTrades.map((trade) => {
                     const pnl = trade.pnl ?? 0
+                    const pnlPct = trade.pnlPct ?? 0
                     const isWin = pnl > 0
                     const isExpanded = expandedTradeId === trade.id
+                    const duration = trade.openedAt && trade.closedAt
+                      ? (() => {
+                          const ms = new Date(trade.closedAt).getTime() - new Date(trade.openedAt).getTime()
+                          const mins = Math.round(ms / 60000)
+                          if (mins < 60) return `${mins}m`
+                          const hrs = Math.floor(mins / 60)
+                          if (hrs < 24) return `${hrs}h ${mins % 60}m`
+                          return `${Math.floor(hrs / 24)}d ${hrs % 24}h`
+                        })()
+                      : "—"
                     return (
                       <React.Fragment key={trade.id}>
                         <tr
@@ -1053,32 +1117,42 @@ export default function HypeDashboard() {
                               {trade.side.toUpperCase()}
                             </span>
                           </td>
-                          <td className="py-3 pr-3 text-right font-mono tabular-nums">
-                            {trade.size}
+                          <td className="py-3 pr-3 text-xs">
+                            {trade.strategy
+                              ? <span className="text-[#7BEBC2]">{trade.strategy.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</span>
+                              : <span className="text-muted-foreground">—</span>
+                            }
                           </td>
                           <td className="py-3 pr-3 text-right font-mono tabular-nums">
-                            ${fmtNum(trade.exitPrice)}
+                            {trade.leverage ? `${trade.leverage}x` : "—"}
                           </td>
-                          <td
-                            className={`py-3 pr-3 text-right font-mono font-semibold tabular-nums ${
-                              isWin ? "text-gain" : "text-loss"
-                            }`}
-                          >
-                            {formatPnl(pnl)} USDC
+                          <td className="py-3 pr-3 text-right font-mono tabular-nums">
+                            {trade.entryPrice ? `$${fmtPrice(trade.entryPrice)}` : "—"}
                           </td>
-                          <td className="py-3 pr-3 text-right font-mono tabular-nums text-xs text-muted-foreground">
-                            ${fmtNum(trade.fee)}
+                          <td className="py-3 pr-3 text-right font-mono tabular-nums">
+                            {trade.exitPrice ? `$${fmtPrice(trade.exitPrice)}` : "—"}
+                          </td>
+                          <td className="py-3 pr-3 text-right">
+                            <div className={`font-mono font-semibold tabular-nums ${isWin ? "text-gain" : "text-loss"}`}>
+                              {formatPnl(pnl)}
+                            </div>
+                            <div className={`text-[10px] font-mono tabular-nums ${isWin ? "text-gain/70" : "text-loss/70"}`}>
+                              {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%
+                            </div>
+                          </td>
+                          <td className="py-3 pr-3 text-right text-xs text-muted-foreground font-mono tabular-nums">
+                            {duration}
                           </td>
                           <td className="py-3 text-right text-xs text-muted-foreground">
-                            <div className="flex items-center justify-end gap-1" title={timeAgo(trade.closedAt)}>
+                            <div className="flex items-center justify-end gap-1" title={trade.closedAt ? timeAgo(trade.closedAt) : ""}>
                               <Calendar className="h-3 w-3" />
-                              {formatDateTime(trade.closedAt)}
+                              {trade.closedAt ? formatDateTime(trade.closedAt) : "—"}
                             </div>
                           </td>
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td colSpan={7} className="p-0">
+                            <td colSpan={9} className="p-0">
                               <motion.div
                                 initial={{ opacity: 0, height: 0 }}
                                 animate={{ opacity: 1, height: "auto" }}
@@ -1087,18 +1161,37 @@ export default function HypeDashboard() {
                                   isWin ? "bg-gain/[0.04]" : pnl < 0 ? "bg-loss/[0.04]" : "bg-white/[0.03]"
                                 }`}
                               >
+                                <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+                                  {trade.asset} {trade.side?.toUpperCase()} @ {trade.leverage || 1}x leverage
+                                </div>
                                 <div className="grid grid-cols-2 gap-4 text-xs sm:grid-cols-4">
                                   <div>
-                                    <span className="text-muted-foreground">Exit Price</span>
-                                    <p className="font-mono font-medium tabular-nums">${fmtNum(trade.exitPrice)}</p>
+                                    <span className="text-muted-foreground">Entry Time</span>
+                                    <p className="font-mono font-medium tabular-nums">{trade.openedAt ? formatDateTime(trade.openedAt) : "—"}</p>
                                   </div>
                                   <div>
-                                    <span className="text-muted-foreground">Size</span>
-                                    <p className="font-mono font-medium tabular-nums">{trade.size}</p>
+                                    <span className="text-muted-foreground">Exit Time</span>
+                                    <p className="font-mono font-medium tabular-nums">{trade.closedAt ? formatDateTime(trade.closedAt) : "—"}</p>
                                   </div>
                                   <div>
-                                    <span className="text-muted-foreground">Fee</span>
-                                    <p className="font-mono font-medium tabular-nums text-muted-foreground">${fmtNum(trade.fee)}</p>
+                                    <span className="text-muted-foreground">Hold Duration</span>
+                                    <p className="font-mono font-medium tabular-nums">{duration}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Strategy</span>
+                                    <p className="font-mono font-medium tabular-nums">{trade.strategy || "—"}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Entry</span>
+                                    <p className="font-mono font-medium tabular-nums">{trade.entryPrice ? `$${fmtPrice(trade.entryPrice)}` : "—"}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Exit</span>
+                                    <p className="font-mono font-medium tabular-nums">{trade.exitPrice ? `$${fmtPrice(trade.exitPrice)}` : "—"}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Close Reason</span>
+                                    <p className="font-mono font-medium tabular-nums">{trade.closeReason || "—"}</p>
                                   </div>
                                   <div>
                                     <span className="text-muted-foreground">Net P&L</span>

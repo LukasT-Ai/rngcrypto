@@ -140,7 +140,7 @@ function sideLabel(s: string): string {
   return s === "A" ? "long" : "short";
 }
 
-const TRADE_HISTORY_CUTOFF = new Date("2026-05-03T00:00:00Z").getTime();
+const TRADE_HISTORY_CUTOFF = new Date("2026-05-03T04:00:00Z").getTime();
 
 function processFillsIntoTrades(fills: HlFill[]): ProcessedTrade[] {
   return fills

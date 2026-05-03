@@ -1,337 +1,74 @@
 import { NextRequest, NextResponse } from "next/server";
-import Database from "better-sqlite3";
-import path from "path";
-import { existsSync } from "fs";
+import fs from "node:fs";
+import path from "node:path";
 
-const WALLET = "0xedEDeb617112E8dA52294f12C1950A06CD5C2286";
-const HL_API = "https://api.hyperliquid.xyz/info";
+const CACHE_PATH = path.join(process.cwd(), "data", "hype-stats-cache.json");
+const PUSH_MAX_AGE = 5 * 60_000;
 
-const BOT_DB_PATH = path.resolve("C:/Users/Lukas/crypto-bot/data/rng-daytrader.db");
-
-interface TrackedPositionInfo {
-  strategy: string;
-  openedAt: number;
-  stopLoss: number | null;
-  takeProfit: number | null;
-  takeProfitLevels: Array<{ price: number; sizePct: number; hit: boolean }>;
-}
-
-function getTrackedPositions(): Map<string, TrackedPositionInfo> {
-  const map = new Map<string, TrackedPositionInfo>();
-  if (!existsSync(BOT_DB_PATH)) return map;
-  try {
-    const db = new Database(BOT_DB_PATH, { readonly: true, fileMustExist: true });
-    const row = db.prepare("SELECT value FROM bot_state WHERE key = ?").get("tracked_positions") as { value: string } | undefined;
-    db.close();
-    if (!row?.value) return map;
-    const positions = JSON.parse(row.value) as Array<{
-      symbol?: string; strategy?: string; side?: string; openedAt?: number;
-      stopLoss?: string; takeProfit?: string;
-      takeProfitLevels?: Array<{ price: string; sizePct: number; hit: boolean }>;
-    }>;
-    for (const p of positions) {
-      if (p.symbol && p.strategy) {
-        const asset = p.symbol.replace(/\/USDC.*$/, "");
-        map.set(`${asset}-${p.side}`, {
-          strategy: p.strategy,
-          openedAt: p.openedAt ?? 0,
-          stopLoss: p.stopLoss ? parseFloat(p.stopLoss) : null,
-          takeProfit: p.takeProfit ? parseFloat(p.takeProfit) : null,
-          takeProfitLevels: (p.takeProfitLevels ?? []).map(l => ({
-            price: parseFloat(l.price), sizePct: l.sizePct, hit: l.hit,
-          })),
-        });
-      }
-    }
-  } catch { /* db not available */ }
-  return map;
-}
-
-function getClosedTrades(limit: number = 50): Array<Record<string, unknown>> {
-  if (!existsSync(BOT_DB_PATH)) return [];
-  try {
-    const db = new Database(BOT_DB_PATH, { readonly: true, fileMustExist: true });
-    const rows = db.prepare(
-      `SELECT id, symbol, side, entry_price, exit_price, size, pnl, pnl_pct,
-              leverage, strategy, reason, close_reason, opened_at, closed_at, mfe, mae
-       FROM trades WHERE closed_at IS NOT NULL
-       ORDER BY closed_at DESC LIMIT ?`
-    ).all(limit) as Array<Record<string, unknown>>;
-    db.close();
-    return rows;
-  } catch { return []; }
-}
-
-// ---------------------------------------------------------------------------
-// In-memory cache (30s TTL)
-// ---------------------------------------------------------------------------
 type CacheEntry = { data: unknown; timestamp: number };
 const memCache = new Map<string, CacheEntry>();
 const MEM_TTL = 30_000;
 
-async function memCached<T>(key: string, fn: () => Promise<T>): Promise<T> {
+function memCached<T>(key: string, fn: () => T): T {
   const entry = memCache.get(key);
   if (entry && Date.now() - entry.timestamp < MEM_TTL) {
     return entry.data as T;
   }
-  const data = await fn();
+  const data = fn();
   memCache.set(key, { data, timestamp: Date.now() });
   return data;
 }
 
-// ---------------------------------------------------------------------------
-// Hyperliquid API helpers
-// ---------------------------------------------------------------------------
-async function hlPost<T>(body: Record<string, unknown>): Promise<T> {
-  const res = await fetch(HL_API, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error(`Hyperliquid API ${res.status}: ${await res.text()}`);
-  }
-  return res.json() as Promise<T>;
+interface PushCache {
+  _pushedAt: number;
+  overview?: unknown;
+  trades?: unknown;
+  timeline?: Record<string, unknown>;
+  live?: unknown;
 }
 
-// -- Types matching Hyperliquid responses --
+function readPushCache(allowStale = false): PushCache | null {
+  try {
+    if (!fs.existsSync(CACHE_PATH)) return null;
+    const raw = JSON.parse(fs.readFileSync(CACHE_PATH, "utf-8")) as PushCache;
+    if (!allowStale && Date.now() - raw._pushedAt > PUSH_MAX_AGE) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
 
-interface HlPosition {
-  position: {
-    coin: string;
-    szi: string;
-    entryPx: string;
-    leverage: { type: string; value: number };
-    liquidationPx: string | null;
-    unrealizedPnl: string;
-    marginUsed: string;
-    returnOnEquity: string;
-    cumFunding: { allTime: string; sinceOpen: string; sinceChange: string };
+function emptyOverview() {
+  return {
+    stats: {
+      totalTrades: 0, wins: 0, losses: 0, winRate: 0,
+      totalPnl: 0, avgPnl: 0, bestTrade: 0, worstTrade: 0,
+      accountValue: 0, withdrawable: 0,
+    },
+    assets: [],
+    recentTrades: [],
+    dailyStats: [],
   };
 }
 
-interface HlClearinghouseState {
-  marginSummary: {
-    accountValue: string;
-    totalNtlPos: string;
-    totalRawUsd: string;
-    totalMarginUsed: string;
-  };
-  withdrawable: string;
-  assetPositions: HlPosition[];
+function emptyTimeline() {
+  return { timeline: [], dailyStats: [] };
 }
 
-interface HlFill {
-  coin: string;
-  side: string; // "A" = buy, "B" = sell
-  px: string;
-  sz: string;
-  time: number;
-  closedPnl: string;
-  dir: string;
-  oid: number;
-  crossed: boolean;
-  fee: string;
-  startPosition: string;
-  hash: string;
+function emptyLive() {
+  return { openPositions: [], accountValue: 0, withdrawable: 0, recentTrades: [] };
 }
 
-async function getClearinghouseState(): Promise<HlClearinghouseState> {
-  return hlPost<HlClearinghouseState>({
-    type: "clearinghouseState",
-    user: WALLET,
-  });
-}
-
-async function getUserFills(): Promise<HlFill[]> {
-  return hlPost<HlFill[]>({ type: "userFills", user: WALLET });
-}
-
-// ---------------------------------------------------------------------------
-// Data processing
-// ---------------------------------------------------------------------------
-
-interface ProcessedTrade {
-  id: string;
-  asset: string;
-  side: string;
-  entryPrice: number;
-  exitPrice: number;
-  size: number;
-  pnl: number;
-  leverage: number | null;
-  openedAt: string;
-  closedAt: string;
-  closeReason: string;
-  fee: number;
-}
-
-function sideLabel(s: string): string {
-  return s === "A" ? "long" : "short";
-}
-
-const TRADE_HISTORY_CUTOFF = new Date("2026-05-03T04:00:00Z").getTime();
-
-function processFillsIntoTrades(fills: HlFill[]): ProcessedTrade[] {
-  return fills
-    .filter((f) => parseFloat(f.closedPnl) !== 0 && f.time >= TRADE_HISTORY_CUTOFF)
-    .sort((a, b) => b.time - a.time)
-    .map((f) => ({
-      id: f.hash,
-      asset: f.coin,
-      side: sideLabel(f.side === "A" ? "B" : "A"), // closing side is opposite of position side
-      entryPrice: 0, // not available per-fill; set 0
-      exitPrice: parseFloat(f.px),
-      size: parseFloat(f.sz),
-      pnl: parseFloat(f.closedPnl),
-      leverage: null,
-      openedAt: new Date(f.time).toISOString(),
-      closedAt: new Date(f.time).toISOString(),
-      closeReason: "filled",
-      fee: parseFloat(f.fee),
-    }));
-}
-
-interface AssetStats {
-  asset: string;
-  trades: number;
-  wins: number;
-  losses: number;
-  winRate: number;
-  totalPnl: number;
-  avgPnl: number;
-}
-
-function computeAssetBreakdown(trades: ProcessedTrade[]): AssetStats[] {
-  const map = new Map<
-    string,
-    { trades: number; wins: number; losses: number; totalPnl: number }
-  >();
-  for (const t of trades) {
-    const s = map.get(t.asset) ?? { trades: 0, wins: 0, losses: 0, totalPnl: 0 };
-    s.trades++;
-    if (t.pnl > 0) s.wins++;
-    else s.losses++;
-    s.totalPnl += t.pnl;
-    map.set(t.asset, s);
-  }
-  return Array.from(map.entries())
-    .map(([asset, s]) => ({
-      asset,
-      trades: s.trades,
-      wins: s.wins,
-      losses: s.losses,
-      winRate: s.trades > 0 ? Math.round((s.wins / s.trades) * 10000) / 100 : 0,
-      totalPnl: Math.round(s.totalPnl * 100) / 100,
-      avgPnl: s.trades > 0 ? Math.round((s.totalPnl / s.trades) * 100) / 100 : 0,
-    }))
-    .sort((a, b) => b.totalPnl - a.totalPnl);
-}
-
-interface DailyStat {
-  date: string;
-  trades: number;
-  wins: number;
-  winRate: number;
-  pnl: number;
-}
-
-function computeDailyStats(trades: ProcessedTrade[], days: number): DailyStat[] {
-  const cutoff = Date.now() - days * 86_400_000;
-  const map = new Map<
-    string,
-    { trades: number; wins: number; pnl: number }
-  >();
-  for (const t of trades) {
-    const ts = new Date(t.closedAt).getTime();
-    if (ts < cutoff) continue;
-    const date = t.closedAt.slice(0, 10);
-    const s = map.get(date) ?? { trades: 0, wins: 0, pnl: 0 };
-    s.trades++;
-    if (t.pnl > 0) s.wins++;
-    s.pnl += t.pnl;
-    map.set(date, s);
-  }
-  return Array.from(map.entries())
-    .map(([date, s]) => ({
-      date,
-      trades: s.trades,
-      wins: s.wins,
-      winRate: s.trades > 0 ? Math.round((s.wins / s.trades) * 10000) / 100 : 0,
-      pnl: Math.round(s.pnl * 100) / 100,
-    }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-}
-
-interface TimelinePoint {
-  timestamp: string;
-  cumulativePnl: number;
-  tradePnl: number;
-}
-
-function computeTimeline(trades: ProcessedTrade[], days: number): TimelinePoint[] {
-  const cutoff = Date.now() - days * 86_400_000;
-  const sorted = [...trades]
-    .filter((t) => new Date(t.closedAt).getTime() >= cutoff)
-    .sort((a, b) => new Date(a.closedAt).getTime() - new Date(b.closedAt).getTime());
-
-  let cum = 0;
-  return sorted.map((t) => {
-    cum += t.pnl;
-    return {
-      timestamp: t.closedAt,
-      cumulativePnl: Math.round(cum * 100) / 100,
-      tradePnl: Math.round(t.pnl * 100) / 100,
-    };
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Route handler
-// ---------------------------------------------------------------------------
 export async function GET(req: NextRequest) {
   const view = req.nextUrl.searchParams.get("view") ?? "overview";
+  const push = readPushCache();
 
   try {
     let body: unknown;
 
     switch (view) {
       case "overview": {
-        body = await memCached("overview", async () => {
-          const [state, fills] = await Promise.all([
-            getClearinghouseState(),
-            getUserFills(),
-          ]);
-          const trades = processFillsIntoTrades(fills);
-          const wins = trades.filter((t) => t.pnl > 0).length;
-          const losses = trades.filter((t) => t.pnl <= 0).length;
-          const totalPnl = trades.reduce((s, t) => s + t.pnl, 0);
-          const pnls = trades.map((t) => t.pnl);
-
-          return {
-            stats: {
-              totalTrades: trades.length,
-              wins,
-              losses,
-              winRate:
-                trades.length > 0
-                  ? Math.round((wins / trades.length) * 10000) / 100
-                  : 0,
-              totalPnl: Math.round(totalPnl * 100) / 100,
-              avgPnl:
-                trades.length > 0
-                  ? Math.round((totalPnl / trades.length) * 100) / 100
-                  : 0,
-              bestTrade: pnls.length > 0 ? Math.round(Math.max(...pnls) * 100) / 100 : 0,
-              worstTrade: pnls.length > 0 ? Math.round(Math.min(...pnls) * 100) / 100 : 0,
-              accountValue: parseFloat(state.marginSummary.accountValue),
-              withdrawable: parseFloat(state.withdrawable),
-            },
-            assets: computeAssetBreakdown(trades),
-            recentTrades: trades.slice(0, 10),
-            dailyStats: computeDailyStats(trades, 14),
-          };
-        });
+        body = push?.overview ?? memCached("hype-overview", emptyOverview);
         break;
       }
 
@@ -343,34 +80,12 @@ export async function GET(req: NextRequest) {
           ),
           200
         );
-        body = await memCached(`trades-${limit}`, async () => {
-          const dbTrades = getClosedTrades(limit);
-          if (dbTrades.length > 0) {
-            const trades = dbTrades.map((r) => ({
-              id: r.id as string,
-              asset: (r.symbol as string).replace(/\/USDC.*$/, ""),
-              side: r.side as string,
-              entryPrice: r.entry_price as number,
-              exitPrice: r.exit_price as number | null,
-              size: r.size as number,
-              pnl: r.pnl as number | null,
-              pnlPct: r.pnl_pct as number | null,
-              leverage: r.leverage as number,
-              strategy: r.strategy as string,
-              reason: r.reason as string | null,
-              closeReason: r.close_reason as string | null,
-              openedAt: r.opened_at ? new Date(r.opened_at as number).toISOString() : null,
-              closedAt: r.closed_at ? new Date(r.closed_at as number).toISOString() : null,
-              fee: 0,
-              mfe: r.mfe as number | null,
-              mae: r.mae as number | null,
-            }));
-            return { trades };
-          }
-          const fills = await getUserFills();
-          const trades = processFillsIntoTrades(fills);
-          return { trades: trades.slice(0, limit) };
-        });
+        if (push?.trades) {
+          const allTrades = (push.trades as { trades: unknown[] }).trades;
+          body = { trades: allTrades.slice(0, limit) };
+        } else {
+          body = memCached("hype-trades", () => ({ trades: [] }));
+        }
         break;
       }
 
@@ -382,94 +97,17 @@ export async function GET(req: NextRequest) {
           ),
           365
         );
-        body = await memCached(`timeline-${days}`, async () => {
-          const fills = await getUserFills();
-          const trades = processFillsIntoTrades(fills);
-          return {
-            timeline: computeTimeline(trades, days),
-            dailyStats: computeDailyStats(trades, days),
-          };
-        });
+        const timelineKey = `d${days}`;
+        if (push?.timeline?.[timelineKey]) {
+          body = push.timeline[timelineKey];
+        } else {
+          body = memCached(`hype-timeline-${days}`, emptyTimeline);
+        }
         break;
       }
 
       case "live": {
-        body = await memCached("live", async () => {
-          const [state, fills] = await Promise.all([
-            getClearinghouseState(),
-            getUserFills(),
-          ]);
-          const trades = processFillsIntoTrades(fills);
-
-          const trackedMap = getTrackedPositions();
-          const openPositions = state.assetPositions
-            .filter((p) => parseFloat(p.position.szi) !== 0)
-            .map((p) => {
-              const size = parseFloat(p.position.szi);
-              const side = size > 0 ? "long" : "short";
-              const asset = p.position.coin;
-              const tracked = trackedMap.get(`${asset}-${side}`);
-              const marginUsed = parseFloat(p.position.marginUsed);
-              const unrealizedPnl = parseFloat(p.position.unrealizedPnl);
-              const roe = parseFloat(p.position.returnOnEquity ?? "0") * 100;
-              const entryPrice = parseFloat(p.position.entryPx);
-              const absSize = Math.abs(size);
-              const markPrice = absSize > 0
-                ? (side === "long"
-                    ? entryPrice + unrealizedPnl / absSize
-                    : entryPrice - unrealizedPnl / absSize)
-                : entryPrice;
-              return {
-                asset,
-                side,
-                entryPrice,
-                markPrice,
-                size: absSize,
-                leverage: marginUsed > 0
-                  ? Math.round(absSize * entryPrice / marginUsed)
-                  : p.position.leverage.value,
-                unrealizedPnl,
-                marginUsed,
-                liquidationPrice: p.position.liquidationPx
-                  ? parseFloat(p.position.liquidationPx)
-                  : null,
-                strategy: tracked?.strategy ?? null,
-                roe,
-                fundingAccrued: parseFloat(p.position.cumFunding?.sinceOpen ?? "0"),
-                openedAt: tracked?.openedAt ?? null,
-                stopLoss: tracked?.stopLoss ?? null,
-                takeProfit: tracked?.takeProfit ?? null,
-                takeProfitLevels: tracked?.takeProfitLevels ?? [],
-              };
-            });
-
-          const dbRecent = getClosedTrades(5);
-          const recentTrades = dbRecent.length > 0
-            ? dbRecent.map((r) => ({
-                id: r.id as string,
-                asset: (r.symbol as string).replace(/\/USDC.*$/, ""),
-                side: r.side as string,
-                entryPrice: r.entry_price as number,
-                exitPrice: r.exit_price as number | null,
-                size: r.size as number,
-                pnl: r.pnl as number | null,
-                pnlPct: r.pnl_pct as number | null,
-                leverage: r.leverage as number,
-                strategy: r.strategy as string,
-                closeReason: r.close_reason as string | null,
-                openedAt: r.opened_at ? new Date(r.opened_at as number).toISOString() : null,
-                closedAt: r.closed_at ? new Date(r.closed_at as number).toISOString() : null,
-                fee: 0,
-              }))
-            : trades.slice(0, 5);
-
-          return {
-            openPositions,
-            accountValue: parseFloat(state.marginSummary.accountValue),
-            withdrawable: parseFloat(state.withdrawable),
-            recentTrades,
-          };
-        });
+        body = push?.live ?? memCached("hype-live", emptyLive);
         break;
       }
 
@@ -486,15 +124,28 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(body, {
       headers: {
         "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
-        "X-Data-Source": "hyperliquid",
+        "X-Data-Source": push ? "push" : "default",
       },
     });
   } catch (err) {
     console.error("[hype-api]", err);
+    const stale = readPushCache(true);
+    if (stale) {
+      const fallback =
+        view === "overview" ? stale.overview :
+        view === "trades" ? stale.trades :
+        view === "live" ? stale.live :
+        view === "timeline" ? stale.timeline?.["d30"] : null;
+      if (fallback) {
+        return NextResponse.json(fallback, {
+          headers: { "X-Data-Source": "push-stale" },
+        });
+      }
+    }
     const message =
       err instanceof Error
         ? err.message
-        : "Unknown error fetching Hyperliquid data";
+        : "Unknown error reading Hype data";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

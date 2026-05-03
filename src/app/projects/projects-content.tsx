@@ -313,7 +313,7 @@ function FeaturedAscendCard() {
               src="/avatar/Project_Ascend2.png"
               alt="Ascend Market event perpetuals"
               fill
-              className="object-cover"
+              className="object-cover scale-90"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#06080F]/60 to-transparent" />
           </div>
@@ -597,7 +597,7 @@ function FeaturedHypeCard() {
               src="/hype/Project_Hype.png"
               alt="Hype Agent"
               fill
-              className="object-cover object-left"
+              className="object-cover object-right"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#06080F]/40 to-transparent" />
           </div>

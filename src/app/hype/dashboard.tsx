@@ -99,12 +99,16 @@ interface OpenPosition {
   asset: string
   side: string
   entryPrice: number
+  markPrice: number
   size: number
   leverage: number
   unrealizedPnl: number
   marginUsed: number
   liquidationPrice: number | null
   strategy: string | null
+  roe: number
+  fundingAccrued: number
+  openedAt: number | null
 }
 
 interface OverviewResponse {
@@ -138,6 +142,29 @@ const fetchJson = async <T,>(url: string): Promise<T> => {
 
 function fmtNum(val: number): string {
   return val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function fmtPrice(val: number): string {
+  return val.toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })
+}
+
+function formatHoldTime(openedAt: number | null): string {
+  if (!openedAt) return "—"
+  const diff = Date.now() - openedAt
+  const days = Math.floor(diff / 86_400_000)
+  const hours = Math.floor((diff % 86_400_000) / 3_600_000)
+  return days > 0 ? `${days}d ${hours}h` : `${hours}h`
+}
+
+function formatOpenedDate(openedAt: number | null): string {
+  if (!openedAt) return "—"
+  return new Date(openedAt).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  })
 }
 
 function formatPnl(val: number | null | undefined): string {
@@ -788,42 +815,43 @@ export default function HypeDashboard() {
                       {pos.leverage}x
                     </span>
                   </div>
-                  {/* Unrealized P&L banner */}
                   <div className={`mb-3 flex items-center justify-between rounded-md px-3 py-1.5 text-xs font-mono tabular-nums ${
                     pos.unrealizedPnl >= 0
                       ? "bg-gain-bg text-gain"
                       : "bg-loss-bg text-loss"
                   }`}>
                     <span className="font-medium">
-                      {pos.unrealizedPnl >= 0 ? "+" : ""}{fmtNum(pos.unrealizedPnl)} USDC
+                      {pos.unrealizedPnl >= 0 ? "+" : ""}{fmtNum(pos.unrealizedPnl)} USD
                     </span>
-                    {pos.marginUsed > 0 && (
-                      <span className="text-[10px] opacity-80">
-                        {formatPct((pos.unrealizedPnl / pos.marginUsed) * 100)}
-                      </span>
-                    )}
+                    <span className="font-medium">
+                      {pos.roe >= 0 ? "+" : ""}{pos.roe.toFixed(1)}% ROE
+                    </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-y-2 text-xs">
-                    <div>
-                      <span className="text-muted-foreground">Size</span>
-                      <p className="font-mono font-medium tabular-nums">{pos.size}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Entry</span>
-                      <p className="font-mono font-medium tabular-nums">${fmtNum(pos.entryPrice)}</p>
-                    </div>
+                  <div className="grid grid-cols-2 gap-y-2.5 text-xs">
                     <div>
                       <span className="text-muted-foreground">Margin</span>
                       <p className="font-mono font-medium tabular-nums">${fmtNum(pos.marginUsed)}</p>
                     </div>
-                    {pos.liquidationPrice && (
-                      <div>
-                        <span className="text-muted-foreground">Liq. Price</span>
-                        <p className="font-mono font-medium tabular-nums text-loss">
-                          ${fmtNum(pos.liquidationPrice)}
-                        </p>
-                      </div>
-                    )}
+                    <div>
+                      <span className="text-muted-foreground">Entry</span>
+                      <p className="font-mono font-medium tabular-nums">${fmtPrice(pos.entryPrice)}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Mark</span>
+                      <p className="font-mono font-medium tabular-nums">${fmtPrice(pos.markPrice)}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Funding</span>
+                      <p className="font-mono font-medium tabular-nums">{fmtNum(pos.fundingAccrued)}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Hold Time</span>
+                      <p className="font-mono font-medium tabular-nums">{formatHoldTime(pos.openedAt)}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Opened</span>
+                      <p className="font-mono font-medium tabular-nums">{formatOpenedDate(pos.openedAt)}</p>
+                    </div>
                   </div>
                 </div>
               ))}

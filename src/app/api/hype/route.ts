@@ -8,19 +8,24 @@ const HL_API = "https://api.hyperliquid.xyz/info";
 
 const BOT_DB_PATH = path.resolve("C:/Users/Lukas/crypto-bot/data/rng-daytrader.db");
 
-function getTrackedStrategies(): Map<string, string> {
-  const map = new Map<string, string>();
+interface TrackedPositionInfo {
+  strategy: string;
+  openedAt: number;
+}
+
+function getTrackedPositions(): Map<string, TrackedPositionInfo> {
+  const map = new Map<string, TrackedPositionInfo>();
   if (!existsSync(BOT_DB_PATH)) return map;
   try {
     const db = new Database(BOT_DB_PATH, { readonly: true, fileMustExist: true });
     const row = db.prepare("SELECT value FROM bot_state WHERE key = ?").get("tracked_positions") as { value: string } | undefined;
     db.close();
     if (!row?.value) return map;
-    const positions = JSON.parse(row.value) as Array<{ symbol?: string; strategy?: string; side?: string }>;
+    const positions = JSON.parse(row.value) as Array<{ symbol?: string; strategy?: string; side?: string; openedAt?: number }>;
     for (const p of positions) {
       if (p.symbol && p.strategy) {
         const asset = p.symbol.replace(/\/USDC.*$/, "");
-        map.set(`${asset}-${p.side}`, p.strategy);
+        map.set(`${asset}-${p.side}`, { strategy: p.strategy, openedAt: p.openedAt ?? 0 });
       }
     }
   } catch { /* db not available */ }
@@ -64,12 +69,14 @@ async function hlPost<T>(body: Record<string, unknown>): Promise<T> {
 interface HlPosition {
   position: {
     coin: string;
-    szi: string; // signed size (negative = short)
+    szi: string;
     entryPx: string;
     leverage: { type: string; value: number };
     liquidationPx: string | null;
     unrealizedPnl: string;
     marginUsed: string;
+    returnOnEquity: string;
+    cumFunding: { allTime: string; sinceOpen: string; sinceChange: string };
   };
 }
 
@@ -342,25 +349,40 @@ export async function GET(req: NextRequest) {
           ]);
           const trades = processFillsIntoTrades(fills);
 
-          const strategyMap = getTrackedStrategies();
+          const trackedMap = getTrackedPositions();
           const openPositions = state.assetPositions
             .filter((p) => parseFloat(p.position.szi) !== 0)
             .map((p) => {
               const size = parseFloat(p.position.szi);
               const side = size > 0 ? "long" : "short";
               const asset = p.position.coin;
+              const tracked = trackedMap.get(`${asset}-${side}`);
+              const marginUsed = parseFloat(p.position.marginUsed);
+              const unrealizedPnl = parseFloat(p.position.unrealizedPnl);
+              const roe = parseFloat(p.position.returnOnEquity ?? "0") * 100;
+              const entryPrice = parseFloat(p.position.entryPx);
+              const absSize = Math.abs(size);
+              const markPrice = absSize > 0
+                ? (side === "long"
+                    ? entryPrice + unrealizedPnl / absSize
+                    : entryPrice - unrealizedPnl / absSize)
+                : entryPrice;
               return {
                 asset,
                 side,
-                entryPrice: parseFloat(p.position.entryPx),
-                size: Math.abs(size),
+                entryPrice,
+                markPrice,
+                size: absSize,
                 leverage: p.position.leverage.value,
-                unrealizedPnl: parseFloat(p.position.unrealizedPnl),
-                marginUsed: parseFloat(p.position.marginUsed),
+                unrealizedPnl,
+                marginUsed,
                 liquidationPrice: p.position.liquidationPx
                   ? parseFloat(p.position.liquidationPx)
                   : null,
-                strategy: strategyMap.get(`${asset}-${side}`) ?? null,
+                strategy: tracked?.strategy ?? null,
+                roe,
+                fundingAccrued: parseFloat(p.position.cumFunding?.sinceOpen ?? "0"),
+                openedAt: tracked?.openedAt ?? null,
               };
             });
 

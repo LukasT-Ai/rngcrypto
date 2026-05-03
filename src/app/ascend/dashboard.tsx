@@ -1088,7 +1088,7 @@ export default function AscendDashboard() {
                       </div>
                       <div>
                         <span className="text-muted-foreground">Entry</span>
-                        <p className="font-mono font-medium tabular-nums">{pos.entryPrice.toFixed(4)}</p>
+                        <p className="font-mono font-medium tabular-nums">{pos.entryPrice.toFixed(5)}</p>
                       </div>
                       {pos.markPrice != null && (
                         <div>
@@ -1098,7 +1098,7 @@ export default function AscendDashboard() {
                               ? pos.unrealizedPnl >= 0 ? "text-gain" : "text-loss"
                               : ""
                           }`}>
-                            {pos.markPrice.toFixed(4)}
+                            {pos.markPrice.toFixed(5)}
                           </p>
                         </div>
                       )}
@@ -1106,7 +1106,7 @@ export default function AscendDashboard() {
                         <div>
                           <span className="text-muted-foreground">TP Target</span>
                           <p className="font-mono font-medium tabular-nums text-gain">
-                            {pos.tpPrice.toFixed(4)}
+                            {pos.tpPrice.toFixed(5)}
                             {tpDist != null && (
                               <span className="ml-1 text-[10px] opacity-70">
                                 ({tpDist >= 0 ? "+" : ""}{tpDist.toFixed(1)}%)
@@ -1119,7 +1119,7 @@ export default function AscendDashboard() {
                         <div>
                           <span className="text-muted-foreground">SL Risk</span>
                           <p className="font-mono font-medium tabular-nums text-loss">
-                            {pos.slPrice.toFixed(4)}
+                            {pos.slPrice.toFixed(5)}
                             {slDist != null && (
                               <span className="ml-1 text-[10px] opacity-70">
                                 (-{Math.abs(slDist).toFixed(1)}%)
@@ -1352,10 +1352,10 @@ export default function AscendDashboard() {
                           </td>
                           <td className="hidden py-3 pr-3 text-right font-mono tabular-nums md:table-cell">{trade.leverage}x</td>
                           <td className="py-3 pr-3 text-right font-mono tabular-nums">
-                            {trade.entryPrice.toFixed(4)}
+                            {trade.entryPrice.toFixed(5)}
                           </td>
                           <td className="py-3 pr-3 text-right font-mono tabular-nums">
-                            {trade.exitPrice?.toFixed(4) ?? "---"}
+                            {trade.exitPrice?.toFixed(5) ?? "---"}
                           </td>
                           <td
                             className={`py-3 pr-3 text-right font-mono font-semibold tabular-nums ${
@@ -1430,8 +1430,8 @@ export default function AscendDashboard() {
                                 {trade.exitPrice != null && (
                                   <div className="mt-4">
                                     <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
-                                      <span>Entry: {trade.entryPrice.toFixed(4)}</span>
-                                      <span>Exit: {trade.exitPrice.toFixed(4)}</span>
+                                      <span>Entry: {trade.entryPrice.toFixed(5)}</span>
+                                      <span>Exit: {trade.exitPrice.toFixed(5)}</span>
                                     </div>
                                     <div className="relative h-3 w-full overflow-hidden rounded-full bg-white/5">
                                       {(() => {
@@ -1455,9 +1455,9 @@ export default function AscendDashboard() {
                                       })()}
                                     </div>
                                     <div className="mt-1 flex items-center justify-center gap-2 text-xs">
-                                      <span className="font-mono tabular-nums">{trade.entryPrice.toFixed(4)}</span>
+                                      <span className="font-mono tabular-nums">{trade.entryPrice.toFixed(5)}</span>
                                       <span className={isWin ? "text-gain" : "text-loss"}>{"-->"}</span>
-                                      <span className="font-mono tabular-nums">{trade.exitPrice.toFixed(4)}</span>
+                                      <span className="font-mono tabular-nums">{trade.exitPrice.toFixed(5)}</span>
                                     </div>
                                   </div>
                                 )}

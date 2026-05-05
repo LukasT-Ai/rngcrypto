@@ -268,7 +268,7 @@ function StrikePreview() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             label="Total P&L"
-            value={hasTrades ? `${(stats.totalPnl >= 0 ? "+" : "")}${stats.totalPnl.toLocaleString()} ADA` : "--"}
+            value={hasTrades ? `${(stats.totalPnl >= 0 ? "+" : "")}${stats.totalPnl.toLocaleString()} USDT` : "--"}
             subtext="Mainnet"
             color={hasTrades ? (stats.totalPnl >= 0 ? "green" : "red") : "white"}
             delay={0.1}

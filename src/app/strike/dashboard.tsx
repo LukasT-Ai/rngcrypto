@@ -369,7 +369,7 @@ function PnlTooltip({ active, payload, label }: {
     <div className="rounded-lg border border-[#22D3EE]/20 bg-[#0A0E17]/95 px-4 py-3 shadow-xl backdrop-blur-md">
       <p className="mb-1 text-xs text-muted-foreground">{label}</p>
       <p className={`font-mono text-sm font-semibold tabular-nums ${cumulative >= 0 ? "text-gain" : "text-loss"}`}>
-        {formatPnl(cumulative)} USD
+        {formatPnl(cumulative)} USDM
       </p>
     </div>
   )
@@ -775,7 +775,7 @@ export default function StrikeDashboard() {
           value={stats ? `${stats.totalTrades}` : "0"}
           icon={Activity}
           color="text-white/90"
-          sub={stats && stats.totalTrades > 0 ? `Avg: ${formatPnl(stats.avgPnl)} USD` : "Warming up"}
+          sub={stats && stats.totalTrades > 0 ? `Avg: ${formatPnl(stats.avgPnl)} USDM` : "Warming up"}
         />
         <StatCard
           label="Open Positions"
@@ -802,7 +802,7 @@ export default function StrikeDashboard() {
         <div className="flex items-center gap-2">
           <span className="text-white/40">Today</span>
           <span className={`font-mono font-semibold tabular-nums ${dailySummary.todayPnl >= 0 ? "text-gain" : "text-loss"}`}>
-            {formatPnl(dailySummary.todayPnl)} USD
+            {formatPnl(dailySummary.todayPnl)} USDM
           </span>
           <span className="font-mono text-xs tabular-nums text-white/40">
             ({dailySummary.todayWins}W / {dailySummary.todayLosses}L)
@@ -812,14 +812,14 @@ export default function StrikeDashboard() {
         <div className="flex items-center gap-2">
           <span className="text-white/40">This Week</span>
           <span className={`font-mono font-semibold tabular-nums ${dailySummary.weekPnl >= 0 ? "text-gain" : "text-loss"}`}>
-            {formatPnl(dailySummary.weekPnl)} USD
+            {formatPnl(dailySummary.weekPnl)} USDM
           </span>
         </div>
         <div className="h-4 w-px bg-[#22D3EE]/20" />
         <div className="flex items-center gap-2">
           <span className="text-white/40">This Month</span>
           <span className={`font-mono font-semibold tabular-nums ${dailySummary.monthPnl >= 0 ? "text-gain" : "text-loss"}`}>
-            {formatPnl(dailySummary.monthPnl)} USD
+            {formatPnl(dailySummary.monthPnl)} USDM
           </span>
         </div>
         <div className="h-4 w-px bg-[#22D3EE]/20" />
@@ -1066,7 +1066,7 @@ export default function StrikeDashboard() {
                           : "bg-loss-bg text-loss"
                       }`}>
                         <span className="font-medium">
-                          {pos.unrealizedPnl >= 0 ? "+" : ""}{fmtNum(pos.unrealizedPnl)} USD
+                          {pos.unrealizedPnl >= 0 ? "+" : ""}{fmtNum(pos.unrealizedPnl)} USDM
                         </span>
                         {pos.unrealizedPnlPct != null && (
                           <span className="text-[10px] opacity-80">
@@ -1562,7 +1562,7 @@ export default function StrikeDashboard() {
                           </span>
                         </span>
                         <span className={`font-mono font-semibold tabular-nums ${isPositive ? "text-gain" : "text-loss"}`}>
-                          {formatPnl(a.totalPnl)} USD
+                          {formatPnl(a.totalPnl)} USDM
                         </span>
                       </div>
                     </div>
@@ -1777,7 +1777,7 @@ export default function StrikeDashboard() {
         transition={{ delay: 0.5 }}
         className="pb-4 text-center text-xs text-muted-foreground"
       >
-        Data sourced from Strike Finance mainnet. All values in USD. Auto-refreshes every 10-60s.
+        Data sourced from Strike Finance mainnet. All values in USDM. Auto-refreshes every 10-60s.
       </motion.p>
 
       <FlexCard

@@ -420,7 +420,7 @@ function FeaturedStrikeCard() {
             <div className="text-center">
               <div className={`font-mono text-lg font-bold ${hasTrades && stats.totalPnl >= 0 ? "text-gain" : hasTrades ? "text-loss" : "text-white/90"}`}>
                 {hasTrades
-                  ? `${stats.totalPnl >= 0 ? "+" : ""}${stats.totalPnl.toLocaleString()} USDT`
+                  ? `${stats.totalPnl >= 0 ? "+" : ""}${stats.totalPnl.toLocaleString()} USDM`
                   : "---"}
               </div>
               <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total PnL</div>

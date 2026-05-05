@@ -42,7 +42,7 @@ const VARIANTS: Record<Variant, {
     accentAlt: "#06B6D4",
     handle: "@strikeperps",
     token: "$STRIKE",
-    unit: "USD",
+    unit: "USDM",
     tagline: "Autonomous Perpetual Futures on Cardano",
     url: "https://www.rngcrypto.com/strike",
     gradient: "from-[#22D3EE] via-[#06B6D4] to-[#00FF88]",

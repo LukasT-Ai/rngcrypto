@@ -239,8 +239,8 @@ function FeaturedAscendCard() {
       <div className="flex flex-col gap-8 lg:flex-row lg:items-center">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ring-white/[0.08]">
-              <Bot className="size-5 text-white/70" />
+            <div className="relative size-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-[#E8622C]/30">
+              <Image src="/avatar/ascend_logo_coin.jpg" alt="Ascend Market" fill className="object-cover" />
             </div>
             <h2 className="font-display text-xl font-bold tracking-tight lg:text-2xl">
               Ascend Market
@@ -379,8 +379,8 @@ function FeaturedStrikeCard() {
       <div className="flex flex-col gap-8 lg:flex-row lg:items-center">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ring-white/[0.08]">
-              <TrendingUp className="size-5 text-white/70" />
+            <div className="relative size-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-[#22D3EE]/30">
+              <Image src="/strike/Strike Logo.jpeg" alt="Strike Finance" fill className="object-cover" />
             </div>
             <h2 className="font-display text-xl font-bold tracking-tight lg:text-2xl">
               Strike Finance

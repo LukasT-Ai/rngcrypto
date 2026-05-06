@@ -39,8 +39,19 @@ import {
   Wallet,
   DollarSign,
   Download,
+  Info,
+  Zap,
+  Repeat,
+  Layers,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { FlexCard } from "@/components/flex-card"
 
 function XIcon({ className }: { className?: string }) {
@@ -296,6 +307,7 @@ export default function HypeDashboard() {
   const [timeframe, setTimeframe] = useState<number>(90)
   const [linkCopied, setLinkCopied] = useState(false)
   const [flexCardOpen, setFlexCardOpen] = useState(false)
+  const [legendOpen, setLegendOpen] = useState(false)
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null)
   const [tradesPage, setTradesPage] = useState(1)
 
@@ -465,6 +477,14 @@ export default function HypeDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setLegendOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#7BEBC2]/10 border border-[#7BEBC2]/30 px-3.5 py-1.5 text-xs font-medium text-[#7BEBC2] hover:bg-[#7BEBC2]/20 hover:border-[#7BEBC2]/50 hover:shadow-[0_0_16px_rgba(123,235,194,0.25)] transition-all"
+            title="Strategy guide"
+          >
+            <Info className="size-3" />
+            Strategies
+          </button>
           <button
             onClick={() => setFlexCardOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-full bg-[#00FF88]/10 border border-[#00FF88]/30 px-3.5 py-1.5 text-xs font-medium text-[#00FF88] hover:bg-[#00FF88]/20 hover:border-[#00FF88]/50 hover:shadow-[0_0_16px_rgba(0,255,136,0.25)] transition-all"
@@ -1390,6 +1410,40 @@ export default function HypeDashboard() {
         bestAsset={bestAsset}
         variant="hype"
       />
+
+      {/* Strategy Legend Dialog */}
+      <Dialog open={legendOpen} onOpenChange={setLegendOpen}>
+        <DialogContent className="border-[#7BEBC2]/20 bg-[#0a0a0f]/95 backdrop-blur-xl sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Shield className="size-5 text-[#7BEBC2]" />
+              Strategy Guide
+            </DialogTitle>
+            <DialogDescription className="text-white/40">
+              How each strategy approaches the market
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 space-y-3">
+            {[
+              { label: "Mean Reversion", icon: Repeat, color: "#F97316", border: "border-orange-500/20", desc: "Identifies overextended price moves and trades the snap-back. Enters when price deviates significantly from its average and targets a return to equilibrium." },
+              { label: "Sniper", icon: Crosshair, color: "#A855F7", border: "border-purple-500/20", desc: "Waits for high-probability setups across multiple timeframes. Enters with precision on confirmed signals and manages risk with adaptive trailing stops." },
+              { label: "Trend", icon: TrendingUp, color: "#06B6D4", border: "border-cyan-500/20", desc: "Follows the dominant market direction with momentum-based entries. Rides trends with wider stops to avoid premature exits on pullbacks." },
+              { label: "Funding", icon: DollarSign, color: "#3B82F6", border: "border-blue-500/20", desc: "Collects funding rate payments when rates are elevated. A yield-oriented approach with hedged exposure to minimize directional risk." },
+              { label: "Adopted", icon: Layers, color: "#EAB308", border: "border-yellow-500/20", desc: "Positions inherited from manual entries. The bot monitors and manages exits using the same risk framework as automated trades." },
+            ].map((s) => (
+              <div key={s.label} className={`flex items-start gap-3 rounded-lg border ${s.border} bg-white/[0.02] p-3`}>
+                <div className="mt-0.5 rounded-md p-1.5" style={{ backgroundColor: `${s.color}15` }}>
+                  <s.icon className="size-4" style={{ color: s.color }} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-0.5 text-sm font-medium" style={{ color: s.color }}>{s.label}</div>
+                  <p className="text-xs leading-relaxed text-white/50">{s.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

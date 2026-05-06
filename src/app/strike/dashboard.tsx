@@ -37,8 +37,23 @@ import {
   ChevronUp,
   ChevronLeft,
   ChevronRight,
+  Info,
+  Zap,
+  Crosshair as CrosshairIcon,
+  TrendingUp as TrendUp,
+  BarChart3 as BarIcon,
+  Repeat,
+  DollarSign,
+  Layers,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { FlexCard } from "@/components/flex-card"
 
 function XIcon({ className }: { className?: string }) {
@@ -388,6 +403,7 @@ export default function StrikeDashboard() {
   const [timeframe, setTimeframe] = useState<number>(30)
   const [linkCopied, setLinkCopied] = useState(false)
   const [flexCardOpen, setFlexCardOpen] = useState(false)
+  const [legendOpen, setLegendOpen] = useState(false)
   const [expandedTradeId, setExpandedTradeId] = useState<number | null>(null)
   const [tradesPage, setTradesPage] = useState(1)
 
@@ -655,6 +671,15 @@ export default function StrikeDashboard() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Strategy legend */}
+          <button
+            onClick={() => setLegendOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#22D3EE]/10 border border-[#22D3EE]/30 px-3.5 py-1.5 text-xs font-medium text-[#22D3EE] hover:bg-[#22D3EE]/20 hover:border-[#22D3EE]/50 hover:shadow-[0_0_16px_rgba(34,211,238,0.25)] transition-all"
+            title="Strategy guide"
+          >
+            <Info className="size-3" />
+            Strategies
+          </button>
           {/* Flex card button */}
           <button
             onClick={() => setFlexCardOpen(true)}
@@ -1794,6 +1819,41 @@ export default function StrikeDashboard() {
         bestAsset={bestAsset}
         variant="strike"
       />
+
+      {/* Strategy Legend Dialog */}
+      <Dialog open={legendOpen} onOpenChange={setLegendOpen}>
+        <DialogContent className="border-[#22D3EE]/20 bg-[#0a0a0f]/95 backdrop-blur-xl sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Shield className="size-5 text-[#22D3EE]" />
+              Strategy Guide
+            </DialogTitle>
+            <DialogDescription className="text-white/40">
+              How each strategy approaches the market
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 space-y-3">
+            {[
+              { label: "Sniper", icon: Crosshair, color: "#A855F7", border: "border-purple-500/20", desc: "Targets high-conviction setups for quick swing profits. Enters on multi-timeframe signal alignment and exits at ~5% ROE." },
+              { label: "Scalper", icon: Zap, color: "#F43F5E", border: "border-rose-500/20", desc: "Ultra-fast in-and-out trades. Captures small, frequent moves with tight risk controls and exits at ~1.5% ROE." },
+              { label: "Trend Follower", icon: TrendingUp, color: "#06B6D4", border: "border-cyan-500/20", desc: "Rides sustained directional moves with wider trailing stops. Holds longer to capture the bulk of a trend." },
+              { label: "Grid", icon: Layers, color: "#10B981", border: "border-emerald-500/20", desc: "Places layered orders across a price range. Profits from oscillating markets by buying low and selling high repeatedly." },
+              { label: "DCA", icon: Repeat, color: "#F59E0B", border: "border-amber-500/20", desc: "Dollar-cost averages into positions over time. Reduces timing risk by spreading entries across multiple price levels." },
+              { label: "Funding", icon: DollarSign, color: "#3B82F6", border: "border-blue-500/20", desc: "Captures funding rate payments by holding positions when rates are favorable. Low-risk, yield-oriented strategy." },
+            ].map((s) => (
+              <div key={s.label} className={`flex items-start gap-3 rounded-lg border ${s.border} bg-white/[0.02] p-3`}>
+                <div className="mt-0.5 rounded-md p-1.5" style={{ backgroundColor: `${s.color}15` }}>
+                  <s.icon className="size-4" style={{ color: s.color }} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-0.5 text-sm font-medium" style={{ color: s.color }}>{s.label}</div>
+                  <p className="text-xs leading-relaxed text-white/50">{s.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

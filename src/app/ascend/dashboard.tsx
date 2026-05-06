@@ -39,8 +39,18 @@ import {
   ChevronUp,
   ChevronLeft,
   ChevronRight,
+  Info,
+  Zap,
+  Repeat,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { FlexCard } from "@/components/flex-card"
 
 function XIcon({ className }: { className?: string }) {
@@ -392,6 +402,7 @@ export default function AscendDashboard() {
   const [timeframe, setTimeframe] = useState<number>(90)
   const [linkCopied, setLinkCopied] = useState(false)
   const [flexCardOpen, setFlexCardOpen] = useState(false)
+  const [legendOpen, setLegendOpen] = useState(false)
   const [expandedTradeId, setExpandedTradeId] = useState<number | null>(null)
   const [tradesPage, setTradesPage] = useState(1)
 
@@ -655,6 +666,15 @@ export default function AscendDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Strategy legend */}
+          <button
+            onClick={() => setLegendOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#E8622C]/10 border border-[#E8622C]/30 px-3.5 py-1.5 text-xs font-medium text-[#E8622C] hover:bg-[#E8622C]/20 hover:border-[#E8622C]/50 hover:shadow-[0_0_16px_rgba(232,98,44,0.25)] transition-all"
+            title="Strategy guide"
+          >
+            <Info className="size-3" />
+            Strategies
+          </button>
           {/* Flex card button */}
           <button
             onClick={() => setFlexCardOpen(true)}
@@ -1732,6 +1752,39 @@ export default function AscendDashboard() {
         openPositionCount={openPositions.length}
         bestAsset={bestAsset}
       />
+
+      {/* Strategy Legend Dialog */}
+      <Dialog open={legendOpen} onOpenChange={setLegendOpen}>
+        <DialogContent className="border-[#E8622C]/20 bg-[#0a0a0f]/95 backdrop-blur-xl sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Shield className="size-5 text-[#E8622C]" />
+              Strategy Guide
+            </DialogTitle>
+            <DialogDescription className="text-white/40">
+              How each strategy approaches event markets
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 space-y-3">
+            {[
+              { label: "Auto-Trader", icon: Zap, color: "#22D3EE", border: "border-cyan-500/20", desc: "Continuously scans event markets for mispriced contracts. Combines crowd sentiment with real-time price feeds to find edge and size positions automatically." },
+              { label: "Sniper", icon: Crosshair, color: "#A855F7", border: "border-purple-500/20", desc: "Targets specific high-conviction event outcomes. Waits for price dislocations from fair value and enters with precision timing." },
+              { label: "Momentum", icon: TrendingUp, color: "#F59E0B", border: "border-amber-500/20", desc: "Follows rapid sentiment shifts in event markets. Enters when crowd behavior signals a directional move and rides the momentum." },
+              { label: "Re-entry", icon: Repeat, color: "#10B981", border: "border-emerald-500/20", desc: "Re-enters profitable setups after a pullback. Identifies winning patterns and scales back in when the same conditions reappear at better prices." },
+            ].map((s) => (
+              <div key={s.label} className={`flex items-start gap-3 rounded-lg border ${s.border} bg-white/[0.02] p-3`}>
+                <div className="mt-0.5 rounded-md p-1.5" style={{ backgroundColor: `${s.color}15` }}>
+                  <s.icon className="size-4" style={{ color: s.color }} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-0.5 text-sm font-medium" style={{ color: s.color }}>{s.label}</div>
+                  <p className="text-xs leading-relaxed text-white/50">{s.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

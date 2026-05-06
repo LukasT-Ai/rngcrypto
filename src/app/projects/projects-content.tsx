@@ -13,7 +13,6 @@ import {
   Coins,
   Shield,
   Palette,
-  Bitcoin,
   TrendingUp,
 } from "lucide-react"
 
@@ -152,28 +151,9 @@ const projects: Project[] = [
     ],
     gradient: "from-amber-500/15 via-transparent to-transparent",
   },
-  {
-    name: "Bitcoin",
-    tagline: "The OG",
-    description:
-      "The foundation of everything. RnGcrYptO covers BTC market analysis, macro correlation, and trading strategies. Every portfolio starts here.",
-    status: "Active",
-    statusColor: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-    categories: ["L1", "Trading", "Analysis"],
-    chain: "bitcoin",
-    icon: Bitcoin,
-    images: [
-      { src: "/avatar/bitcoin_logo.svg", alt: "Bitcoin logo", contain: true },
-    ],
-    stats: [
-      { label: "Since", value: "2009" },
-      { label: "Role", value: "Foundation" },
-    ],
-    gradient: "from-orange-500/15 via-transparent to-transparent",
-  },
 ]
 
-const filterChains = ["all", "cardano", "midnight", "ethereum", "bitcoin"] as const
+const filterChains = ["all", "cardano", "midnight", "ethereum"] as const
 
 type AscendOverview = {
   stats: {
@@ -609,8 +589,17 @@ function FeaturedHypeCard() {
   )
 }
 
+const projectAccents: Record<string, string> = {
+  "Good Vibes Club": "#A855F7",
+  "Liqwid Finance": "#22D3EE",
+  "Midnight": "#818CF8",
+  "Arbiter": "#F59E0B",
+  "Bitcoin": "#F7931A",
+}
+
 function ProjectCard({ project }: { project: Project }) {
   const chainColor = chainColors[project.chain]
+  const accent = projectAccents[project.name] ?? chainColor
 
   return (
     <motion.div
@@ -619,15 +608,52 @@ function ProjectCard({ project }: { project: Project }) {
       initial="hidden"
       animate="show"
       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-      className="group relative flex flex-col overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] transition-all hover:border-white/[0.12]"
+      className="group relative flex flex-col overflow-hidden rounded-2xl border transition-all duration-300"
+      style={{
+        borderColor: `color-mix(in srgb, ${accent} 15%, transparent)`,
+        background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 4%, #06080F) 0%, #06080F 60%)`,
+      }}
     >
-      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${project.gradient} opacity-0 transition-opacity duration-500 group-hover:opacity-100`} />
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-px"
+        style={{ background: `linear-gradient(90deg, transparent, ${accent}40, transparent)` }}
+      />
+
+      <div
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+        style={{ background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 10%, transparent) 0%, transparent 50%)` }}
+      />
+
+      {project.images && project.images.length > 0 && (
+        <div className="relative">
+          <div
+            className={`relative h-48 w-full overflow-hidden ${
+              project.images[0].contain ? "bg-[#0A0E17]" : ""
+            }`}
+          >
+            <Image
+              src={project.images[0].src}
+              alt={project.images[0].alt}
+              fill
+              className={`transition-transform duration-500 group-hover:scale-105 ${project.images[0].contain ? "object-contain p-8" : "object-cover"}`}
+              sizes="(max-width: 768px) 100vw, 33vw"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#06080F] via-[#06080F]/40 to-transparent" />
+          </div>
+        </div>
+      )}
 
       <div className="relative flex flex-1 flex-col p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ring-white/[0.08]">
-              <project.icon className="size-5 text-white/70" />
+            <div
+              className="flex size-10 shrink-0 items-center justify-center rounded-xl"
+              style={{
+                backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)`,
+                boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${accent} 25%, transparent)`,
+              }}
+            >
+              <project.icon className="size-5" style={{ color: accent }} />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -652,30 +678,15 @@ function ProjectCard({ project }: { project: Project }) {
           {project.description}
         </p>
 
-        {project.images && project.images.length > 0 && (
-          <div className="mt-5">
-            <div
-              className={`relative aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-white/10 transition-transform duration-300 group-hover:scale-[1.01] ${
-                project.images[0].contain ? "bg-[#0A0E17]" : ""
-              }`}
-            >
-              <Image
-                src={project.images[0].src}
-                alt={project.images[0].alt}
-                fill
-                className={project.images[0].contain ? "object-contain p-6" : "object-cover"}
-                sizes="(max-width: 768px) 100vw, 33vw"
-              />
-            </div>
-          </div>
-        )}
-
         {project.stats && project.stats.length > 0 && (
-          <div className="mt-4 flex gap-4 rounded-lg bg-white/[0.02] px-4 py-3">
+          <div
+            className="mt-5 flex gap-6 rounded-xl px-5 py-3.5"
+            style={{ backgroundColor: `color-mix(in srgb, ${accent} 5%, transparent)` }}
+          >
             {project.stats.map((stat) => (
               <div key={stat.label}>
                 <div className="text-[10px] uppercase tracking-wider text-white/30">{stat.label}</div>
-                <div className="font-mono text-sm font-semibold text-white/80">{stat.value}</div>
+                <div className="font-mono text-sm font-bold" style={{ color: accent }}>{stat.value}</div>
               </div>
             ))}
           </div>
@@ -764,7 +775,7 @@ export function ProjectsContent() {
         </p>
 
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          {["Cardano", "Midnight", "Ethereum", "Bitcoin"].map((chain) => (
+          {["Cardano", "Midnight", "Ethereum"].map((chain) => (
             <span
               key={chain}
               className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-xs font-medium text-white/40"
@@ -776,8 +787,8 @@ export function ProjectsContent() {
 
         <div className="flex flex-wrap justify-center gap-6 mt-8">
           {[
-            { value: "6", label: "Active Projects" },
-            { value: "4", label: "Blockchains" },
+            { value: "7", label: "Active Projects" },
+            { value: "3", label: "Blockchains" },
             { value: "$32M+", label: "Ecosystem TVL" },
             { value: "24/7", label: "Agent Uptime" },
           ].map((stat) => (
@@ -814,7 +825,7 @@ export function ProjectsContent() {
           variants={containerVariants}
           initial="hidden"
           animate="show"
-          className="grid gap-5 md:grid-cols-2 lg:grid-cols-3"
+          className="grid gap-6 md:grid-cols-2"
         >
           {filteredProjects.map((project) => (
             <ProjectCard key={project.name} project={project} />

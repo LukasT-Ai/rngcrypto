@@ -201,12 +201,16 @@ function formatPct(val: number | null | undefined): string {
   return `${sign}${v.toFixed(1)}%`
 }
 
+function asUTC(d: string): Date {
+  return d.endsWith("Z") || d.includes("+") ? new Date(d) : new Date(d + "Z")
+}
+
 function formatDate(d: string): string {
-  return new Date(d).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" })
+  return asUTC(d).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" })
 }
 
 function formatDateTime(d: string): string {
-  return new Date(d).toLocaleString("en-US", {
+  return asUTC(d).toLocaleString("en-US", {
     timeZone: "America/New_York",
     month: "short",
     day: "numeric",
@@ -431,6 +435,79 @@ export default function HypeDashboard() {
     return (liveData?.recentTrades ?? []).slice(0, 5)
   }, [liveData?.recentTrades])
 
+  // ── Enhanced metrics ──────────────────────────────────────────────────
+  const profitFactor = useMemo(() => {
+    const closed = trades.filter(t => t.closedAt && t.pnl != null && t.pnl !== 0)
+    const grossProfit = closed.filter(t => (t.pnl ?? 0) > 0).reduce((s, t) => s + (t.pnl ?? 0), 0)
+    const grossLoss = Math.abs(closed.filter(t => (t.pnl ?? 0) < 0).reduce((s, t) => s + (t.pnl ?? 0), 0))
+    if (grossLoss === 0) return grossProfit > 0 ? 99.9 : 0
+    return Math.round((grossProfit / grossLoss) * 100) / 100
+  }, [trades])
+
+  const currentStreak = useMemo(() => {
+    const sorted = [...trades]
+      .filter(t => t.closedAt && t.pnl != null && t.pnl !== 0)
+      .sort((a, b) => asUTC(b.closedAt ?? "1970").getTime() - asUTC(a.closedAt ?? "1970").getTime())
+    if (!sorted.length) return { count: 0, type: "W" as const }
+    const firstType = (sorted[0].pnl ?? 0) > 0 ? "W" : "L"
+    let count = 0
+    for (const t of sorted) {
+      if (((t.pnl ?? 0) > 0 ? "W" : "L") === firstType) count++
+      else break
+    }
+    return { count, type: firstType as "W" | "L" }
+  }, [trades])
+
+  const sharpeRatio = useMemo(() => {
+    const closed = trades.filter(t => t.closedAt && t.pnl != null && t.pnl !== 0)
+    if (closed.length < 3) return null
+    const returns = closed.map(t => {
+      const margin = t.entryPrice && t.size && t.leverage ? (t.size * t.entryPrice) / (t.leverage || 1) : t.size
+      return (t.pnl ?? 0) / (margin || 1)
+    })
+    const mean = returns.reduce((s, r) => s + r, 0) / returns.length
+    const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / (returns.length - 1)
+    const stdDev = Math.sqrt(variance)
+    if (stdDev === 0) return null
+    return Math.round((mean / stdDev) * Math.sqrt(252) * 100) / 100
+  }, [trades])
+
+  const drawdownTimeline = useMemo(() => {
+    if (!timeline.length) return []
+    let peak = -Infinity
+    return timeline.map(p => {
+      peak = Math.max(peak, p.cumulativePnl)
+      const dd = peak > 0 ? ((p.cumulativePnl - peak) / Math.abs(peak)) * 100 : 0
+      return { ...p, drawdownPct: Math.min(dd, 0) }
+    })
+  }, [timeline])
+
+  const maxDrawdown = useMemo(() => {
+    if (!drawdownTimeline.length) return 0
+    return Math.min(...drawdownTimeline.map(d => d.drawdownPct))
+  }, [drawdownTimeline])
+
+  const durationBuckets = useMemo(() => {
+    const buckets = { "<5m": 0, "5-30m": 0, "30m-2h": 0, "2-8h": 0, "8h+": 0 }
+    for (const t of trades) {
+      if (!t.closedAt || !t.openedAt) continue
+      const mins = (asUTC(t.closedAt).getTime() - asUTC(t.openedAt).getTime()) / 60000
+      if (mins < 5) buckets["<5m"]++
+      else if (mins < 30) buckets["5-30m"]++
+      else if (mins < 120) buckets["30m-2h"]++
+      else if (mins < 480) buckets["2-8h"]++
+      else buckets["8h+"]++
+    }
+    return buckets
+  }, [trades])
+
+  const lastTrade = useMemo(() => {
+    const sorted = [...trades]
+      .filter(t => t.closedAt)
+      .sort((a, b) => asUTC(b.closedAt!).getTime() - asUTC(a.closedAt!).getTime())
+    return sorted[0] ?? null
+  }, [trades])
+
   const hasData = stats && stats.totalTrades > 0
 
   return (
@@ -559,7 +636,7 @@ export default function HypeDashboard() {
         variants={container}
         initial="hidden"
         animate="show"
-        className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6"
+        className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8"
       >
         <StatCard
           label="Account Value"
@@ -596,18 +673,32 @@ export default function HypeDashboard() {
           sub={stats ? `Avg: ${formatPnl(stats.avgPnl)} USDC` : undefined}
         />
         <StatCard
-          label="Open Positions"
-          value={`${openPositions.length}`}
-          icon={Crosshair}
-          color="text-[#7BEBC2]"
-          sub={loadingLive ? "Loading..." : "Active now"}
+          label="Profit Factor"
+          value={trades.length > 0 ? `${profitFactor.toFixed(2)}` : "—"}
+          icon={Trophy}
+          color={profitFactor >= 2 ? "text-gain" : profitFactor >= 1 ? "text-[#F59E0B]" : "text-loss"}
+          sub={profitFactor >= 2 ? "Strong edge" : profitFactor >= 1 ? "Profitable" : "Needs work"}
         />
         <StatCard
-          label="Best Asset"
-          value={bestAsset}
-          icon={Trophy}
-          color="text-[#7BEBC2]"
-          sub="By total P&L"
+          label="Streak"
+          value={currentStreak.count > 0 ? `${currentStreak.type}${currentStreak.count}` : "—"}
+          icon={Zap}
+          color={currentStreak.type === "W" ? "text-gain" : currentStreak.count > 0 ? "text-loss" : "text-white/30"}
+          sub={currentStreak.count > 0 ? `Current ${currentStreak.type === "W" ? "win" : "loss"} streak` : "No streak"}
+        />
+        <StatCard
+          label="Sharpe Ratio"
+          value={sharpeRatio !== null ? `${sharpeRatio.toFixed(2)}` : "—"}
+          icon={Shield}
+          color={sharpeRatio !== null ? (sharpeRatio >= 1.5 ? "text-gain" : sharpeRatio >= 0.5 ? "text-[#7BEBC2]" : "text-[#F59E0B]") : "text-white/30"}
+          sub="Risk-adjusted"
+        />
+        <StatCard
+          label="Max Drawdown"
+          value={drawdownTimeline.length > 0 ? `${maxDrawdown.toFixed(1)}%` : "—"}
+          icon={AlertTriangle}
+          color={maxDrawdown > -10 ? "text-[#7BEBC2]" : maxDrawdown > -25 ? "text-[#F59E0B]" : "text-loss"}
+          sub="From peak"
         />
       </motion.div>
 

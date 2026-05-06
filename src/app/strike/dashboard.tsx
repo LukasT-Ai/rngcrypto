@@ -608,6 +608,76 @@ export default function StrikeDashboard() {
     return (liveData?.recentTrades ?? []).slice(0, 5)
   }, [liveData?.recentTrades])
 
+  // ── Enhanced metrics ──────────────────────────────────────────────────
+  const profitFactor = useMemo(() => {
+    const closed = trades.filter(t => t.status === "closed" && t.pnl !== 0)
+    const grossProfit = closed.filter(t => t.pnl > 0).reduce((s, t) => s + t.pnl, 0)
+    const grossLoss = Math.abs(closed.filter(t => t.pnl < 0).reduce((s, t) => s + t.pnl, 0))
+    if (grossLoss === 0) return grossProfit > 0 ? 99.9 : 0
+    return Math.round((grossProfit / grossLoss) * 100) / 100
+  }, [trades])
+
+  const currentStreak = useMemo(() => {
+    const sorted = [...trades]
+      .filter(t => t.status === "closed" && t.pnl !== 0)
+      .sort((a, b) => asUTC(b.closedAt ?? "1970").getTime() - asUTC(a.closedAt ?? "1970").getTime())
+    if (!sorted.length) return { count: 0, type: "W" as const }
+    const firstType = sorted[0].pnl > 0 ? "W" : "L"
+    let count = 0
+    for (const t of sorted) {
+      if ((t.pnl > 0 ? "W" : "L") === firstType) count++
+      else break
+    }
+    return { count, type: firstType as "W" | "L" }
+  }, [trades])
+
+  const sharpeRatio = useMemo(() => {
+    const closed = trades.filter(t => t.status === "closed" && t.pnl !== 0)
+    if (closed.length < 3) return null
+    const returns = closed.map(t => t.pnl / t.margin)
+    const mean = returns.reduce((s, r) => s + r, 0) / returns.length
+    const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / (returns.length - 1)
+    const stdDev = Math.sqrt(variance)
+    if (stdDev === 0) return null
+    return Math.round((mean / stdDev) * Math.sqrt(252) * 100) / 100
+  }, [trades])
+
+  const drawdownTimeline = useMemo(() => {
+    if (!timeline.length) return []
+    let peak = -Infinity
+    return timeline.map(p => {
+      peak = Math.max(peak, p.cumulativePnl)
+      const dd = peak > 0 ? ((p.cumulativePnl - peak) / Math.abs(peak)) * 100 : 0
+      return { ...p, drawdownPct: Math.min(dd, 0) }
+    })
+  }, [timeline])
+
+  const maxDrawdown = useMemo(() => {
+    if (!drawdownTimeline.length) return 0
+    return Math.min(...drawdownTimeline.map(d => d.drawdownPct))
+  }, [drawdownTimeline])
+
+  const durationBuckets = useMemo(() => {
+    const buckets = { "<5m": 0, "5-30m": 0, "30m-2h": 0, "2-8h": 0, "8h+": 0 }
+    for (const t of trades) {
+      if (!t.closedAt || !t.openedAt) continue
+      const mins = (asUTC(t.closedAt).getTime() - asUTC(t.openedAt).getTime()) / 60000
+      if (mins < 5) buckets["<5m"]++
+      else if (mins < 30) buckets["5-30m"]++
+      else if (mins < 120) buckets["30m-2h"]++
+      else if (mins < 480) buckets["2-8h"]++
+      else buckets["8h+"]++
+    }
+    return buckets
+  }, [trades])
+
+  const lastTrade = useMemo(() => {
+    const sorted = [...trades]
+      .filter(t => t.closedAt)
+      .sort((a, b) => asUTC(b.closedAt!).getTime() - asUTC(a.closedAt!).getTime())
+    return sorted[0] ?? null
+  }, [trades])
+
   const avgHoldTimeToday = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10)
     const todayTrades = trades.filter(
@@ -670,7 +740,7 @@ export default function StrikeDashboard() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Strategy legend */}
           <button
             onClick={() => setLegendOpen(true)}
@@ -714,12 +784,12 @@ export default function StrikeDashboard() {
           {linkCopied && (
             <span className="text-xs text-[#00FF88] animate-in fade-in duration-200">Copied!</span>
           )}
-          <div className="mx-1 h-5 w-px bg-white/[0.08]" />
+          <div className="mx-1 hidden h-5 w-px bg-white/[0.08] sm:block" />
           <a
             href="https://app.strikefinance.org"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/30 bg-[#22D3EE]/10 px-4 py-2 text-xs font-medium text-[#22D3EE] transition-all hover:border-[#22D3EE]/50 hover:bg-[#22D3EE]/15"
+            className="hidden items-center gap-2 rounded-full border border-[#22D3EE]/30 bg-[#22D3EE]/10 px-4 py-2 text-xs font-medium text-[#22D3EE] transition-all hover:border-[#22D3EE]/50 hover:bg-[#22D3EE]/15 sm:inline-flex"
           >
             <ExternalLink className="size-3.5" />
             strikefinance.org
@@ -728,7 +798,7 @@ export default function StrikeDashboard() {
             href="https://x.com/strikeperps"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-xs font-medium text-white/50 transition-all hover:border-white/[0.15] hover:text-white/70"
+            className="hidden items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-xs font-medium text-white/50 transition-all hover:border-white/[0.15] hover:text-white/70 sm:inline-flex"
           >
             @strikeperps
           </a>
@@ -769,7 +839,7 @@ export default function StrikeDashboard() {
         variants={container}
         initial="hidden"
         animate="show"
-        className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6"
+        className="grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8"
       >
         <StatCard
           label="Account Value"
@@ -806,18 +876,32 @@ export default function StrikeDashboard() {
           sub={stats && stats.totalTrades > 0 ? `Avg: ${formatPnl(stats.avgPnl)} USDM` : "Warming up"}
         />
         <StatCard
-          label="Open Positions"
-          value={`${openPositions.length}`}
-          icon={Crosshair}
-          color="text-[#06B6D4]"
-          sub={loadingLive ? "Loading..." : "Active now"}
+          label="Profit Factor"
+          value={trades.length > 0 ? `${profitFactor.toFixed(2)}` : "—"}
+          icon={Trophy}
+          color={profitFactor >= 2 ? "text-gain" : profitFactor >= 1 ? "text-[#F59E0B]" : "text-loss"}
+          sub={profitFactor >= 2 ? "Strong edge" : profitFactor >= 1 ? "Profitable" : "Needs work"}
         />
         <StatCard
-          label="Avg Leverage"
-          value={trades.length > 0 ? `${avgLeverage.toFixed(1)}x` : "—"}
-          icon={BarChart3}
-          color={trades.length > 0 ? leverageColor : "text-white/30"}
-          sub={trades.length > 0 ? "Across recent trades" : "No trades yet"}
+          label="Streak"
+          value={currentStreak.count > 0 ? `${currentStreak.type}${currentStreak.count}` : "—"}
+          icon={Zap}
+          color={currentStreak.type === "W" ? "text-gain" : currentStreak.count > 0 ? "text-loss" : "text-white/30"}
+          sub={currentStreak.count > 0 ? `Current ${currentStreak.type === "W" ? "win" : "loss"} streak` : "No streak"}
+        />
+        <StatCard
+          label="Sharpe Ratio"
+          value={sharpeRatio !== null ? `${sharpeRatio.toFixed(2)}` : "—"}
+          icon={Shield}
+          color={sharpeRatio !== null ? (sharpeRatio >= 1.5 ? "text-gain" : sharpeRatio >= 0.5 ? "text-[#22D3EE]" : "text-[#F59E0B]") : "text-white/30"}
+          sub="Risk-adjusted"
+        />
+        <StatCard
+          label="Max Drawdown"
+          value={drawdownTimeline.length > 0 ? `${maxDrawdown.toFixed(1)}%` : "—"}
+          icon={AlertTriangle}
+          color={maxDrawdown > -10 ? "text-[#22D3EE]" : maxDrawdown > -25 ? "text-[#F59E0B]" : "text-loss"}
+          sub="From peak"
         />
       </motion.div>
 
@@ -909,11 +993,15 @@ export default function StrikeDashboard() {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={320}>
-              <AreaChart data={timeline} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <AreaChart data={drawdownTimeline.length ? drawdownTimeline : timeline} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="strikePnlGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#22D3EE" stopOpacity={0.25} />
                     <stop offset="100%" stopColor="#22D3EE" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="strikeDrawdownGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#F43F5E" stopOpacity={0} />
+                    <stop offset="100%" stopColor="#F43F5E" stopOpacity={0.15} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
@@ -925,13 +1013,25 @@ export default function StrikeDashboard() {
                   tickLine={false}
                 />
                 <YAxis
+                  yAxisId="pnl"
                   tick={{ fill: "#9CA3AF", fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}
                   tickFormatter={(v: number) => `${v >= 0 ? "+" : ""}$${Math.abs(v).toFixed(0)}`}
                 />
+                <YAxis
+                  yAxisId="dd"
+                  orientation="right"
+                  tick={{ fill: "#F43F5E", fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+                  domain={["dataMin", 0]}
+                  hide={!drawdownTimeline.some(d => d.drawdownPct < -0.5)}
+                />
                 <Tooltip content={<PnlTooltip />} />
                 <Area
+                  yAxisId="pnl"
                   type="monotone"
                   dataKey="cumulativePnl"
                   stroke="#22D3EE"
@@ -940,6 +1040,19 @@ export default function StrikeDashboard() {
                   dot={false}
                   activeDot={{ r: 4, fill: "#22D3EE", stroke: "#0A0E17", strokeWidth: 2 }}
                 />
+                {drawdownTimeline.some(d => d.drawdownPct < -0.5) && (
+                  <Area
+                    yAxisId="dd"
+                    type="monotone"
+                    dataKey="drawdownPct"
+                    stroke="#F43F5E"
+                    strokeWidth={1}
+                    strokeDasharray="4 2"
+                    fill="url(#strikeDrawdownGradient)"
+                    dot={false}
+                    activeDot={false}
+                  />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -994,6 +1107,108 @@ export default function StrikeDashboard() {
           )}
         </div>
       </motion.div>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* Trade Duration + Last Trade row                                   */}
+      {/* ----------------------------------------------------------------- */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Duration Distribution */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.18 }}
+        >
+          <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Clock className="size-4 text-[#22D3EE]" />
+              <h3 className="text-sm font-semibold">Trade Duration</h3>
+            </div>
+            {(() => {
+              const entries = Object.entries(durationBuckets)
+              const max = Math.max(...entries.map(([, v]) => v), 1)
+              const total = entries.reduce((s, [, v]) => s + v, 0)
+              return total === 0 ? (
+                <p className="py-4 text-center text-xs text-muted-foreground">No closed trades yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {entries.map(([label, count]) => (
+                    <div key={label} className="flex items-center gap-3">
+                      <span className="w-14 shrink-0 text-right font-mono text-[11px] text-muted-foreground">{label}</span>
+                      <div className="h-5 flex-1 overflow-hidden rounded bg-white/5">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(count / max) * 100}%` }}
+                          transition={{ duration: 0.6, ease: "easeOut" }}
+                          className="flex h-full items-center rounded bg-[#22D3EE]/20"
+                        >
+                          {count > 0 && (
+                            <span className="pl-2 font-mono text-[10px] tabular-nums text-[#22D3EE]">{count}</span>
+                          )}
+                        </motion.div>
+                      </div>
+                      <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-white/30">
+                        {total > 0 ? `${Math.round((count / total) * 100)}%` : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
+        </motion.div>
+
+        {/* Last Trade Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.2 }}
+        >
+          <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Zap className="size-4 text-[#22D3EE]" />
+              <h3 className="text-sm font-semibold">Last Trade</h3>
+            </div>
+            {lastTrade ? (() => {
+              const isWin = lastTrade.pnl > 0
+              const agoMs = Date.now() - asUTC(lastTrade.closedAt!).getTime()
+              const agoMin = Math.floor(agoMs / 60000)
+              const agoStr = agoMin < 1 ? "just now" : agoMin < 60 ? `${agoMin}m ago` : agoMin < 1440 ? `${Math.floor(agoMin / 60)}h ${agoMin % 60}m ago` : `${Math.floor(agoMin / 1440)}d ago`
+              return (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${lastTrade.side === "BUY" ? "bg-gain/10 text-gain" : "bg-loss/10 text-loss"}`}>
+                        {lastTrade.side === "BUY" ? "LONG" : "SHORT"}
+                      </span>
+                      <span className="font-display text-sm font-semibold">{lastTrade.symbol}</span>
+                    </div>
+                    <span className="font-mono text-xs text-muted-foreground">{agoStr}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className={`font-display text-2xl font-bold tabular-nums ${isWin ? "text-gain" : "text-loss"}`}>
+                      {formatPnl(lastTrade.pnl)} USDM
+                    </span>
+                    {lastTrade.pnlPct !== null && (
+                      <span className={`font-mono text-sm tabular-nums ${isWin ? "text-gain" : "text-loss"}`}>
+                        {lastTrade.pnlPct >= 0 ? "+" : ""}{lastTrade.pnlPct.toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <Badge variant="outline" className={`text-[10px] ${strategyBadgeClasses(mapStrategy(lastTrade.strategy))}`}>
+                      {mapStrategy(lastTrade.strategy)}
+                    </Badge>
+                    <span className="font-mono tabular-nums">{lastTrade.leverage}x</span>
+                    <span className="font-mono tabular-nums">${fmtNum(lastTrade.margin)}</span>
+                  </div>
+                </div>
+              )
+            })() : (
+              <p className="py-6 text-center text-xs text-muted-foreground">No closed trades yet</p>
+            )}
+          </div>
+        </motion.div>
+      </div>
 
       {/* ----------------------------------------------------------------- */}
       {/* 3. Open Positions                                                 */}
@@ -1837,9 +2052,6 @@ export default function StrikeDashboard() {
               { label: "Sniper", icon: Crosshair, color: "#A855F7", border: "border-purple-500/20", desc: "Targets high-conviction setups for quick swing profits. Enters on multi-timeframe signal alignment and exits at ~5% ROE." },
               { label: "Scalper", icon: Zap, color: "#F43F5E", border: "border-rose-500/20", desc: "Ultra-fast in-and-out trades. Captures small, frequent moves with tight risk controls and exits at ~1.5% ROE." },
               { label: "Trend Follower", icon: TrendingUp, color: "#06B6D4", border: "border-cyan-500/20", desc: "Rides sustained directional moves with wider trailing stops. Holds longer to capture the bulk of a trend." },
-              { label: "Grid", icon: Layers, color: "#10B981", border: "border-emerald-500/20", desc: "Places layered orders across a price range. Profits from oscillating markets by buying low and selling high repeatedly." },
-              { label: "DCA", icon: Repeat, color: "#F59E0B", border: "border-amber-500/20", desc: "Dollar-cost averages into positions over time. Reduces timing risk by spreading entries across multiple price levels." },
-              { label: "Funding", icon: DollarSign, color: "#3B82F6", border: "border-blue-500/20", desc: "Captures funding rate payments by holding positions when rates are favorable. Low-risk, yield-oriented strategy." },
             ].map((s) => (
               <div key={s.label} className={`flex items-start gap-3 rounded-lg border ${s.border} bg-white/[0.02] p-3`}>
                 <div className="mt-0.5 rounded-md p-1.5" style={{ backgroundColor: `${s.color}15` }}>

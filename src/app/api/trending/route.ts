@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
+import { rateLimit } from "@/lib/rate-limit"
 
 let cache: { data: unknown; timestamp: number } | null = null
 const CACHE_TTL = 300_000 // 5 minutes
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const blocked = rateLimit(req, 60)
+  if (blocked) return blocked
   if (cache && Date.now() - cache.timestamp < CACHE_TTL) {
     return NextResponse.json(cache.data, {
       headers: { "X-Cache": "HIT" },

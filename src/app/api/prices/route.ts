@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
+import { rateLimit } from "@/lib/rate-limit"
 
 let cache: { data: unknown; timestamp: number } | null = null
 const CACHE_TTL = 30_000 // 30 seconds
 
 export async function GET(req: NextRequest) {
+  const blocked = rateLimit(req, 60)
+  if (blocked) return blocked
   const ids = req.nextUrl.searchParams.get("ids") ?? "bitcoin,ethereum,solana,cardano"
   const perPage = req.nextUrl.searchParams.get("per_page") ?? "50"
   const sparkline = req.nextUrl.searchParams.get("sparkline") ?? "true"

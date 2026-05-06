@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
+import { rateLimit } from "@/lib/rate-limit"
 
 const cache = new Map<string, { data: unknown; timestamp: number }>()
 const CACHE_TTL = 3600_000 // 1 hour
 
 export async function GET(req: NextRequest) {
+  const blocked = rateLimit(req, 60)
+  if (blocked) return blocked
+
   const seriesId = req.nextUrl.searchParams.get("series") ?? "FEDFUNDS"
   const limit = req.nextUrl.searchParams.get("limit") ?? "252"
 

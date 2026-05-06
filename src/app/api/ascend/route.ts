@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rate-limit";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -49,6 +50,9 @@ function readPushCache(allowStale = false): PushCache | null {
 }
 
 export async function GET(req: NextRequest) {
+  const blocked = rateLimit(req, 60);
+  if (blocked) return blocked;
+
   const view = req.nextUrl.searchParams.get("view") ?? "overview";
   const push = readPushCache();
 

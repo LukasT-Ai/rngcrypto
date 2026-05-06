@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
+import { rateLimit } from "@/lib/rate-limit"
 
 export async function POST(req: NextRequest) {
+  const blocked = rateLimit(req, 5)
+  if (blocked) return blocked
+
   try {
     const { email } = await req.json()
 

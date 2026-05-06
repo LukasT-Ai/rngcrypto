@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { rateLimit } from "@/lib/rate-limit"
 
 let cache: { data: unknown; timestamp: number } | null = null
 const CACHE_TTL = 900_000 // 15 minutes
@@ -9,6 +10,9 @@ const CHANNEL_ID = process.env.YOUTUBE_CHANNEL_ID ?? ""
 const API_KEY = process.env.YOUTUBE_API_KEY ?? ""
 
 export async function GET(req: NextRequest) {
+  const blocked = rateLimit(req, 60)
+  if (blocked) return blocked
+
   const maxResults = req.nextUrl.searchParams.get("max") ?? "8"
 
   if (cache && Date.now() - cache.timestamp < CACHE_TTL) {

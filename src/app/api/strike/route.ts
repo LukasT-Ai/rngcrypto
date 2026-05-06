@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rate-limit";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -64,6 +65,9 @@ function emptyLive() {
 }
 
 export async function GET(req: NextRequest) {
+  const blocked = rateLimit(req, 60);
+  if (blocked) return blocked;
+
   const view = req.nextUrl.searchParams.get("view") ?? "overview";
   const push = readPushCache();
 

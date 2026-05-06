@@ -236,6 +236,7 @@ function mapStrategy(strategy: string | null): string {
   const map: Record<string, string> = {
     "trend-follower": "Trend Follower",
     "sniper": "Sniper",
+    "scalper": "Scalper",
     "grid": "Grid",
     "dca": "DCA",
     "funding-capture": "Funding",
@@ -254,6 +255,8 @@ function strategyBadgeClasses(label: string): string {
       return "border-[#22D3EE]/30 text-[#22D3EE] bg-[#22D3EE]/10"
     case "Sniper":
       return "border-purple-500/30 text-purple-400 bg-purple-500/10"
+    case "Scalper":
+      return "border-rose-500/30 text-rose-400 bg-rose-500/10"
     case "Grid":
       return "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
     case "DCA":
@@ -1276,6 +1279,7 @@ export default function StrikeDashboard() {
                 <option value="all">All Strategies</option>
                 <option value="Trend Follower">Trend Follower</option>
                 <option value="Sniper">Sniper</option>
+                <option value="Scalper">Scalper</option>
                 <option value="Auto-Trader">Auto-Trader</option>
                 <option value="Grid">Grid</option>
                 <option value="DCA">DCA</option>
@@ -1626,6 +1630,7 @@ export default function StrikeDashboard() {
                       borderColor: label === "Auto-Trader" ? "rgba(34,211,238,0.2)" :
                                    label === "Trend Follower" ? "rgba(6,182,212,0.2)" :
                                    label === "Sniper" ? "rgba(168,85,247,0.2)" :
+                                   label === "Scalper" ? "rgba(244,63,94,0.2)" :
                                    label === "Grid" ? "rgba(16,185,129,0.2)" :
                                    label === "DCA" ? "rgba(245,158,11,0.2)" :
                                    label === "Funding" ? "rgba(59,130,246,0.2)" :
@@ -1656,6 +1661,7 @@ export default function StrikeDashboard() {
                             backgroundColor: label === "Auto-Trader" ? "#22D3EE" :
                                              label === "Trend Follower" ? "#06B6D4" :
                                              label === "Sniper" ? "#A855F7" :
+                                             label === "Scalper" ? "#F43F5E" :
                                              label === "Grid" ? "#10B981" :
                                              label === "DCA" ? "#F59E0B" :
                                              label === "Funding" ? "#3B82F6" :

@@ -735,7 +735,7 @@ export default function AscendDashboard() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Strategy legend */}
           <button
             onClick={() => setLegendOpen(true)}
@@ -779,12 +779,12 @@ export default function AscendDashboard() {
           {linkCopied && (
             <span className="text-xs text-[#00FF88] animate-in fade-in duration-200">Copied!</span>
           )}
-          <div className="mx-1 h-5 w-px bg-white/[0.08]" />
+          <div className="mx-1 hidden h-5 w-px bg-white/[0.08] sm:block" />
           <a
             href="https://testnet.ascend.market/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-full border border-[#E8622C]/30 bg-[#E8622C]/10 px-4 py-2 text-xs font-medium text-[#E8622C] transition-all hover:border-[#E8622C]/50 hover:bg-[#E8622C]/15"
+            className="hidden items-center gap-2 rounded-full border border-[#E8622C]/30 bg-[#E8622C]/10 px-4 py-2 text-xs font-medium text-[#E8622C] transition-all hover:border-[#E8622C]/50 hover:bg-[#E8622C]/15 sm:inline-flex"
           >
             <ExternalLink className="size-3.5" />
             ascend.market
@@ -793,7 +793,7 @@ export default function AscendDashboard() {
             href="https://x.com/ascendperps"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-xs font-medium text-white/50 transition-all hover:border-white/[0.15] hover:text-white/70"
+            className="hidden items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-xs font-medium text-white/50 transition-all hover:border-white/[0.15] hover:text-white/70 sm:inline-flex"
           >
             @ascendperps
           </a>
@@ -987,11 +987,15 @@ export default function AscendDashboard() {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={320}>
-              <AreaChart data={timeline} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <AreaChart data={drawdownTimeline.length ? drawdownTimeline : timeline} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <defs>
-                  <linearGradient id="pnlGradient" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="ascendPnlGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#E8622C" stopOpacity={0.25} />
                     <stop offset="100%" stopColor="#E8622C" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="ascendDrawdownGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#F43F5E" stopOpacity={0} />
+                    <stop offset="100%" stopColor="#F43F5E" stopOpacity={0.15} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
@@ -1003,21 +1007,46 @@ export default function AscendDashboard() {
                   tickLine={false}
                 />
                 <YAxis
+                  yAxisId="pnl"
                   tick={{ fill: "#9CA3AF", fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}
                   tickFormatter={(v: number) => `${v >= 0 ? "+" : ""}${(v / 1000).toFixed(0)}k`}
                 />
+                <YAxis
+                  yAxisId="dd"
+                  orientation="right"
+                  tick={{ fill: "#F43F5E", fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+                  domain={["dataMin", 0]}
+                  hide={!drawdownTimeline.some(d => d.drawdownPct < -0.5)}
+                />
                 <Tooltip content={<PnlTooltip />} />
                 <Area
+                  yAxisId="pnl"
                   type="monotone"
                   dataKey="cumulativePnl"
                   stroke="#E8622C"
                   strokeWidth={2}
-                  fill="url(#pnlGradient)"
+                  fill="url(#ascendPnlGradient)"
                   dot={false}
                   activeDot={{ r: 4, fill: "#E8622C", stroke: "#0A0E17", strokeWidth: 2 }}
                 />
+                {drawdownTimeline.some(d => d.drawdownPct < -0.5) && (
+                  <Area
+                    yAxisId="dd"
+                    type="monotone"
+                    dataKey="drawdownPct"
+                    stroke="#F43F5E"
+                    strokeWidth={1}
+                    strokeDasharray="4 2"
+                    fill="url(#ascendDrawdownGradient)"
+                    dot={false}
+                    activeDot={false}
+                  />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -1076,6 +1105,107 @@ export default function AscendDashboard() {
           )}
         </div>
       </motion.div>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* Trade Duration + Last Trade row                                   */}
+      {/* ----------------------------------------------------------------- */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Duration Distribution */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.18 }}
+        >
+          <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Clock className="size-4 text-[#E8622C]" />
+              <h3 className="text-sm font-semibold">Trade Duration</h3>
+            </div>
+            {(() => {
+              const entries = Object.entries(durationBuckets)
+              const max = Math.max(...entries.map(([, v]) => v), 1)
+              const total = entries.reduce((s, [, v]) => s + v, 0)
+              return total === 0 ? (
+                <p className="py-4 text-center text-xs text-muted-foreground">No closed trades yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {entries.map(([label, count]) => (
+                    <div key={label} className="flex items-center gap-3">
+                      <span className="w-14 shrink-0 text-right font-mono text-[11px] text-muted-foreground">{label}</span>
+                      <div className="h-5 flex-1 overflow-hidden rounded bg-white/5">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(count / max) * 100}%` }}
+                          transition={{ duration: 0.6, ease: "easeOut" }}
+                          className="flex h-full items-center rounded bg-[#E8622C]/20"
+                        >
+                          {count > 0 && (
+                            <span className="pl-2 font-mono text-[10px] tabular-nums text-[#E8622C]">{count}</span>
+                          )}
+                        </motion.div>
+                      </div>
+                      <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-white/30">
+                        {total > 0 ? `${Math.round((count / total) * 100)}%` : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
+        </motion.div>
+
+        {/* Last Trade Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.2 }}
+        >
+          <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Zap className="size-4 text-[#E8622C]" />
+              <h3 className="text-sm font-semibold">Last Trade</h3>
+            </div>
+            {lastTrade ? (() => {
+              const isWin = lastTrade.pnl > 0
+              const agoMs = Date.now() - asUTC(lastTrade.closedAt!).getTime()
+              const agoMin = Math.floor(agoMs / 60000)
+              const agoStr = agoMin < 1 ? "just now" : agoMin < 60 ? `${agoMin}m ago` : agoMin < 1440 ? `${Math.floor(agoMin / 60)}h ${agoMin % 60}m ago` : `${Math.floor(agoMin / 1440)}d ago`
+              const pnlPct = lastTrade.margin > 0 ? (lastTrade.pnl / lastTrade.margin) * 100 : 0
+              return (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${lastTrade.side === "YES" ? "bg-gain/10 text-gain" : "bg-loss/10 text-loss"}`}>
+                        {lastTrade.side}
+                      </span>
+                      <span className="font-display text-sm font-semibold">{lastTrade.asset}</span>
+                    </div>
+                    <span className="font-mono text-xs text-muted-foreground">{agoStr}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className={`font-display text-2xl font-bold tabular-nums ${isWin ? "text-gain" : "text-loss"}`}>
+                      {formatPnl(lastTrade.pnl)} USDT
+                    </span>
+                    <span className={`font-mono text-sm tabular-nums ${isWin ? "text-gain" : "text-loss"}`}>
+                      {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <Badge variant="outline" className={`text-[10px] ${sourceBadgeClasses(mapSource(lastTrade.priceSource))}`}>
+                      {mapSource(lastTrade.priceSource)}
+                    </Badge>
+                    <span className="font-mono tabular-nums">{lastTrade.leverage}x</span>
+                    <span className="font-mono tabular-nums">${fmtNum(lastTrade.margin)}</span>
+                  </div>
+                </div>
+              )
+            })() : (
+              <p className="py-6 text-center text-xs text-muted-foreground">No closed trades yet</p>
+            )}
+          </div>
+        </motion.div>
+      </div>
 
       {/* ----------------------------------------------------------------- */}
       {/* 3. Open Positions                                                 */}

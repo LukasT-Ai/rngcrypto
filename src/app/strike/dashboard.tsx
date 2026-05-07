@@ -728,7 +728,7 @@ export default function StrikeDashboard() {
             <p className="mt-0.5 text-sm text-muted-foreground">
               Autonomous perpetual futures trading on{" "}
               <a
-                href="https://app.strikefinance.org"
+                href="https://app.strikefinance.org/referral/accept?code=75cc56269fa647f58e1d5de53ec69639"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[#22D3EE] underline-offset-4 hover:underline"
@@ -786,7 +786,7 @@ export default function StrikeDashboard() {
           )}
           <div className="mx-1 hidden h-5 w-px bg-white/[0.08] sm:block" />
           <a
-            href="https://app.strikefinance.org"
+            href="https://app.strikefinance.org/referral/accept?code=75cc56269fa647f58e1d5de53ec69639"
             target="_blank"
             rel="noopener noreferrer"
             className="hidden items-center gap-2 rounded-full border border-[#22D3EE]/30 bg-[#22D3EE]/10 px-4 py-2 text-xs font-medium text-[#22D3EE] transition-all hover:border-[#22D3EE]/50 hover:bg-[#22D3EE]/15 sm:inline-flex"
@@ -1966,7 +1966,7 @@ export default function StrikeDashboard() {
             </div>
           </div>
           <a
-            href="https://app.strikefinance.org"
+            href="https://app.strikefinance.org/referral/accept?code=75cc56269fa647f58e1d5de53ec69639"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex shrink-0 items-center gap-2 rounded-full bg-[#22D3EE] px-5 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"

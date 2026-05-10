@@ -128,6 +128,8 @@ interface OpenPosition {
   unrealizedPnl: number | null
   unrealizedPnlPct: number | null
   fundingAccrued: number | null
+  fees: number | null
+  estimatedFees: number | null
 }
 
 interface StrategyBreakdownEntry {
@@ -1382,6 +1384,12 @@ export default function StrikeDashboard() {
                         </div>
                       )}
                       <div>
+                        <span className="text-muted-foreground">Est. Fees</span>
+                        <p className="font-mono font-medium tabular-nums text-loss">
+                          -${fmtNum(pos.fees ?? pos.estimatedFees ?? pos.margin * pos.leverage * 0.0016)}
+                        </p>
+                      </div>
+                      <div>
                         <span className="text-muted-foreground">Hold Time</span>
                         <p className="flex items-center gap-1 font-mono font-medium tabular-nums text-[#22D3EE]">
                           <Clock className="h-3 w-3" />
@@ -1553,6 +1561,7 @@ export default function StrikeDashboard() {
                     <th className="pb-3 pr-3 text-right">Entry</th>
                     <th className="pb-3 pr-3 text-right">Exit</th>
                     <th className="pb-3 pr-3 text-right">P&L</th>
+                    <th className="hidden pb-3 pr-3 text-right md:table-cell">Fees</th>
                     <th className="hidden pb-3 pr-3 text-right md:table-cell">Duration</th>
                     <th className="pb-3 pr-3 text-right">Closed</th>
                   </tr>
@@ -1628,6 +1637,9 @@ export default function StrikeDashboard() {
                             <div>{trade.pnl != null ? formatPnl(pnl) : "---"}</div>
                             <div className="hidden text-xs opacity-70 md:block">{trade.pnl != null ? formatPct(pnlPct) : ""}</div>
                           </td>
+                          <td className="hidden py-3 pr-3 text-right font-mono tabular-nums text-xs text-loss md:table-cell">
+                            {trade.fees != null && trade.fees > 0 ? `-$${fmtNum(trade.fees)}` : "---"}
+                          </td>
                           <td className="hidden py-3 pr-3 text-right font-mono tabular-nums text-xs text-muted-foreground md:table-cell">
                             <div className="flex items-center justify-end gap-1">
                               <Clock className="h-3 w-3" />
@@ -1645,7 +1657,7 @@ export default function StrikeDashboard() {
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td colSpan={10} className="p-0">
+                            <td colSpan={11} className="p-0">
                               <motion.div
                                 initial={{ opacity: 0, height: 0 }}
                                 animate={{ opacity: 1, height: "auto" }}
@@ -1681,6 +1693,24 @@ export default function StrikeDashboard() {
                                         {tradeStrategyLabel}
                                       </Badge>
                                     </div>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Fees Paid</span>
+                                    <p className="font-mono font-medium tabular-nums text-loss">
+                                      {trade.fees != null && trade.fees > 0 ? `-$${fmtNum(trade.fees)}` : "---"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Gross P&L</span>
+                                    <p className={`font-mono font-medium tabular-nums ${pnl + (trade.fees ?? 0) >= 0 ? "text-gain" : "text-loss"}`}>
+                                      {formatPnl(pnl + (trade.fees ?? 0))}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Net P&L</span>
+                                    <p className={`font-mono font-medium tabular-nums ${pnl >= 0 ? "text-gain" : "text-loss"}`}>
+                                      {formatPnl(pnl)}
+                                    </p>
                                   </div>
                                 </div>
                                 {trade.exitPrice != null && (

@@ -428,7 +428,7 @@ export default function HypeDashboard() {
 
   const totalUnrealizedPnl = useMemo(() => {
     return openPositions.reduce((sum, p) => {
-      const fees = (p.marginUsed ?? 0) * (p.leverage ?? 1) * TAKER_FEE * 2
+      const fees = (p.marginUsed ?? 0) * (p.leverage ?? 1) * TAKER_FEE
       return sum + (p.unrealizedPnl ?? 0) - fees
     }, 0)
   }, [openPositions])
@@ -1096,7 +1096,7 @@ export default function HypeDashboard() {
                     </span>
                   </div>
                   {(() => {
-                    const estFees = (pos.marginUsed ?? 0) * (pos.leverage ?? 1) * TAKER_FEE * 2
+                    const estFees = (pos.marginUsed ?? 0) * (pos.leverage ?? 1) * TAKER_FEE
                     const netPnl = (pos.unrealizedPnl ?? 0) - estFees
                     const netRoe = (pos.marginUsed ?? 0) > 0 ? (netPnl / pos.marginUsed) * 100 : 0
                     return (
@@ -1163,7 +1163,7 @@ export default function HypeDashboard() {
                     <div>
                       <span className="text-muted-foreground">Est. Fees</span>
                       <p className="font-mono font-medium tabular-nums text-loss">
-                        -${((pos.marginUsed * pos.leverage * 0.00035 * 2) || 0).toFixed(2)}
+                        -${((pos.marginUsed * pos.leverage * 0.00035) || 0).toFixed(2)}
                       </p>
                     </div>
                     {pos.fundingAccrued !== 0 && (

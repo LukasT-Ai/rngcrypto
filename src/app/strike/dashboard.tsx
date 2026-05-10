@@ -218,8 +218,9 @@ function asUTC(d: string): Date {
   return d.endsWith("Z") || d.includes("+") ? new Date(d) : new Date(d + "Z")
 }
 
-function formatDateTime(d: string): string {
-  return asUTC(d).toLocaleString("en-US", {
+function formatDateTime(d: string | number): string {
+  const date = typeof d === "number" ? new Date(d) : asUTC(d)
+  return date.toLocaleString("en-US", {
     timeZone: "America/New_York",
     month: "short",
     day: "numeric",
@@ -308,8 +309,8 @@ const CATEGORY_COLORS: Record<string, string> = {
   Other: "#6B7280",
 }
 
-function formatHoldTime(openedAt: string): string {
-  const ms = Date.now() - asUTC(openedAt).getTime()
+function formatHoldTime(openedAt: string | number): string {
+  const ms = Date.now() - (typeof openedAt === "number" ? openedAt : asUTC(openedAt).getTime())
   const mins = Math.floor(ms / 60000)
   if (mins < 1) return "<1m"
   if (mins < 60) return `${mins}m`
@@ -539,7 +540,7 @@ export default function StrikeDashboard() {
 
   const totalUnrealizedPnl = useMemo(() => {
     return openPositions.reduce((sum, p) => {
-      const fees = (p.margin ?? 0) * (p.leverage ?? 1) * STRIKE_TAKER_FEE * 2
+      const fees = (p.margin ?? 0) * (p.leverage ?? 1) * STRIKE_TAKER_FEE
       return sum + (p.unrealizedPnl ?? 0) - fees
     }, 0)
   }, [openPositions])
@@ -1310,7 +1311,7 @@ export default function StrikeDashboard() {
                     </div>
                     {/* Unrealized P&L banner (net of estimated fees) */}
                     {pos.unrealizedPnl != null && (() => {
-                      const estFees = (pos.margin ?? 0) * (pos.leverage ?? 1) * STRIKE_TAKER_FEE * 2
+                      const estFees = (pos.margin ?? 0) * (pos.leverage ?? 1) * STRIKE_TAKER_FEE
                       const netPnl = (pos.unrealizedPnl ?? 0) - estFees
                       const netRoe = (pos.margin ?? 0) > 0 ? (netPnl / pos.margin) * 100 : 0
                       return (

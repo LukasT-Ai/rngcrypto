@@ -1386,7 +1386,7 @@ export default function StrikeDashboard() {
                       <div>
                         <span className="text-muted-foreground">Est. Fees</span>
                         <p className="font-mono font-medium tabular-nums text-loss">
-                          -${fmtNum(pos.fees ?? pos.estimatedFees ?? pos.margin * pos.leverage * 0.0016)}
+                          -${fmtNum(pos.fees ?? pos.estimatedFees ?? pos.margin * pos.leverage * 0.001536)}
                         </p>
                       </div>
                       <div>

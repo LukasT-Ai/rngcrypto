@@ -535,8 +535,13 @@ export default function StrikeDashboard() {
     return openPositions.reduce((sum, p) => sum + p.margin, 0)
   }, [openPositions])
 
+  const STRIKE_TAKER_FEE = 0.000768
+
   const totalUnrealizedPnl = useMemo(() => {
-    return openPositions.reduce((sum, p) => sum + (p.unrealizedPnl ?? 0), 0)
+    return openPositions.reduce((sum, p) => {
+      const fees = (p.margin ?? 0) * (p.leverage ?? 1) * STRIKE_TAKER_FEE * 2
+      return sum + (p.unrealizedPnl ?? 0) - fees
+    }, 0)
   }, [openPositions])
 
   // Strategy breakdown: use API data or compute from trades
@@ -1303,23 +1308,26 @@ export default function StrikeDashboard() {
                         {pos.leverage}x
                       </span>
                     </div>
-                    {/* Unrealized P&L banner */}
-                    {pos.unrealizedPnl != null && (
-                      <div className={`mb-3 flex items-center justify-between rounded-md px-3 py-1.5 text-xs font-mono tabular-nums ${
-                        pos.unrealizedPnl >= 0
-                          ? "bg-gain-bg text-gain"
-                          : "bg-loss-bg text-loss"
-                      }`}>
-                        <span className="font-medium">
-                          {pos.unrealizedPnl >= 0 ? "+" : ""}{fmtNum(pos.unrealizedPnl)} USDM
-                        </span>
-                        {pos.unrealizedPnlPct != null && (
-                          <span className="text-[10px] opacity-80">
-                            {pos.unrealizedPnlPct >= 0 ? "+" : ""}{pos.unrealizedPnlPct.toFixed(1)}% ROE
+                    {/* Unrealized P&L banner (net of estimated fees) */}
+                    {pos.unrealizedPnl != null && (() => {
+                      const estFees = (pos.margin ?? 0) * (pos.leverage ?? 1) * STRIKE_TAKER_FEE * 2
+                      const netPnl = (pos.unrealizedPnl ?? 0) - estFees
+                      const netRoe = (pos.margin ?? 0) > 0 ? (netPnl / pos.margin) * 100 : 0
+                      return (
+                        <div className={`mb-3 flex items-center justify-between rounded-md px-3 py-1.5 text-xs font-mono tabular-nums ${
+                          netPnl >= 0
+                            ? "bg-gain-bg text-gain"
+                            : "bg-loss-bg text-loss"
+                        }`}>
+                          <span className="font-medium">
+                            {netPnl >= 0 ? "+" : ""}{fmtNum(netPnl)} USDM
                           </span>
-                        )}
-                      </div>
-                    )}
+                          <span className="text-[10px] opacity-80">
+                            {netRoe >= 0 ? "+" : ""}{netRoe.toFixed(1)}% ROE
+                          </span>
+                        </div>
+                      )
+                    })()}
                     <div className="grid grid-cols-2 gap-y-2 text-xs">
                       <div>
                         <span className="text-muted-foreground">Margin</span>

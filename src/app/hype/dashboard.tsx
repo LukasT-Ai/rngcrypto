@@ -424,8 +424,13 @@ export default function HypeDashboard() {
     return openPositions.reduce((sum, p) => sum + p.marginUsed, 0)
   }, [openPositions])
 
+  const TAKER_FEE = 0.00035
+
   const totalUnrealizedPnl = useMemo(() => {
-    return openPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0)
+    return openPositions.reduce((sum, p) => {
+      const fees = (p.marginUsed ?? 0) * (p.leverage ?? 1) * TAKER_FEE * 2
+      return sum + (p.unrealizedPnl ?? 0) - fees
+    }, 0)
   }, [openPositions])
 
   const assetHeatmap = useMemo(() => {
@@ -1090,18 +1095,25 @@ export default function HypeDashboard() {
                       {pos.leverage}x
                     </span>
                   </div>
-                  <div className={`mb-3 flex items-center justify-between rounded-md px-3 py-1.5 text-xs font-mono tabular-nums ${
-                    pos.unrealizedPnl >= 0
-                      ? "bg-gain-bg text-gain"
-                      : "bg-loss-bg text-loss"
-                  }`}>
-                    <span className="font-medium">
-                      {pos.unrealizedPnl >= 0 ? "+" : ""}{fmtNum(pos.unrealizedPnl)} USD
-                    </span>
-                    <span className="font-medium">
-                      {pos.roe >= 0 ? "+" : ""}{pos.roe.toFixed(1)}% ROE
-                    </span>
-                  </div>
+                  {(() => {
+                    const estFees = (pos.marginUsed ?? 0) * (pos.leverage ?? 1) * TAKER_FEE * 2
+                    const netPnl = (pos.unrealizedPnl ?? 0) - estFees
+                    const netRoe = (pos.marginUsed ?? 0) > 0 ? (netPnl / pos.marginUsed) * 100 : 0
+                    return (
+                      <div className={`mb-3 flex items-center justify-between rounded-md px-3 py-1.5 text-xs font-mono tabular-nums ${
+                        netPnl >= 0
+                          ? "bg-gain-bg text-gain"
+                          : "bg-loss-bg text-loss"
+                      }`}>
+                        <span className="font-medium">
+                          {netPnl >= 0 ? "+" : ""}{fmtNum(netPnl)} USD
+                        </span>
+                        <span className="font-medium">
+                          {netRoe >= 0 ? "+" : ""}{netRoe.toFixed(1)}% ROE
+                        </span>
+                      </div>
+                    )
+                  })()}
                   <div className="grid grid-cols-2 gap-y-2.5 text-xs">
                     <div>
                       <span className="text-muted-foreground">Margin</span>

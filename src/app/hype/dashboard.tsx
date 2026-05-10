@@ -43,6 +43,9 @@ import {
   Zap,
   Repeat,
   Layers,
+  Bolt,
+  Flame,
+  Scissors,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -1063,10 +1066,13 @@ export default function HypeDashboard() {
                       </Badge>
                       {pos.strategy && (
                         <Badge variant="outline" className={`text-[10px] font-medium ${
-                          pos.strategy === "Mean-Reversion" ? "border-orange-500/30 text-orange-400 bg-orange-500/10"
-                          : pos.strategy.includes("Sniper") || pos.strategy.includes("sniper") ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
-                          : pos.strategy.includes("Trend") || pos.strategy.includes("trend") ? "border-cyan-500/30 text-cyan-400 bg-cyan-500/10"
-                          : pos.strategy.includes("Funding") || pos.strategy.includes("funding") ? "border-blue-500/30 text-blue-400 bg-blue-500/10"
+                          pos.strategy.includes("mean-reversion") || pos.strategy === "Mean-Reversion" ? "border-orange-500/30 text-orange-400 bg-orange-500/10"
+                          : pos.strategy.includes("sniper") ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
+                          : pos.strategy.includes("scalper") ? "border-pink-500/30 text-pink-400 bg-pink-500/10"
+                          : pos.strategy.includes("profit-taker") ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+                          : pos.strategy.includes("trend") ? "border-cyan-500/30 text-cyan-400 bg-cyan-500/10"
+                          : pos.strategy.includes("funding") ? "border-blue-500/30 text-blue-400 bg-blue-500/10"
+                          : pos.strategy.includes("long-flush") || pos.strategy.includes("flush") ? "border-red-500/30 text-red-400 bg-red-500/10"
                           : pos.strategy === "adopted" ? "border-yellow-500/30 text-yellow-400 bg-yellow-500/10"
                           : "border-[#7BEBC2]/30 text-[#7BEBC2]"
                         }`}>
@@ -1142,6 +1148,12 @@ export default function HypeDashboard() {
                         </p>
                       </div>
                     )}
+                    <div>
+                      <span className="text-muted-foreground">Est. Fees</span>
+                      <p className="font-mono font-medium tabular-nums text-loss">
+                        -${((pos.marginUsed * pos.leverage * 0.00035 * 2) || 0).toFixed(2)}
+                      </p>
+                    </div>
                     {pos.fundingAccrued !== 0 && (
                       <div>
                         <span className="text-muted-foreground">Funding</span>
@@ -1306,6 +1318,7 @@ export default function HypeDashboard() {
                     <th className="pb-3 pr-3 text-right">Entry</th>
                     <th className="pb-3 pr-3 text-right">Exit</th>
                     <th className="pb-3 pr-3 text-right">P&L</th>
+                    <th className="pb-3 pr-3 text-right">Fees</th>
                     <th className="pb-3 pr-3 text-right">Duration</th>
                     <th className="pb-3 text-right">Closed</th>
                   </tr>
@@ -1383,6 +1396,9 @@ export default function HypeDashboard() {
                               {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%
                             </div>
                           </td>
+                          <td className="py-3 pr-3 text-right font-mono text-xs tabular-nums text-muted-foreground">
+                            {trade.fee > 0 ? `-$${trade.fee.toFixed(2)}` : "—"}
+                          </td>
                           <td className="py-3 pr-3 text-right text-xs text-muted-foreground font-mono tabular-nums">
                             {duration}
                           </td>
@@ -1395,7 +1411,7 @@ export default function HypeDashboard() {
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td colSpan={9} className="p-0">
+                            <td colSpan={10} className="p-0">
                               <motion.div
                                 initial={{ opacity: 0, height: 0 }}
                                 animate={{ opacity: 1, height: "auto" }}
@@ -1434,6 +1450,12 @@ export default function HypeDashboard() {
                                       }
                                     </div>
                                   </div>
+                                  {trade.fee > 0 && (
+                                    <div>
+                                      <span className="text-muted-foreground">Trading Fees</span>
+                                      <p className="font-mono font-medium tabular-nums text-loss">-${trade.fee.toFixed(2)}</p>
+                                    </div>
+                                  )}
                                 </div>
                                 {trade.exitPrice != null && trade.entryPrice != null && trade.entryPrice > 0 && (
                                   <div className="mt-4">
@@ -1647,10 +1669,13 @@ export default function HypeDashboard() {
           </DialogHeader>
           <div className="mt-2 space-y-3">
             {[
-              { label: "Mean Reversion", icon: Repeat, color: "#F97316", border: "border-orange-500/20", desc: "Identifies overextended price moves and trades the snap-back. Enters when price deviates significantly from its average and targets a return to equilibrium." },
               { label: "Sniper", icon: Crosshair, color: "#A855F7", border: "border-purple-500/20", desc: "Waits for high-probability setups across multiple timeframes. Enters with precision on confirmed signals and manages risk with adaptive trailing stops." },
-              { label: "Trend", icon: TrendingUp, color: "#06B6D4", border: "border-cyan-500/20", desc: "Follows the dominant market direction with momentum-based entries. Rides trends with wider stops to avoid premature exits on pullbacks." },
-              { label: "Funding", icon: DollarSign, color: "#3B82F6", border: "border-blue-500/20", desc: "Collects funding rate payments when rates are elevated. A yield-oriented approach with hedged exposure to minimize directional risk." },
+              { label: "Scalper", icon: Bolt, color: "#EC4899", border: "border-pink-500/20", desc: "Ultra-short-term trades capturing rapid price movements. Targets small, high-probability gains with tight stops and fast exits." },
+              { label: "Profit Taker", icon: Scissors, color: "#10B981", border: "border-emerald-500/20", desc: "Identifies overextended moves for quick reversal entries. Captures profit from momentum exhaustion with precise timing." },
+              { label: "Trend Follower", icon: TrendingUp, color: "#06B6D4", border: "border-cyan-500/20", desc: "Follows the dominant market direction with momentum-based entries. Rides trends with wider stops to avoid premature exits on pullbacks." },
+              { label: "Mean Reversion", icon: Repeat, color: "#F97316", border: "border-orange-500/20", desc: "Identifies overextended price moves and trades the snap-back. Enters when price deviates significantly from its average and targets a return to equilibrium." },
+              { label: "Funding Capture", icon: DollarSign, color: "#3B82F6", border: "border-blue-500/20", desc: "Collects funding rate payments when rates are elevated. A yield-oriented approach with hedged exposure to minimize directional risk." },
+              { label: "Long Flush BB", icon: Flame, color: "#EF4444", border: "border-red-500/20", desc: "Detects liquidation cascades and Bollinger Band flush events. Enters long after forced selling exhausts and price snaps back." },
               { label: "Adopted", icon: Layers, color: "#EAB308", border: "border-yellow-500/20", desc: "Positions inherited from manual entries. The bot monitors and manages exits using the same risk framework as automated trades." },
             ].map((s) => (
               <div key={s.label} className={`flex items-start gap-3 rounded-lg border ${s.border} bg-white/[0.02] p-3`}>

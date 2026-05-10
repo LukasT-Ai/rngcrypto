@@ -162,12 +162,12 @@ const fetchJson = async <T,>(url: string): Promise<T> => {
   return res.json()
 }
 
-function fmtNum(val: number): string {
-  return val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function fmtNum(val: number | null | undefined): string {
+  return (val ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function fmtPrice(val: number): string {
-  return val.toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })
+function fmtPrice(val: number | null | undefined): string {
+  return (val ?? 0).toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })
 }
 
 function formatHoldTime(openedAt: number | null): string {

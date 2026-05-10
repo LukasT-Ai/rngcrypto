@@ -1,0 +1,67 @@
+---
+title: "The TP/SL Grind: Fine Tuning a Trading Bot on Strike Finance"
+description: "This Mothers Day I am in the trenches tuning take profit and stop loss parameters on my Strike Finance bot. Here is why the balance is so hard to find, and why Strike matters for Cardano."
+date: "2026-05-10"
+category: "Trading"
+featured: true
+---
+
+## Happy Mothers Day from the Trenches
+
+It is Mothers Day 2026 and I am sitting here staring at trade logs instead of brunch menus. My mom would understand though. She is the one who taught me that if you are going to do something, do it right. And right now, doing it right means figuring out why my trading bot keeps bleeding on stop losses while barely making anything on wins.
+
+Shoutout to all the moms out there. Especially the ones who raised kids stubborn enough to build autonomous trading bots on Cardano.
+
+## The TP/SL Balance Problem
+
+If you have never tried to tune a trading bot, let me explain the pain. You have two numbers that control everything: your take profit (TP) and your stop loss (SL). Set TP too tight and you close winners early while your losers run. Set SL too tight and you get stopped out by noise before the trade plays out. Set both too wide and you are just holding positions with no plan.
+
+I have been running my bot on [Strike Finance](https://app.strikefinance.org/referral/accept?code=75cc56269fa647f58e1d5de53ec69639) for a while now, and I just went through a painful lesson in asymmetric risk reward.
+
+Here is what happened. My win rate was sitting at 85%. Sounds amazing right? Except I was making $2 on winners and losing $6 on losers. The math does not care about your win rate if the losses are 3x the wins. I was running a TP of 2.5% ROE with stop losses ranging from 7 to 13% ROE depending on leverage. Every win was a small step forward and every loss was a big step back.
+
+## The Fix Nobody Talks About
+
+Everyone in crypto trading talks about entries. The signal, the setup, the confirmation. But the real edge is in exit management. I had to go back to basics:
+
+**Step 1:** Map actual trade outcomes. Not what the backtest said, what really happened in production. My ZEC longs were getting destroyed. The margin boost I added to capitalize on bounces was amplifying losses instead.
+
+**Step 2:** Fix the asymmetry. I bumped TP from 2.5% to 5.0% ROE. This means I need a lower win rate to be profitable, but each winner actually moves the needle. A 60% win rate at 5% TP and 7% SL is better than an 85% win rate at 2.5% TP and 10% SL.
+
+**Step 3:** Remove the fancy stuff that was hurting more than helping. I had a bounce detector and a 2x margin boost for specific tokens. They looked good in theory but in practice they were concentrating risk in the worst spots.
+
+This is the grind. You build something, watch it run, see it fail in a way you did not expect, fix it, and repeat. There is no final version. Just the next version.
+
+## Why Strike Finance Matters
+
+Now let me tell you why I chose to build on Strike in the first place.
+
+Strike Finance is the first perpetuals platform on Cardano. That alone would make it interesting, but the numbers tell the real story. Strike consistently accounts for over 50% of all trading volume on Cardano. Think about that. One protocol is generating more volume than everything else on the chain combined.
+
+For Cardano, this is massive. Volume drives fee revenue, fee revenue attracts liquidity, liquidity improves execution, and better execution attracts more traders. Strike is the flywheel that Cardano DeFi needed.
+
+Some stats that matter:
+
+- **50x leverage** available on ADA/USD and SNEK/USD perpetuals
+- **Central limit order book (CLOB)** architecture on V2, not an AMM. Real price discovery
+- **$STRIKE token** with 25M max supply, 18M circulating. Staking earns protocol fees in ADA with no time lock
+- **100% of trading fees** distributed to liquidity providers
+- **Oracle based pricing** so you are trading against real market data
+
+The V2 architecture runs on a dedicated Strike Node with a full order book. This is not some fork of a fork. This is purpose built infrastructure for derivatives on Cardano.
+
+## The Bot Builder Perspective
+
+As someone building a trading bot on Strike, I care about things most users never think about. Execution speed, fill rates, slippage, API reliability. And Strike delivers. The API is clean, the fills are consistent, and the order book has enough depth for the position sizes I am running.
+
+I have my bot scanning multiple timeframes, looking at MACD resets on the hourly, trend alignment on the 15 minute, and RSI scalp opportunities. Every signal gets scored and only the highest conviction setups get executed. The bot manages its own risk with circuit breakers, position limits, and adaptive exits.
+
+Building this on Cardano felt like a long shot a year ago. Now with Strike doing the volume it does, it feels like being early to something real.
+
+## What Is Next
+
+The TP/SL tuning never really ends. I am tracking every fill, measuring slippage, logging strategy performance by mode, and iterating. The bot runs 24/7 across multiple markets and every day gives me new data to learn from.
+
+If you want to try trading on Strike yourself, you can check it out at [app.strikefinance.org](https://app.strikefinance.org/referral/accept?code=75cc56269fa647f58e1d5de53ec69639). Whether you are trading manually or building a bot, it is the most active derivatives venue on Cardano and it is not even close.
+
+The grind continues. Happy Mothers Day.

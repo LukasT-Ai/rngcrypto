@@ -67,6 +67,28 @@ function XIcon({ className }: { className?: string }) {
 
 const ACCENT = "#7BEBC2"
 
+const DISPLAY_NAMES: Record<string, string> = {
+  "XYZ-CL-USD": "Crude Oil",
+  "XYZ-BRENTOIL-USD": "Brent Oil",
+  "XYZ-SP500-USD": "S&P 500",
+  "XYZ-NQ-USD": "Nasdaq 100",
+  "XYZ-GOLD-USD": "Gold",
+  "XYZ-SILVER-USD": "Silver",
+  "XYZ-GAS-USD": "Natural Gas",
+  "XYZ-CRCL-USD": "Crude Calendar",
+  "KM-TSLA-USD": "Tesla",
+  "KM-AAPL-USD": "Apple",
+  "KM-NVDA-USD": "Nvidia",
+  "KM-GOOGL-USD": "Google",
+  "KM-MSFT-USD": "Microsoft",
+  "KM-AMZN-USD": "Amazon",
+  "KM-META-USD": "Meta",
+}
+
+function displayName(symbol: string): string {
+  return DISPLAY_NAMES[symbol] ?? symbol.replace(/-USD$/, "")
+}
+
 interface OverallStats {
   totalTrades: number
   wins: number
@@ -884,7 +906,7 @@ export default function HypeDashboard() {
                 const bgOpacity = a.trades === 0 ? 1 : 0.1 + intensity * 0.4
                 return (
                   <div
-                    key={a.asset}
+                    key={displayName(a.asset)}
                     className="relative overflow-hidden rounded-lg border border-white/5 p-3 text-center transition-colors hover:border-[#7BEBC2]/20"
                     style={{
                       backgroundColor: a.trades === 0
@@ -894,7 +916,7 @@ export default function HypeDashboard() {
                           : `rgba(255,59,92,${bgOpacity * 0.3})`,
                     }}
                   >
-                    <p className="font-display text-xs font-semibold">{a.asset}</p>
+                    <p className="font-display text-xs font-semibold">{displayName(a.asset)}</p>
                     <p className="mt-1 font-mono text-[10px] tabular-nums text-muted-foreground">{a.trades} trades</p>
                     {a.trades > 0 && (
                       <p className={`mt-0.5 font-mono text-xs font-semibold tabular-nums ${isPositive ? "text-gain" : "text-loss"}`}>
@@ -979,7 +1001,7 @@ export default function HypeDashboard() {
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${lastTrade.side === "long" ? "bg-gain/10 text-gain" : "bg-loss/10 text-loss"}`}>
                         {lastTrade.side === "long" ? "LONG" : "SHORT"}
                       </span>
-                      <span className="font-display text-sm font-semibold">{lastTrade.asset}</span>
+                      <span className="font-display text-sm font-semibold">{displayName(lastTrade.asset)}</span>
                     </div>
                     <span className="font-mono text-xs text-muted-foreground">{agoStr}</span>
                   </div>
@@ -1000,7 +1022,7 @@ export default function HypeDashboard() {
                       </Badge>
                     )}
                     {lastTrade.leverage && <span className="font-mono tabular-nums">{lastTrade.leverage}x</span>}
-                    <span className="font-mono tabular-nums">{lastTrade.size} {lastTrade.asset}</span>
+                    <span className="font-mono tabular-nums">{lastTrade.size} {displayName(lastTrade.asset)}</span>
                   </div>
                 </div>
               )
@@ -1055,12 +1077,12 @@ export default function HypeDashboard() {
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {openPositions.map((pos) => (
                 <div
-                  key={`${pos.asset}-${pos.side}`}
+                  key={`${displayName(pos.asset)}-${pos.side}`}
                   className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-4 transition-colors hover:border-[#7BEBC2]/20"
                 >
                   <div className="mb-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="font-display text-sm font-semibold">{pos.asset}</span>
+                      <span className="font-display text-sm font-semibold">{displayName(pos.asset)}</span>
                       <Badge
                         variant="secondary"
                         className={`text-xs ${
@@ -1222,10 +1244,10 @@ export default function HypeDashboard() {
                     const maxMargin = Math.max(...openPositions.map((p) => p.marginUsed), 1)
                     const barWidth = (pos.marginUsed / maxMargin) * 100
                     return (
-                      <div key={`${pos.asset}-${pos.side}`}>
+                      <div key={`${displayName(pos.asset)}-${pos.side}`}>
                         <div className="mb-1 flex items-center justify-between text-xs">
                           <span className="font-medium text-[#7BEBC2]">
-                            {pos.asset} <span className={pos.side === "long" ? "text-gain" : "text-loss"}>{pos.side.toUpperCase()}</span>
+                            {displayName(pos.asset)} <span className={pos.side === "long" ? "text-gain" : "text-loss"}>{pos.side.toUpperCase()}</span>
                           </span>
                           <span className="font-mono tabular-nums text-muted-foreground">${fmtNum(pos.marginUsed)}</span>
                         </div>
@@ -1370,7 +1392,7 @@ export default function HypeDashboard() {
                           <td className="py-3 pr-3 font-mono font-medium tabular-nums">
                             <span className="flex items-center gap-1">
                               {isExpanded ? <ChevronUp className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
-                              {trade.asset}
+                              {displayName(trade.asset)}
                             </span>
                           </td>
                           <td className="py-3 pr-3">
@@ -1435,7 +1457,7 @@ export default function HypeDashboard() {
                                 }`}
                               >
                                 <div className="mb-3 text-sm font-medium text-white/70">
-                                  {trade.asset} {trade.side?.toUpperCase()} @ {trade.leverage || 1}x leverage
+                                  {displayName(trade.asset)} {trade.side?.toUpperCase()} @ {trade.leverage || 1}x leverage
                                 </div>
                                 <div className="grid grid-cols-2 gap-4 text-xs sm:grid-cols-4">
                                   <div>
@@ -1561,12 +1583,12 @@ export default function HypeDashboard() {
 
                 return (
                   <div
-                    key={a.asset}
+                    key={displayName(a.asset)}
                     className="rounded-lg border border-white/5 bg-white/[0.02] p-4 transition-colors hover:border-[#7BEBC2]/15"
                   >
                     <div className="mb-2 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <span className="font-display text-sm font-semibold">{a.asset}</span>
+                        <span className="font-display text-sm font-semibold">{displayName(a.asset)}</span>
                         <span className="text-xs text-muted-foreground">{a.trades} trades</span>
                       </div>
                       <div className="flex items-center gap-4 text-xs">

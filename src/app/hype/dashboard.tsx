@@ -170,9 +170,11 @@ function fmtPrice(val: number | null | undefined): string {
   return (val ?? 0).toLocaleString("en-US", { minimumFractionDigits: 5, maximumFractionDigits: 5 })
 }
 
-function formatHoldTime(openedAt: number | null): string {
+function formatHoldTime(openedAt: string | number | null): string {
   if (!openedAt) return "—"
-  const diff = Date.now() - openedAt
+  const ts = typeof openedAt === "number" ? openedAt : new Date(openedAt).getTime()
+  if (isNaN(ts)) return "—"
+  const diff = Date.now() - ts
   const days = Math.floor(diff / 86_400_000)
   const hours = Math.floor((diff % 86_400_000) / 3_600_000)
   const mins = Math.floor((diff % 3_600_000) / 60_000)
@@ -181,7 +183,7 @@ function formatHoldTime(openedAt: number | null): string {
   return `${mins}m`
 }
 
-function formatOpenedDate(openedAt: number | null): string {
+function formatOpenedDate(openedAt: string | number | null): string {
   if (!openedAt) return "—"
   return new Date(openedAt).toLocaleDateString("en-US", {
     month: "short",

@@ -261,6 +261,8 @@ function mapStrategy(strategy: string | null): string {
     "mean-reversion": "Mean Reversion",
     "auto_trader": "Auto-Trader",
     "momentum": "Momentum",
+    "manual": "Manual",
+    "reconciled": "Manual",
   }
   return map[strategy] ?? strategy.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
 }
@@ -285,6 +287,8 @@ function strategyBadgeClasses(label: string): string {
       return "border-purple-500/30 text-purple-400 bg-purple-500/10"
     case "Mean Reversion":
       return "border-orange-500/30 text-orange-400 bg-orange-500/10"
+    case "Manual":
+      return "border-yellow-500/30 text-yellow-400 bg-yellow-500/10"
     default:
       return "border-white/10 text-muted-foreground"
   }
@@ -1541,6 +1545,7 @@ export default function StrikeDashboard() {
                 <option value="Grid">Grid</option>
                 <option value="DCA">DCA</option>
                 <option value="Funding">Funding</option>
+                <option value="Manual">Manual</option>
               </select>
             </div>
           </div>

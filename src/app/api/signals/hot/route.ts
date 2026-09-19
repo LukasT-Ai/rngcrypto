@@ -46,16 +46,19 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const baseUrl = req.nextUrl.origin;
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const host = req.headers.get("host") ?? req.nextUrl.host;
+  const baseUrl = `${proto}://${host}`;
 
   const results = await Promise.allSettled(
     SYMBOLS.map(async (sym) => {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      const timeout = setTimeout(() => controller.abort(), 20000);
       try {
         const res = await fetch(`${baseUrl}/api/signals?symbol=${sym}`, {
           signal: controller.signal,
           cache: "no-store",
+          headers: { "User-Agent": "signals-hot-scanner" },
         });
         if (!res.ok) return null;
         const data = await res.json();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
+import { appendSignal } from "./history/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -2047,6 +2048,23 @@ export async function GET(req: NextRequest) {
     },
     dec
   );
+
+  // ── Log signal for accuracy tracking ────────────────────────────────────────
+  if (call.bias !== "WAIT" && call.confidence >= 55) {
+    appendSignal({
+      symbol,
+      timestamp: Date.now(),
+      bias: call.bias,
+      confidence: call.confidence,
+      grade: call.grade,
+      entry: call.entry,
+      stopLoss: call.stopLoss,
+      tp1: call.tp1,
+      tp2: call.tp2,
+      tp3: call.tp3,
+      priceAtSignal: round(currentPrice, dec),
+    }).catch(() => {});
+  }
 
   // ── Build response ─────────────────────────────────────────────────────────
   const response = {

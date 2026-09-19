@@ -28,6 +28,7 @@ import {
   BarChart,
   Waves,
   ChevronRight,
+  Trophy,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -181,6 +182,42 @@ interface HotResponse {
   timestamp: number
   hot: HotPlay[]
   all: HotPlay[]
+}
+
+interface SignalLog {
+  id: string
+  symbol: string
+  timestamp: number
+  bias: "LONG" | "SHORT"
+  confidence: number
+  grade: string
+  entry: number
+  stopLoss: number
+  tp1: number
+  tp2: number
+  tp3: number
+  priceAtSignal: number
+  outcome: "pending" | "tp1" | "tp2" | "tp3" | "stopped" | "expired"
+  outcomePrice: number | null
+  outcomeTimestamp: number | null
+  maxFavorable: number | null
+  maxAdverse: number | null
+}
+
+interface HistoryResponse {
+  signals: SignalLog[]
+  stats: {
+    total: number
+    wins: number
+    losses: number
+    pending: number
+    expired: number
+    winRate: number
+    avgConfidence: number
+    avgRR: number
+    profitFactor: number
+    bySymbol: Record<string, { total: number; wins: number; losses: number; winRate: number }>
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -486,6 +523,23 @@ export default function SignalsDashboard() {
     refetchInterval: 60_000,
     refetchIntervalInBackground: true,
   })
+
+  const { data: historyData } = useQuery<HistoryResponse>({
+    queryKey: ["signals-history"],
+    queryFn: async () => {
+      const res = await fetch("/api/signals/history")
+      if (!res.ok) throw new Error(`API error: ${res.status}`)
+      return res.json()
+    },
+    refetchInterval: 60_000,
+  })
+
+  useEffect(() => {
+    const check = () => fetch("/api/signals/history/check", { method: "POST" }).catch(() => {})
+    check()
+    const id = setInterval(check, 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   const countdown = useCountdown(30_000, fetchTs)
 
@@ -1517,7 +1571,179 @@ export default function SignalsDashboard() {
               </motion.div>
             )}
 
-            {/* ── 13. Footer ────────────────────────────────────────────── */}
+            {/* ── 13. Signal Track Record ─────────────────────────────────── */}
+            {historyData && (
+              <motion.div {...fadeUp}>
+                <div className="flex items-center gap-2 mb-4">
+                  <Trophy className="size-4" style={{ color: accent }} />
+                  <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
+                    Signal Track Record
+                  </h2>
+                </div>
+
+                {historyData.stats.total === 0 ? (
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-8 text-center">
+                    <Trophy className="size-8 text-white/20 mx-auto mb-3" />
+                    <p className="text-sm text-white/40">
+                      No signals tracked yet. Signals with confidence &ge; 55 are automatically logged and tracked.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Stats bar */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+                      {/* Win Rate with ring */}
+                      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 flex flex-col items-center justify-center">
+                        <span className="text-[10px] uppercase tracking-wider text-white/40 mb-2">Win Rate</span>
+                        <div className="relative size-16">
+                          <svg className="size-16 -rotate-90" viewBox="0 0 36 36">
+                            <circle cx="18" cy="18" r="15.5" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
+                            <circle
+                              cx="18" cy="18" r="15.5" fill="none"
+                              strokeWidth="3" strokeLinecap="round"
+                              stroke={historyData.stats.winRate >= 60 ? "#00FF88" : historyData.stats.winRate < 45 ? "#FF3B5C" : "#F59E0B"}
+                              strokeDasharray={`${historyData.stats.winRate * 0.9742} 97.42`}
+                            />
+                          </svg>
+                          <span
+                            className="absolute inset-0 flex items-center justify-center font-mono text-sm font-black"
+                            style={{ color: historyData.stats.winRate >= 60 ? "#00FF88" : historyData.stats.winRate < 45 ? "#FF3B5C" : "#F59E0B" }}
+                          >
+                            {historyData.stats.winRate.toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <StatCard label="Total Signals" value={String(historyData.stats.total)} color={accent} icon={BarChart3} />
+                      <StatCard label="Wins" value={String(historyData.stats.wins)} color="#00FF88" icon={TrendingUp} />
+                      <StatCard label="Losses" value={String(historyData.stats.losses)} color="#FF3B5C" icon={TrendingDown} />
+                      <StatCard
+                        label="Profit Factor"
+                        value={historyData.stats.profitFactor.toFixed(2)}
+                        color={historyData.stats.profitFactor > 1.5 ? "#00FF88" : historyData.stats.profitFactor < 1 ? "#FF3B5C" : "#F59E0B"}
+                        icon={Zap}
+                      />
+                      <StatCard
+                        label="Avg Confidence"
+                        value={historyData.stats.avgConfidence.toFixed(0)}
+                        color={accent}
+                        icon={Gauge}
+                      />
+                    </div>
+
+                    {/* Recent signals table */}
+                    {historyData.signals.length > 0 && (
+                      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden mb-4">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/30">
+                                <th className="px-4 py-3 text-left font-medium">Time</th>
+                                <th className="px-4 py-3 text-left font-medium">Symbol</th>
+                                <th className="px-4 py-3 text-left font-medium">Bias</th>
+                                <th className="px-4 py-3 text-right font-medium">Entry</th>
+                                <th className="px-4 py-3 text-right font-medium">Conf</th>
+                                <th className="px-4 py-3 text-right font-medium">Outcome</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {historyData.signals.slice(0, 15).map((sig) => {
+                                const ago = Date.now() - sig.timestamp
+                                const mins = Math.floor(ago / 60000)
+                                const hours = Math.floor(ago / 3600000)
+                                const days = Math.floor(ago / 86400000)
+                                const timeStr = days > 0 ? `${days}d ago` : hours > 0 ? `${hours}h ago` : `${mins}m ago`
+
+                                const outcomeLabel: Record<string, { text: string; color: string }> = {
+                                  pending: { text: "Pending", color: "#F59E0B" },
+                                  tp1: { text: "TP1 Hit", color: "#00FF88" },
+                                  tp2: { text: "TP2 Hit", color: "#00FF88" },
+                                  tp3: { text: "TP3 Hit", color: "#00FF88" },
+                                  stopped: { text: "Stopped Out", color: "#FF3B5C" },
+                                  expired: { text: "Expired", color: "#6B7280" },
+                                }
+                                const oc = outcomeLabel[sig.outcome] ?? { text: sig.outcome, color: "#6B7280" }
+
+                                return (
+                                  <tr
+                                    key={sig.id}
+                                    className="border-b border-white/[0.03] hover:bg-white/[0.02] cursor-pointer transition-colors"
+                                    onClick={() => setSymbol(sig.symbol)}
+                                  >
+                                    <td className="px-4 py-2.5 text-white/40 font-mono text-xs">{timeStr}</td>
+                                    <td className="px-4 py-2.5">
+                                      <span className="font-bold text-white/80 text-xs">{sig.symbol}</span>
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      <span
+                                        className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
+                                        style={{
+                                          backgroundColor: `${dirColor(sig.bias)}15`,
+                                          color: dirColor(sig.bias),
+                                        }}
+                                      >
+                                        {sig.bias}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right font-mono text-xs text-white/60 tabular-nums">
+                                      ${fmtPrice(sig.entry)}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right font-mono text-xs text-white/60 tabular-nums">
+                                      {sig.confidence}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right">
+                                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: oc.color }}>
+                                        {sig.outcome === "pending" && (
+                                          <span className="size-1.5 rounded-full animate-pulse" style={{ backgroundColor: oc.color }} />
+                                        )}
+                                        {oc.text}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Per-symbol breakdown */}
+                    {(() => {
+                      const bySymbol = historyData.stats.bySymbol
+                      const entries = Object.entries(bySymbol).filter(([, v]) => v.total > 0)
+                      if (entries.length === 0) return null
+                      return (
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider text-white/30 mb-2 block">Win Rate by Symbol</span>
+                          <div className="flex flex-wrap gap-2">
+                            {entries.map(([sym, st]) => {
+                              const wrColor = st.winRate >= 60 ? "#00FF88" : st.winRate < 45 ? "#FF3B5C" : "#F59E0B"
+                              return (
+                                <div
+                                  key={sym}
+                                  className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 flex items-center gap-2"
+                                >
+                                  <span className="text-xs font-bold text-white/60">{sym}</span>
+                                  <span className="font-mono text-xs font-bold" style={{ color: wrColor }}>
+                                    {st.winRate.toFixed(0)}%
+                                  </span>
+                                  <span className="text-[10px] text-white/30">
+                                    {st.wins}W / {st.losses}L
+                                  </span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </>
+                )}
+              </motion.div>
+            )}
+
+            {/* ── 14. Footer ────────────────────────────────────────────── */}
             <div className="flex items-center justify-between border-t border-white/[0.04] pt-4 text-xs text-white/30">
               <span>{ind?.regime ?? "—"} regime</span>
               <span>Powered by multi-factor signal engine &middot; Auto-refreshes every 30s &middot; Not financial advice</span>

@@ -1,8 +1,18 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { join } from "path";
 
-const FILE_PATH = "/tmp/signal-history.json";
+const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH
+  ? join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "signals")
+  : join(process.cwd(), "data");
+const FILE_PATH = join(DATA_DIR, "signal-history.json");
 const DEDUP_WINDOW_MS = 15 * 60 * 1000;
 const MAX_SIGNALS = 500;
+
+function ensureDir(): void {
+  if (!existsSync(DATA_DIR)) {
+    mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
 
 export interface SignalLog {
   id: string;
@@ -60,9 +70,10 @@ function loadFromDisk(): SignalLog[] {
 function saveToDisk(signals: SignalLog[]): void {
   memoryCache = signals;
   try {
+    ensureDir();
     writeFileSync(FILE_PATH, JSON.stringify(signals), "utf-8");
   } catch {
-    // /tmp may not be writable in all environments
+    // disk may not be writable in all environments
   }
 }
 
@@ -131,6 +142,10 @@ export function updateSignal(
   if (idx === -1) return;
   signals[idx] = { ...signals[idx], ...updates };
   saveToDisk(signals);
+}
+
+export function replaceHistory(signals: SignalLog[]): void {
+  saveToDisk(signals.slice(0, MAX_SIGNALS));
 }
 
 export function computeStats(signals: SignalLog[]): SignalStats {

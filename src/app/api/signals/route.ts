@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { appendSignal } from "./history/logger";
+import { computeCatalystScore } from "@/lib/economic-calendar";
+import { getNewsSentiment, type NewsSentimentResult } from "@/lib/news-sentiment";
 
 export const dynamic = "force-dynamic";
 
@@ -1062,6 +1064,7 @@ function scoreDivergences(
 
 function scoreSentiment(
   fearGreed: number | null,
+  newsSentimentScore: number | null,
   isCrypto: boolean
 ): { score: number; notes: string[] } {
   let score = 0;
@@ -1069,21 +1072,38 @@ function scoreSentiment(
 
   if (!isCrypto) return { score: 0, notes: [] };
 
+  let fgScore = 0;
   if (fearGreed != null) {
     if (fearGreed < 20) {
-      score += 40;
+      fgScore = 40;
       notes.push(`Extreme Fear (${fearGreed}) — contrarian long`);
     } else if (fearGreed < 35) {
-      score += 20;
+      fgScore = 20;
       notes.push(`Fear zone (${fearGreed})`);
     } else if (fearGreed > 80) {
-      score -= 40;
+      fgScore = -40;
       notes.push(`Extreme Greed (${fearGreed}) — contrarian caution`);
     } else if (fearGreed > 65) {
-      score -= 20;
+      fgScore = -20;
       notes.push(`Greed zone (${fearGreed})`);
     }
   }
+
+  let newsScore = 0;
+  if (newsSentimentScore != null && newsSentimentScore !== 0) {
+    newsScore = clamp(Math.round(newsSentimentScore * 0.4), -40, 40);
+    const label =
+      newsSentimentScore >= 20
+        ? "bullish"
+        : newsSentimentScore <= -20
+          ? "bearish"
+          : "mixed";
+    notes.push(`News sentiment ${label} (${newsSentimentScore})`);
+  }
+
+  score = fearGreed != null
+    ? Math.round(fgScore * 0.6 + newsScore * 0.4)
+    : newsScore;
 
   return { score: clamp(score, -100, 100), notes };
 }
@@ -1168,31 +1188,18 @@ function scoreETFFlows(
   return { score: clamp(score, -100, 100), notes };
 }
 
-function checkCatalystRisk(
+function applyCatalystScore(
+  catalystScore: number,
+  catalystRisk: string | null,
   fundingRate: number | null
 ): { score: number; note: string | null } {
-  let score = 0;
-  let note: string | null = null;
-
-  const now = new Date();
-  const day = now.getUTCDay();
-  const hour = now.getUTCHours();
-
-  if (day === 0 || day === 6) {
-    score -= 30;
-    note = "Weekend — reduced liquidity";
-  }
-
-  if (day >= 1 && day <= 5 && hour >= 13 && hour <= 14) {
-    score -= 15;
-    note =
-      (note ? note + "; " : "") + "US market open — potential volatility";
-  }
+  let score = catalystScore;
+  let note = catalystRisk;
 
   if (fundingRate != null && Math.abs(fundingRate) > 0.05) {
     score -= 20;
     note =
-      (note ? note + "; " : "") + "Extreme funding rate — squeeze risk";
+      (note ? note + "; " : "") + "Extreme funding rate, squeeze risk";
   }
 
   return { score: clamp(score, -100, 100), note };
@@ -1246,6 +1253,9 @@ function computeMultiFactorCall(
       cvd: number;
     };
     isCrypto: boolean;
+    newsSentimentScore: number | null;
+    catalystScore: number;
+    catalystRiskNote: string | null;
   },
   dec: number
 ) {
@@ -1287,6 +1297,9 @@ function computeMultiFactorCall(
     fibExtension,
     volData,
     isCrypto,
+    newsSentimentScore,
+    catalystScore: extCatalystScore,
+    catalystRiskNote,
   } = params;
 
   const weights = {
@@ -1342,11 +1355,11 @@ function computeMultiFactorCall(
     squeeze
   );
   const divs = scoreDivergences(rsiDiv15m, rsiDiv1h, macdDiv, volDiv);
-  const sent = scoreSentiment(fearGreed, isCrypto);
+  const sent = scoreSentiment(fearGreed, newsSentimentScore, isCrypto);
   const mktData = scoreMarketData(btcDominance, isCrypto);
   const pats = scorePatterns(pattern);
   const etfScore = scoreETFFlows(etfNet);
-  const catalyst = checkCatalystRisk(fundingRate);
+  const catalyst = applyCatalystScore(extCatalystScore, catalystRiskNote, fundingRate);
 
   const weightedScore =
     ms.score * weights.marketStructure +
@@ -1772,6 +1785,10 @@ export async function GET(req: NextRequest) {
           "https://api.coinglass.com/api/v3/futures/liquidation/info?symbol=BTC"
         ).catch(() => null)
       : Promise.resolve(null),
+    // 13: News sentiment (crypto only)
+    isCrypto
+      ? getNewsSentiment(symbol).catch(() => null)
+      : Promise.resolve(null),
   ];
 
   const results = await Promise.allSettled(fetches);
@@ -2004,6 +2021,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // News sentiment
+  const newsSentimentData = getResult(13) as NewsSentimentResult | null;
+
+  // ── Economic calendar / catalyst scoring ────────────────────────────────────
+  const catalystData = await computeCatalystScore();
+
   // ── Compute trade call ─────────────────────────────────────────────────────
   const call = computeMultiFactorCall(
     {
@@ -2045,6 +2068,9 @@ export async function GET(req: NextRequest) {
       fibExtension,
       volData,
       isCrypto,
+      newsSentimentScore: newsSentimentData?.score ?? null,
+      catalystScore: catalystData.score,
+      catalystRiskNote: catalystData.catalystRisk,
     },
     dec
   );
@@ -2156,6 +2182,21 @@ export async function GET(req: NextRequest) {
       squeeze,
     },
     call,
+    newsSentiment: newsSentimentData
+      ? {
+          score: newsSentimentData.score,
+          label: newsSentimentData.label,
+          headlines: newsSentimentData.headlines
+            .slice(0, 5)
+            .map((h) => ({ title: h.title, sentiment: h.sentiment })),
+        }
+      : null,
+    events: catalystData.events.map((e) => ({
+      name: e.name,
+      time: e.time.toISOString(),
+      impact: e.impact,
+      currency: e.currency,
+    })),
     candles: candles15m.slice(-100).map((c) => ({
       time: c.time,
       open: c.open,

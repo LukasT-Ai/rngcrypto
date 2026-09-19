@@ -47,8 +47,15 @@ const TICKERS = [
   { symbol: "SKHYNIX", label: "SK Hynix", color: "#E8622C" },
   { symbol: "GOLD", label: "Gold", color: "#FFD700" },
   { symbol: "XRP", label: "XRP", color: "#23292F" },
+  { symbol: "SOL", label: "Solana", color: "#9945FF" },
+  { symbol: "NEAR", label: "NEAR", color: "#00C08B" },
   { symbol: "OIL", label: "WTI Oil", color: "#8B6914" },
   { symbol: "SILVER", label: "Silver", color: "#C0C0C0" },
+  { symbol: "TSLA", label: "Tesla", color: "#CC0000" },
+  { symbol: "NVDA", label: "Nvidia", color: "#76B900" },
+  { symbol: "GOOGL", label: "Google", color: "#4285F4" },
+  { symbol: "COIN", label: "Coinbase", color: "#0052FF" },
+  { symbol: "MU", label: "Micron", color: "#1A1AFF" },
 ]
 
 // ---------------------------------------------------------------------------

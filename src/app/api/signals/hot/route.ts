@@ -6,7 +6,8 @@ export const dynamic = "force-dynamic";
 const SYMBOLS = [
   "BTC", "ETH", "BNB", "ADA", "HYPE",
   "ZEC", "PUMP", "NIGHT", "SKHYNIX", "GOLD",
-  "XRP", "OIL", "SILVER",
+  "XRP", "SOL", "NEAR", "OIL", "SILVER",
+  "TSLA", "NVDA", "GOOGL", "COIN", "MU",
 ];
 
 const TICKER_META: Record<string, { label: string; color: string }> = {
@@ -21,8 +22,15 @@ const TICKER_META: Record<string, { label: string; color: string }> = {
   SKHYNIX: { label: "SK Hynix", color: "#E8622C" },
   GOLD: { label: "Gold", color: "#FFD700" },
   XRP: { label: "XRP", color: "#23292F" },
+  SOL: { label: "Solana", color: "#9945FF" },
+  NEAR: { label: "NEAR", color: "#00C08B" },
   OIL: { label: "WTI Oil", color: "#8B6914" },
   SILVER: { label: "Silver", color: "#C0C0C0" },
+  TSLA: { label: "Tesla", color: "#CC0000" },
+  NVDA: { label: "Nvidia", color: "#76B900" },
+  GOOGL: { label: "Google", color: "#4285F4" },
+  COIN: { label: "Coinbase", color: "#0052FF" },
+  MU: { label: "Micron", color: "#1A1AFF" },
 };
 
 let hotCache: { data: unknown; timestamp: number } | null = null;

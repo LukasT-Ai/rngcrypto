@@ -30,8 +30,15 @@ const SYMBOL_MAP: Record<
   },
   GOLD: { strike: "XAU-USD", decimals: 2, isCrypto: false, label: "Gold" },
   XRP: { strike: "XRP-USD", decimals: 4, isCrypto: true, label: "XRP" },
-  OIL: { strike: "OIL-USD", decimals: 2, isCrypto: false, label: "WTI Oil" },
-  SILVER: { strike: "SILVER-USD", decimals: 3, isCrypto: false, label: "Silver" },
+  SOL: { strike: "SOL-USD", decimals: 2, isCrypto: true, label: "Solana" },
+  NEAR: { strike: "NEAR-USD", decimals: 4, isCrypto: true, label: "NEAR" },
+  OIL: { strike: "WTI-USD", decimals: 2, isCrypto: false, label: "WTI Oil" },
+  SILVER: { strike: "XAG-USD", decimals: 3, isCrypto: false, label: "Silver" },
+  TSLA: { strike: "TSLA-USD", decimals: 2, isCrypto: false, label: "Tesla" },
+  NVDA: { strike: "NVDA-USD", decimals: 2, isCrypto: false, label: "Nvidia" },
+  GOOGL: { strike: "GOOGL-USD", decimals: 2, isCrypto: false, label: "Google" },
+  COIN: { strike: "COIN-USD", decimals: 2, isCrypto: false, label: "Coinbase" },
+  MU: { strike: "MU-USD", decimals: 2, isCrypto: false, label: "Micron" },
 };
 
 // ── Cache (per-symbol) ──────────────────────────────────────────────────────

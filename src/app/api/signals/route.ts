@@ -364,13 +364,14 @@ function computeSupertrend(
 
 // ── Support / Resistance ─────────────────────────────────────────────────────
 
-function findSwingLevels(
+function findSwingLevelsFromCandles(
   candles: Candle[],
-  lookback = 2
-): { supports: number[]; resistances: number[] } {
+  lookback = 2,
+  depth = 50
+): { rawSupports: number[]; rawResistances: number[] } {
   const supports: number[] = [];
   const resistances: number[] = [];
-  const slice = candles.slice(-50);
+  const slice = candles.slice(-depth);
 
   for (let i = lookback; i < slice.length - lookback; i++) {
     let isHigh = true;
@@ -391,6 +392,24 @@ function findSwingLevels(
     if (isLow) supports.push(slice[i].low);
   }
 
+  return { rawSupports: supports, rawResistances: resistances };
+}
+
+function findMultiTFLevels(
+  candles15m: Candle[],
+  candles1h: Candle[],
+  candles4h: Candle[]
+): { supports: number[]; resistances: number[] } {
+  const tf15m = findSwingLevelsFromCandles(candles15m, 2, 50);
+  const tf1h = findSwingLevelsFromCandles(candles1h, 2, 60);
+  const tf4h = findSwingLevelsFromCandles(candles4h, 2, 40);
+
+  const allSupports = [...tf15m.rawSupports, ...tf1h.rawSupports, ...tf4h.rawSupports];
+  const allResistances = [...tf15m.rawResistances, ...tf1h.rawResistances, ...tf4h.rawResistances];
+
+  const price = candles15m[candles15m.length - 1]?.close ?? 0;
+  const tol = price * 0.005;
+
   const dedup = (arr: number[], tolerance: number) => {
     const sorted = [...arr].sort((a, b) => a - b);
     const result: number[] = [];
@@ -405,15 +424,12 @@ function findSwingLevels(
     return result;
   };
 
-  const price = candles[candles.length - 1]?.close ?? 0;
-  const tol = price * 0.002;
-
   return {
-    supports: dedup(supports, tol)
+    supports: dedup(allSupports, tol)
       .filter((s) => s < price)
       .sort((a, b) => b - a)
       .slice(0, 5),
-    resistances: dedup(resistances, tol)
+    resistances: dedup(allResistances, tol)
       .filter((r) => r > price)
       .sort((a, b) => a - b)
       .slice(0, 5),
@@ -1256,6 +1272,7 @@ function computeMultiFactorCall(
     newsSentimentScore: number | null;
     catalystScore: number;
     catalystRiskNote: string | null;
+    tradeATR: number;
   },
   dec: number
 ) {
@@ -1300,6 +1317,7 @@ function computeMultiFactorCall(
     newsSentimentScore,
     catalystScore: extCatalystScore,
     catalystRiskNote,
+    tradeATR,
   } = params;
 
   const weights = {
@@ -1525,10 +1543,13 @@ function computeMultiFactorCall(
   else if (confidence >= 45) grade = "C";
   else grade = "NO TRADE";
 
-  const nearestSupport = supports[0] ?? price - 2 * atr;
-  const nearestResistance = resistances[0] ?? price + 2 * atr;
-  const secondSupport = supports[1] ?? price - 3 * atr;
-  const secondResistance = resistances[1] ?? price + 3 * atr;
+  const ta = tradeATR;
+  const minDist = ta * 0.8;
+
+  const nearestSupport = supports[0] ?? price - 1.5 * ta;
+  const nearestResistance = resistances[0] ?? price + 1.5 * ta;
+  const secondSupport = supports[1] ?? price - 2.5 * ta;
+  const secondResistance = resistances[1] ?? price + 2.5 * ta;
 
   let entry: number;
   let secondaryEntry: number | null;
@@ -1540,41 +1561,47 @@ function computeMultiFactorCall(
 
   if (bias === "LONG") {
     entry =
-      supports[0] && Math.abs(price - supports[0]) / atr < 1.5
+      supports[0] && Math.abs(price - supports[0]) / ta < 2
         ? supports[0]
         : price;
     secondaryEntry =
       secondSupport !== entry ? round(secondSupport, dec) : null;
-    stopLoss = nearestSupport - 0.5 * atr;
-    tp1 = resistances[0] ?? price + 2 * atr;
-    tp2 = resistances[1] ?? price + 3 * atr;
-    tp3 = resistances[2] ?? price + 4.5 * atr;
+    stopLoss = nearestSupport - 0.5 * ta;
+    if (Math.abs(entry - stopLoss) < minDist) stopLoss = entry - ta;
+
+    tp1 = resistances[0] ?? price + 1.5 * ta;
+    if (Math.abs(tp1 - entry) < minDist) tp1 = entry + 1.5 * ta;
+    tp2 = resistances[1] && resistances[1] > tp1 ? resistances[1] : tp1 + ta;
+    tp3 = resistances[2] && resistances[2] > tp2 ? resistances[2] : tp2 + ta;
     extendedTarget =
       fibExtension && fibExtension > tp3
         ? fibExtension
-        : round(price + 6 * atr, dec);
+        : round(price + 5 * ta, dec);
   } else if (bias === "SHORT") {
     entry =
-      resistances[0] && Math.abs(resistances[0] - price) / atr < 1.5
+      resistances[0] && Math.abs(resistances[0] - price) / ta < 2
         ? resistances[0]
         : price;
     secondaryEntry =
       secondResistance !== entry ? round(secondResistance, dec) : null;
-    stopLoss = nearestResistance + 0.5 * atr;
-    tp1 = supports[0] ?? price - 2 * atr;
-    tp2 = supports[1] ?? price - 3 * atr;
-    tp3 = supports[2] ?? price - 4.5 * atr;
+    stopLoss = nearestResistance + 0.5 * ta;
+    if (Math.abs(stopLoss - entry) < minDist) stopLoss = entry + ta;
+
+    tp1 = supports[0] ?? price - 1.5 * ta;
+    if (Math.abs(entry - tp1) < minDist) tp1 = entry - 1.5 * ta;
+    tp2 = supports[1] && supports[1] < tp1 ? supports[1] : tp1 - ta;
+    tp3 = supports[2] && supports[2] < tp2 ? supports[2] : tp2 - ta;
     extendedTarget =
       fibExtension && fibExtension < tp3
         ? fibExtension
-        : round(price - 6 * atr, dec);
+        : round(price - 5 * ta, dec);
   } else {
     entry = price;
     secondaryEntry = null;
-    stopLoss = price - 1.5 * atr;
-    tp1 = price + 1.5 * atr;
-    tp2 = price + 2.5 * atr;
-    tp3 = price + 4 * atr;
+    stopLoss = price - 1.5 * ta;
+    tp1 = price + 1.5 * ta;
+    tp2 = price + 2.5 * ta;
+    tp3 = price + 4 * ta;
     extendedTarget = null;
   }
 
@@ -1828,7 +1855,6 @@ export async function GET(req: NextRequest) {
   const atrArr = computeATR(candles15m);
   const bbData = computeBB(closes15m);
   const supertrendDir = computeSupertrend(candles15m);
-  const levels = findSwingLevels(candles15m);
   const fibLevels = computeFibonacci(candles15m, dec);
   const fibExtension = computeFibExtension(candles15m, dec);
 
@@ -1876,6 +1902,14 @@ export async function GET(req: NextRequest) {
   const rsi1h = tip(rsi1hArr);
   const rsi4h = tip(rsi4hArr);
   const rsiDaily = rsiDailyArr ? tip(rsiDailyArr) : null;
+
+  // ── Multi-TF Support/Resistance ─────────────────────────────────────────────
+  const levels = findMultiTFLevels(candles15m, candles1h, candles4h);
+
+  // 1h ATR for trade sizing (more meaningful than 15m ATR)
+  const atr1hArr = computeATR(candles1h);
+  const atr1h = tip(atr1hArr);
+  const tradeATR = atr1h > 0 ? atr1h : atrVal * 4;
 
   // ── Divergences ────────────────────────────────────────────────────────────
   const rsiDiv15m = detectDivergence(closes15m, rsiArr, 30);
@@ -2071,6 +2105,7 @@ export async function GET(req: NextRequest) {
       newsSentimentScore: newsSentimentData?.score ?? null,
       catalystScore: catalystData.score,
       catalystRiskNote: catalystData.catalystRisk,
+      tradeATR,
     },
     dec
   );

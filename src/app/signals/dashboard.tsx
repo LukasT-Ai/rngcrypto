@@ -171,7 +171,10 @@ interface SignalsResponse {
     longShortRatio: number | null
     longShortChange: number | null
     topTraderLongRatio: number | null
+    openInterestChange: number | null
+    takerBuySellRatio: number | null
     binanceOI: number | null
+    okxOI: number | null
     squeezeRisk: string | null
   } | null
   events?: { name: string; time: string; impact: string; currency: string }[]
@@ -1598,6 +1601,48 @@ export default function SignalsDashboard() {
                       }
                       accent={accent}
                       icon={Eye}
+                    />
+                  )}
+                  {d.positioning.openInterestChange != null && (
+                    <StatCard
+                      label="OI Change"
+                      value={`${d.positioning.openInterestChange >= 0 ? "+" : ""}${d.positioning.openInterestChange.toFixed(1)}%`}
+                      sub={
+                        d.positioning.openInterestChange > 15
+                          ? "New money entering"
+                          : d.positioning.openInterestChange < -15
+                            ? "Positions unwinding"
+                            : "Stable"
+                      }
+                      color={
+                        Math.abs(d.positioning.openInterestChange) > 15
+                          ? d.positioning.openInterestChange > 0 ? "#00FF88" : "#FF3B5C"
+                          : undefined
+                      }
+                      accent={accent}
+                      icon={BarChart3}
+                    />
+                  )}
+                  {d.positioning.takerBuySellRatio != null && (
+                    <StatCard
+                      label="Taker B/S"
+                      value={d.positioning.takerBuySellRatio.toFixed(2)}
+                      sub={
+                        d.positioning.takerBuySellRatio > 1.3
+                          ? "Aggressive buying"
+                          : d.positioning.takerBuySellRatio < 0.7
+                            ? "Aggressive selling"
+                            : "Balanced"
+                      }
+                      color={
+                        d.positioning.takerBuySellRatio > 1.3
+                          ? "#00FF88"
+                          : d.positioning.takerBuySellRatio < 0.7
+                            ? "#FF3B5C"
+                            : undefined
+                      }
+                      accent={accent}
+                      icon={Activity}
                     />
                   )}
                   {market?.liquidations && (

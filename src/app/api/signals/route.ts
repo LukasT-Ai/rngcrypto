@@ -1218,7 +1218,9 @@ function scoreLiquidation(
   topTraderLongRatio: number | null,
   longLiqs24h: number | null,
   shortLiqs24h: number | null,
-  fundingRate: number | null
+  fundingRate: number | null,
+  oiChange: number | null,
+  takerBuySellRatio: number | null
 ): { score: number; notes: string[]; squeezeRisk: string | null } {
   let score = 0;
   const notes: string[] = [];
@@ -1259,6 +1261,26 @@ function scoreLiquidation(
     } else if (topTraderLongRatio < 0.35) {
       score -= 10;
       notes.push(`Top traders ${((1 - topTraderLongRatio) * 100).toFixed(0)}% short`);
+    }
+  }
+
+  if (oiChange != null) {
+    if (oiChange > 15) {
+      score += 10;
+      notes.push(`OI surging +${oiChange.toFixed(1)}% — new money entering`);
+    } else if (oiChange < -15) {
+      score -= 10;
+      notes.push(`OI dropping ${oiChange.toFixed(1)}% — positions unwinding`);
+    }
+  }
+
+  if (takerBuySellRatio != null) {
+    if (takerBuySellRatio > 1.3) {
+      score += 15;
+      notes.push(`Aggressive buying (taker B/S ${takerBuySellRatio.toFixed(2)})`);
+    } else if (takerBuySellRatio < 0.7) {
+      score -= 15;
+      notes.push(`Aggressive selling (taker B/S ${takerBuySellRatio.toFixed(2)})`);
     }
   }
 
@@ -1338,6 +1360,8 @@ function computeMultiFactorCall(
     topTraderLongRatio: number | null;
     longLiqs24h: number | null;
     shortLiqs24h: number | null;
+    oiChange: number | null;
+    takerBuySellRatio: number | null;
   },
   dec: number
 ) {
@@ -1388,6 +1412,8 @@ function computeMultiFactorCall(
     topTraderLongRatio,
     longLiqs24h,
     shortLiqs24h,
+    oiChange,
+    takerBuySellRatio,
   } = params;
 
   const weights = {
@@ -1456,7 +1482,9 @@ function computeMultiFactorCall(
     topTraderLongRatio,
     longLiqs24h,
     shortLiqs24h,
-    fundingRate
+    fundingRate,
+    oiChange,
+    takerBuySellRatio
   );
 
   const weightedScore =
@@ -2329,6 +2357,8 @@ export async function GET(req: NextRequest) {
       topTraderLongRatio,
       longLiqs24h: liquidations?.longLiqs24h ?? null,
       shortLiqs24h: liquidations?.shortLiqs24h ?? null,
+      oiChange: okxOIChange,
+      takerBuySellRatio,
     },
     dec
   );
@@ -2435,7 +2465,10 @@ export async function GET(req: NextRequest) {
       longShortRatio,
       longShortChange: longShortChange != null ? Math.round(longShortChange * 100) / 100 : null,
       topTraderLongRatio,
-      binanceOI: binanceOI,
+      openInterestChange: okxOIChange != null ? Math.round(okxOIChange * 100) / 100 : null,
+      takerBuySellRatio: takerBuySellRatio != null ? Math.round(takerBuySellRatio * 100) / 100 : null,
+      binanceOI,
+      okxOI,
       squeezeRisk: call.liqSqueezeRisk ?? null,
     } : null,
     divergences: {

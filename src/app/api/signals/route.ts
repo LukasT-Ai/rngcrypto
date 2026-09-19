@@ -3,11 +3,41 @@ import { rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-// ── Cache ────────────────────────────────────────────────────────────────────
-let cache: { data: unknown; timestamp: number } | null = null;
+// ── Symbol Configuration ────────────────────────────────────────────────────
+
+const SYMBOL_MAP: Record<
+  string,
+  { strike: string; decimals: number; isCrypto: boolean; label: string }
+> = {
+  BTC: { strike: "BTC-USD", decimals: 1, isCrypto: true, label: "Bitcoin" },
+  ETH: { strike: "ETH-USD", decimals: 2, isCrypto: true, label: "Ethereum" },
+  BNB: { strike: "BNB-USD", decimals: 2, isCrypto: true, label: "BNB" },
+  ADA: { strike: "ADA-USD", decimals: 5, isCrypto: true, label: "Cardano" },
+  HYPE: {
+    strike: "HYPE-USD",
+    decimals: 3,
+    isCrypto: true,
+    label: "Hyperliquid",
+  },
+  ZEC: { strike: "ZEC-USD", decimals: 2, isCrypto: true, label: "Zcash" },
+  PUMP: { strike: "PUMP-USD", decimals: 6, isCrypto: true, label: "PumpFun" },
+  NIGHT: { strike: "NIGHT-USD", decimals: 5, isCrypto: true, label: "Night" },
+  SKHYNIX: {
+    strike: "SKHYNIX-USD",
+    decimals: 2,
+    isCrypto: false,
+    label: "SK Hynix",
+  },
+  GOLD: { strike: "XAU-USD", decimals: 2, isCrypto: false, label: "Gold" },
+};
+
+// ── Cache (per-symbol) ──────────────────────────────────────────────────────
+
+const cache = new Map<string, { data: unknown; timestamp: number }>();
 const CACHE_TTL = 25_000;
 
 // ── Types ────────────────────────────────────────────────────────────────────
+
 interface Candle {
   time: number;
   open: number;
@@ -24,6 +54,7 @@ interface SignalFactor {
 }
 
 // ── Parse helpers ────────────────────────────────────────────────────────────
+
 function parseKlines(raw: unknown): Candle[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((k: number[]) => ({
@@ -332,9 +363,15 @@ function findSwingLevels(
     let isHigh = true;
     let isLow = true;
     for (let j = 1; j <= lookback; j++) {
-      if (slice[i].high <= slice[i - j].high || slice[i].high <= slice[i + j].high)
+      if (
+        slice[i].high <= slice[i - j].high ||
+        slice[i].high <= slice[i + j].high
+      )
         isHigh = false;
-      if (slice[i].low >= slice[i - j].low || slice[i].low >= slice[i + j].low)
+      if (
+        slice[i].low >= slice[i - j].low ||
+        slice[i].low >= slice[i + j].low
+      )
         isLow = false;
     }
     if (isHigh) resistances.push(slice[i].high);
@@ -345,7 +382,10 @@ function findSwingLevels(
     const sorted = [...arr].sort((a, b) => a - b);
     const result: number[] = [];
     for (const v of sorted) {
-      if (result.length === 0 || Math.abs(v - result[result.length - 1]) > tolerance)
+      if (
+        result.length === 0 ||
+        Math.abs(v - result[result.length - 1]) > tolerance
+      )
         result.push(v);
       else result[result.length - 1] = (result[result.length - 1] + v) / 2;
     }
@@ -384,7 +424,8 @@ function classifyTrend(closes: number[]): string {
 // ── Fibonacci Levels ─────────────────────────────────────────────────────────
 
 function computeFibonacci(
-  candles: Candle[]
+  candles: Candle[],
+  dec: number
 ): { level: string; price: number }[] {
   const slice = candles.slice(-50);
   if (slice.length < 5) return [];
@@ -402,17 +443,17 @@ function computeFibonacci(
   if (isUptrend) {
     return ratios.map((r) => ({
       level: r.toString(),
-      price: round(swingHigh - diff * r),
+      price: round(swingHigh - diff * r, dec),
     }));
   } else {
     return ratios.map((r) => ({
       level: r.toString(),
-      price: round(swingLow + diff * r),
+      price: round(swingLow + diff * r, dec),
     }));
   }
 }
 
-function computeFibExtension(candles: Candle[]): number | null {
+function computeFibExtension(candles: Candle[], dec: number): number | null {
   const slice = candles.slice(-50);
   if (slice.length < 5) return null;
 
@@ -423,9 +464,9 @@ function computeFibExtension(candles: Candle[]): number | null {
 
   const currentPrice = slice[slice.length - 1].close;
   if (currentPrice > (swingHigh + swingLow) / 2) {
-    return round(swingLow + diff * 1.618);
+    return round(swingLow + diff * 1.618, dec);
   } else {
-    return round(swingHigh - diff * 1.618);
+    return round(swingHigh - diff * 1.618, dec);
   }
 }
 
@@ -447,8 +488,7 @@ function analyzeVolume(candles: Candle[]): {
   const lookback = Math.min(50, candles.length);
   const recentCandles = candles.slice(-lookback);
   const volumes = recentCandles.map((c) => c.volume);
-  const average =
-    volumes.reduce((s, v) => s + v, 0) / volumes.length;
+  const average = volumes.reduce((s, v) => s + v, 0) / volumes.length;
   const ratio = average > 0 ? current / average : 1;
 
   const halfLen = Math.floor(lookback / 2);
@@ -532,7 +572,10 @@ function detectDivergence(
   return null;
 }
 
-function detectVolumeDivergence(candles: Candle[], lookback = 30): string | null {
+function detectVolumeDivergence(
+  candles: Candle[],
+  lookback = 30
+): string | null {
   if (candles.length < lookback) return null;
   const slice = candles.slice(-lookback);
   const half = Math.floor(lookback / 2);
@@ -586,7 +629,6 @@ function detectCandlestickPattern(candles: Candle[]): string | null {
   const body = Math.abs(c.close - c.open);
   const range = c.high - c.low;
   const pBody = Math.abs(p.close - p.open);
-  const pRange = p.high - p.low;
 
   if (range === 0) return null;
 
@@ -595,27 +637,15 @@ function detectCandlestickPattern(candles: Candle[]): string | null {
 
   if (body / range < 0.1 && range > 0) return "doji";
 
-  if (
-    lowerWick > body * 2 &&
-    upperWick < body * 0.5 &&
-    c.close < p.close
-  ) {
+  if (lowerWick > body * 2 && upperWick < body * 0.5 && c.close < p.close) {
     return "hammer";
   }
 
-  if (
-    upperWick > body * 2 &&
-    lowerWick < body * 0.5 &&
-    c.close < p.close
-  ) {
+  if (upperWick > body * 2 && lowerWick < body * 0.5 && c.close < p.close) {
     return "inverted_hammer";
   }
 
-  if (
-    upperWick > body * 2 &&
-    lowerWick < body * 0.5 &&
-    c.close > p.close
-  ) {
+  if (upperWick > body * 2 && lowerWick < body * 0.5 && c.close > p.close) {
     return "shooting_star";
   }
 
@@ -689,7 +719,8 @@ function detectSqueeze(
 
 function computeTimeframeLevels(
   candles1h: Candle[],
-  candles4h: Candle[]
+  candles4h: Candle[],
+  dec: number
 ): {
   dailyHigh: number | null;
   dailyLow: number | null;
@@ -702,17 +733,17 @@ function computeTimeframeLevels(
   const dailyLow =
     last24h.length > 0 ? Math.min(...last24h.map((c) => c.low)) : null;
 
-  const last42 = candles4h.slice(-42); // ~7 days
+  const last42 = candles4h.slice(-42);
   const weeklyHigh =
     last42.length > 0 ? Math.max(...last42.map((c) => c.high)) : null;
   const weeklyLow =
     last42.length > 0 ? Math.min(...last42.map((c) => c.low)) : null;
 
   return {
-    dailyHigh: dailyHigh != null ? round(dailyHigh) : null,
-    dailyLow: dailyLow != null ? round(dailyLow) : null,
-    weeklyHigh: weeklyHigh != null ? round(weeklyHigh) : null,
-    weeklyLow: weeklyLow != null ? round(weeklyLow) : null,
+    dailyHigh: dailyHigh != null ? round(dailyHigh, dec) : null,
+    dailyLow: dailyLow != null ? round(dailyLow, dec) : null,
+    weeklyHigh: weeklyHigh != null ? round(weeklyHigh, dec) : null,
+    weeklyLow: weeklyLow != null ? round(weeklyLow, dec) : null,
   };
 }
 
@@ -774,7 +805,8 @@ function scoreMomentum(
   rsi: number,
   macdHist: number,
   stochK: number,
-  stochD: number
+  stochD: number,
+  rsi5m: number | null
 ): { score: number; notes: string[] } {
   let score = 0;
   const notes: string[] = [];
@@ -811,6 +843,16 @@ function scoreMomentum(
 
   if (stochK > stochD) score += 10;
   else score -= 10;
+
+  if (rsi5m != null) {
+    if (rsi5m < 25) {
+      score += 8;
+      notes.push(`5m RSI oversold (${rsi5m.toFixed(0)})`);
+    } else if (rsi5m > 75) {
+      score -= 8;
+      notes.push(`5m RSI overbought (${rsi5m.toFixed(0)})`);
+    }
+  }
 
   return { score: clamp(score, -100, 100), notes };
 }
@@ -1008,10 +1050,13 @@ function scoreDivergences(
 }
 
 function scoreSentiment(
-  fearGreed: number | null
+  fearGreed: number | null,
+  isCrypto: boolean
 ): { score: number; notes: string[] } {
   let score = 0;
   const notes: string[] = [];
+
+  if (!isCrypto) return { score: 0, notes: [] };
 
   if (fearGreed != null) {
     if (fearGreed < 20) {
@@ -1033,18 +1078,25 @@ function scoreSentiment(
 }
 
 function scoreMarketData(
-  btcDominance: number | null
+  btcDominance: number | null,
+  isCrypto: boolean
 ): { score: number; notes: string[] } {
   let score = 0;
   const notes: string[] = [];
 
+  if (!isCrypto) return { score: 0, notes: [] };
+
   if (btcDominance != null) {
     if (btcDominance > 55) {
       score += 15;
-      notes.push(`High BTC dominance (${btcDominance.toFixed(1)}%) — capital flowing to BTC`);
+      notes.push(
+        `High BTC dominance (${btcDominance.toFixed(1)}%) — capital flowing to BTC`
+      );
     } else if (btcDominance < 40) {
       score -= 10;
-      notes.push(`Low BTC dominance (${btcDominance.toFixed(1)}%) — alt season`);
+      notes.push(
+        `Low BTC dominance (${btcDominance.toFixed(1)}%) — alt season`
+      );
     }
   }
 
@@ -1065,11 +1117,7 @@ function scorePatterns(
     "bullish_engulfing",
     "morning_star",
   ];
-  const bearish = [
-    "shooting_star",
-    "bearish_engulfing",
-    "evening_star",
-  ];
+  const bearish = ["shooting_star", "bearish_engulfing", "evening_star"];
 
   if (bullish.includes(pattern)) {
     score += 40;
@@ -1126,7 +1174,8 @@ function checkCatalystRisk(
 
   if (day >= 1 && day <= 5 && hour >= 13 && hour <= 14) {
     score -= 15;
-    note = (note ? note + "; " : "") + "US market open — potential volatility";
+    note =
+      (note ? note + "; " : "") + "US market open — potential volatility";
   }
 
   if (fundingRate != null && Math.abs(fundingRate) > 0.05) {
@@ -1140,58 +1189,101 @@ function checkCatalystRisk(
 
 // ── Main Trade Call Computation ──────────────────────────────────────────────
 
-function computeMultiFactorCall(params: {
-  price: number;
-  rsi: number;
-  stochRsi: { k: number; d: number };
-  ema9: number;
-  ema21: number;
-  ema50: number;
-  macdHist: number;
-  adx: number;
-  atr: number;
-  bbUpper: number;
-  bbLower: number;
-  bbMiddle: number;
-  bbWidth: number;
-  supertrendDir: number;
-  supports: number[];
-  resistances: number[];
-  trend1h: string;
-  rsi1h: number;
-  trend4h: string;
-  rsi4h: number;
-  trendDaily: string | null;
-  rsiDaily: number | null;
-  fearGreed: number | null;
-  fundingRate: number | null;
-  putCallRatio: number | null;
-  rsiDiv15m: string | null;
-  rsiDiv1h: string | null;
-  macdDiv: string | null;
-  volDiv: string | null;
-  squeeze: string | null;
-  pattern: string | null;
-  etfNet: number | null;
-  fibLevels: { level: string; price: number }[];
-  fibExtension: number | null;
-  volData: { current: number; average: number; ratio: number; trend: string; cvd: number };
-}) {
+function computeMultiFactorCall(
+  params: {
+    price: number;
+    rsi: number;
+    rsi5m: number | null;
+    stochRsi: { k: number; d: number };
+    ema9: number;
+    ema21: number;
+    ema50: number;
+    macdHist: number;
+    adx: number;
+    atr: number;
+    bbUpper: number;
+    bbLower: number;
+    bbMiddle: number;
+    bbWidth: number;
+    supertrendDir: number;
+    supports: number[];
+    resistances: number[];
+    trend1h: string;
+    rsi1h: number;
+    trend4h: string;
+    rsi4h: number;
+    trendDaily: string | null;
+    rsiDaily: number | null;
+    fearGreed: number | null;
+    fundingRate: number | null;
+    putCallRatio: number | null;
+    btcDominance: number | null;
+    rsiDiv15m: string | null;
+    rsiDiv1h: string | null;
+    macdDiv: string | null;
+    volDiv: string | null;
+    squeeze: string | null;
+    pattern: string | null;
+    etfNet: number | null;
+    fibLevels: { level: string; price: number }[];
+    fibExtension: number | null;
+    volData: {
+      current: number;
+      average: number;
+      ratio: number;
+      trend: string;
+      cvd: number;
+    };
+    isCrypto: boolean;
+  },
+  dec: number
+) {
   const {
-    price, rsi, stochRsi, ema9, ema21, ema50, macdHist, adx, atr,
-    bbUpper, bbLower, bbMiddle, bbWidth, supertrendDir,
-    supports, resistances, trend1h, rsi1h, trend4h, rsi4h,
-    trendDaily, rsiDaily, fearGreed, fundingRate, putCallRatio,
-    rsiDiv15m, rsiDiv1h, macdDiv, volDiv, squeeze, pattern,
-    etfNet, fibLevels, fibExtension, volData,
+    price,
+    rsi,
+    rsi5m,
+    stochRsi,
+    ema9,
+    ema21,
+    ema50,
+    macdHist,
+    adx,
+    atr,
+    bbUpper,
+    bbLower,
+    bbMiddle,
+    bbWidth,
+    supertrendDir,
+    supports,
+    resistances,
+    trend1h,
+    rsi1h,
+    trend4h,
+    rsi4h,
+    trendDaily,
+    rsiDaily,
+    fearGreed,
+    fundingRate,
+    putCallRatio,
+    btcDominance,
+    rsiDiv15m,
+    rsiDiv1h,
+    macdDiv,
+    volDiv,
+    squeeze,
+    pattern,
+    etfNet,
+    fibExtension,
+    volData,
+    isCrypto,
   } = params;
 
   const weights = {
     marketStructure: 0.15,
     momentum: 0.12,
-    volume: 0.10,
-    derivatives: 0.10,
-    htf: 0.10,
+    volume: 0.1,
+    derivatives: 0.1,
+    htf: 0.1,
     bollinger: 0.08,
     divergences: 0.08,
     sentiment: 0.05,
@@ -1201,17 +1293,46 @@ function computeMultiFactorCall(params: {
     catalyst: 0.02,
   };
 
+  if (!isCrypto) {
+    weights.sentiment = 0;
+    weights.marketData = 0;
+    weights.etf = 0;
+    weights.marketStructure = 0.2;
+    weights.momentum = 0.15;
+    weights.volume = 0.13;
+    weights.htf = 0.12;
+    weights.bollinger = 0.1;
+    weights.divergences = 0.1;
+    weights.derivatives = 0.08;
+    weights.patterns = 0.07;
+    weights.catalyst = 0.02;
+  }
+
   const ms = scoreMarketStructure(
-    ema9, ema21, ema50, supertrendDir, price, supports, resistances, atr
+    ema9,
+    ema21,
+    ema50,
+    supertrendDir,
+    price,
+    supports,
+    resistances,
+    atr
   );
-  const mom = scoreMomentum(rsi, macdHist, stochRsi.k, stochRsi.d);
+  const mom = scoreMomentum(rsi, macdHist, stochRsi.k, stochRsi.d, rsi5m);
   const vol = scoreVolume(volData.ratio, volData.trend, volData.cvd);
   const deriv = scoreDerivatives(fundingRate, putCallRatio);
   const htf = scoreHTF(trend1h, rsi1h, trend4h, rsi4h, trendDaily, rsiDaily);
-  const boll = scoreBollinger(price, bbUpper, bbLower, bbMiddle, bbWidth, squeeze);
+  const boll = scoreBollinger(
+    price,
+    bbUpper,
+    bbLower,
+    bbMiddle,
+    bbWidth,
+    squeeze
+  );
   const divs = scoreDivergences(rsiDiv15m, rsiDiv1h, macdDiv, volDiv);
-  const sent = scoreSentiment(fearGreed);
-  const mktData = scoreMarketData(null);
+  const sent = scoreSentiment(fearGreed, isCrypto);
+  const mktData = scoreMarketData(btcDominance, isCrypto);
   const pats = scorePatterns(pattern);
   const etfScore = scoreETFFlows(etfNet);
   const catalyst = checkCatalystRisk(fundingRate);
@@ -1236,18 +1357,120 @@ function computeMultiFactorCall(params: {
     adx > 25 ? "trending" : adx < 20 ? "ranging" : "transitional";
 
   const signalFactors: SignalFactor[] = [
-    { category: "Market Structure", assessment: ms.score > 20 ? "Strong Bullish" : ms.score > 0 ? "Slightly Bullish" : ms.score > -20 ? "Slightly Bearish" : "Strong Bearish", weight: Math.round(weights.marketStructure * 100) },
-    { category: "Momentum", assessment: mom.score > 20 ? "Bullish" : mom.score > -20 ? "Neutral" : "Bearish", weight: Math.round(weights.momentum * 100) },
-    { category: "Volume", assessment: vol.score > 15 ? "Bullish" : vol.score > -15 ? "Neutral" : "Bearish", weight: Math.round(weights.volume * 100) },
-    { category: "Derivatives", assessment: deriv.score > 15 ? "Bullish" : deriv.score > -15 ? "Neutral" : "Bearish", weight: Math.round(weights.derivatives * 100) },
-    { category: "HTF Confirmation", assessment: htf.score > 15 ? "Bullish" : htf.score > -15 ? "Neutral" : "Bearish", weight: Math.round(weights.htf * 100) },
-    { category: "Bollinger/Volatility", assessment: boll.score > 15 ? "Bullish" : boll.score > -15 ? "Neutral" : "Bearish", weight: Math.round(weights.bollinger * 100) },
-    { category: "Divergences", assessment: divs.score > 10 ? "Bullish" : divs.score > -10 ? "Neutral" : "Bearish", weight: Math.round(weights.divergences * 100) },
-    { category: "Sentiment", assessment: sent.score > 10 ? "Bullish" : sent.score > -10 ? "Neutral" : "Bearish", weight: Math.round(weights.sentiment * 100) },
-    { category: "Patterns", assessment: pats.score > 10 ? "Bullish" : pats.score > -10 ? "Neutral" : "Bearish", weight: Math.round(weights.patterns * 100) },
-    { category: "ETF Flows", assessment: etfScore.score > 10 ? "Bullish" : etfScore.score > -10 ? "Neutral" : "Bearish", weight: Math.round(weights.etf * 100) },
-    { category: "Catalyst Risk", assessment: catalyst.score < -15 ? "Elevated" : "Low", weight: Math.round(weights.catalyst * 100) },
+    {
+      category: "Market Structure",
+      assessment:
+        ms.score > 20
+          ? "Strong Bullish"
+          : ms.score > 0
+            ? "Slightly Bullish"
+            : ms.score > -20
+              ? "Slightly Bearish"
+              : "Strong Bearish",
+      weight: Math.round(weights.marketStructure * 100),
+    },
+    {
+      category: "Momentum",
+      assessment:
+        mom.score > 20 ? "Bullish" : mom.score > -20 ? "Neutral" : "Bearish",
+      weight: Math.round(weights.momentum * 100),
+    },
+    {
+      category: "Volume",
+      assessment:
+        vol.score > 15 ? "Bullish" : vol.score > -15 ? "Neutral" : "Bearish",
+      weight: Math.round(weights.volume * 100),
+    },
+    {
+      category: "Derivatives",
+      assessment:
+        deriv.score > 15
+          ? "Bullish"
+          : deriv.score > -15
+            ? "Neutral"
+            : "Bearish",
+      weight: Math.round(weights.derivatives * 100),
+    },
+    {
+      category: "HTF Confirmation",
+      assessment:
+        htf.score > 15 ? "Bullish" : htf.score > -15 ? "Neutral" : "Bearish",
+      weight: Math.round(weights.htf * 100),
+    },
+    {
+      category: "Bollinger/Volatility",
+      assessment:
+        boll.score > 15
+          ? "Bullish"
+          : boll.score > -15
+            ? "Neutral"
+            : "Bearish",
+      weight: Math.round(weights.bollinger * 100),
+    },
+    {
+      category: "Divergences",
+      assessment:
+        divs.score > 10
+          ? "Bullish"
+          : divs.score > -10
+            ? "Neutral"
+            : "Bearish",
+      weight: Math.round(weights.divergences * 100),
+    },
   ];
+
+  if (isCrypto) {
+    signalFactors.push(
+      {
+        category: "Sentiment",
+        assessment:
+          sent.score > 10
+            ? "Bullish"
+            : sent.score > -10
+              ? "Neutral"
+              : "Bearish",
+        weight: Math.round(weights.sentiment * 100),
+      },
+      {
+        category: "Market Data",
+        assessment:
+          mktData.score > 10
+            ? "Bullish"
+            : mktData.score > -10
+              ? "Neutral"
+              : "Bearish",
+        weight: Math.round(weights.marketData * 100),
+      },
+      {
+        category: "ETF Flows",
+        assessment:
+          etfScore.score > 10
+            ? "Bullish"
+            : etfScore.score > -10
+              ? "Neutral"
+              : "Bearish",
+        weight: Math.round(weights.etf * 100),
+      }
+    );
+  }
+
+  signalFactors.push(
+    {
+      category: "Patterns",
+      assessment:
+        pats.score > 10
+          ? "Bullish"
+          : pats.score > -10
+            ? "Neutral"
+            : "Bearish",
+      weight: Math.round(weights.patterns * 100),
+    },
+    {
+      category: "Catalyst Risk",
+      assessment: catalyst.score < -15 ? "Elevated" : "Low",
+      weight: Math.round(weights.catalyst * 100),
+    }
+  );
 
   const strongCategories = signalFactors.filter(
     (f) =>
@@ -1296,23 +1519,31 @@ function computeMultiFactorCall(params: {
       supports[0] && Math.abs(price - supports[0]) / atr < 1.5
         ? supports[0]
         : price;
-    secondaryEntry = secondSupport !== entry ? round(secondSupport) : null;
+    secondaryEntry =
+      secondSupport !== entry ? round(secondSupport, dec) : null;
     stopLoss = nearestSupport - 0.5 * atr;
     tp1 = resistances[0] ?? price + 2 * atr;
     tp2 = resistances[1] ?? price + 3 * atr;
     tp3 = resistances[2] ?? price + 4.5 * atr;
-    extendedTarget = fibExtension && fibExtension > tp3 ? fibExtension : round(price + 6 * atr);
+    extendedTarget =
+      fibExtension && fibExtension > tp3
+        ? fibExtension
+        : round(price + 6 * atr, dec);
   } else if (bias === "SHORT") {
     entry =
       resistances[0] && Math.abs(resistances[0] - price) / atr < 1.5
         ? resistances[0]
         : price;
-    secondaryEntry = secondResistance !== entry ? round(secondResistance) : null;
+    secondaryEntry =
+      secondResistance !== entry ? round(secondResistance, dec) : null;
     stopLoss = nearestResistance + 0.5 * atr;
     tp1 = supports[0] ?? price - 2 * atr;
     tp2 = supports[1] ?? price - 3 * atr;
     tp3 = supports[2] ?? price - 4.5 * atr;
-    extendedTarget = fibExtension && fibExtension < tp3 ? fibExtension : round(price - 6 * atr);
+    extendedTarget =
+      fibExtension && fibExtension < tp3
+        ? fibExtension
+        : round(price - 6 * atr, dec);
   } else {
     entry = price;
     secondaryEntry = null;
@@ -1343,50 +1574,59 @@ function computeMultiFactorCall(params: {
   const bullCase: string[] = [];
   const bearCase: string[] = [];
 
-  if (ms.score > 0) bullCase.push("Bullish market structure with EMA alignment");
-  if (mom.score > 0) bullCase.push("Positive momentum with RSI/MACD confirmation");
+  if (ms.score > 0)
+    bullCase.push("Bullish market structure with EMA alignment");
+  if (mom.score > 0)
+    bullCase.push("Positive momentum with RSI/MACD confirmation");
   if (vol.score > 0) bullCase.push("Strong buying volume and positive CVD");
   if (htf.score > 0) bullCase.push("Higher timeframes confirm bullish bias");
-  if (sent.score > 0) bullCase.push("Contrarian opportunity — fear in market");
-  if (etfScore.score > 0) bullCase.push("Institutional buying via ETF inflows");
-  if (divs.score > 0) bullCase.push("Bullish divergence signals reversal potential");
+  if (sent.score > 0)
+    bullCase.push("Contrarian opportunity — fear in market");
+  if (etfScore.score > 0)
+    bullCase.push("Institutional buying via ETF inflows");
+  if (divs.score > 0)
+    bullCase.push("Bullish divergence signals reversal potential");
 
   if (ms.score < 0) bearCase.push("Bearish market structure with EMA alignment");
-  if (mom.score < 0) bearCase.push("Negative momentum — RSI/MACD under pressure");
-  if (vol.score < 0) bearCase.push("Selling pressure dominant — negative CVD");
+  if (mom.score < 0)
+    bearCase.push("Negative momentum — RSI/MACD under pressure");
+  if (vol.score < 0)
+    bearCase.push("Selling pressure dominant — negative CVD");
   if (htf.score < 0) bearCase.push("Higher timeframes confirm bearish bias");
   if (sent.score < 0) bearCase.push("Extreme greed — market overheated");
-  if (etfScore.score < 0) bearCase.push("Institutional selling — ETF outflows");
-  if (deriv.score < 0) bearCase.push("Overleveraged — funding rate extreme");
+  if (etfScore.score < 0)
+    bearCase.push("Institutional selling — ETF outflows");
+  if (deriv.score < 0)
+    bearCase.push("Overleveraged — funding rate extreme");
   if (divs.score < 0) bearCase.push("Bearish divergence signals weakness");
 
-  while (bullCase.length < 2) bullCase.push("Await more bullish confirmations");
-  while (bearCase.length < 2) bearCase.push("Await more bearish confirmations");
+  while (bullCase.length < 2)
+    bullCase.push("Await more bullish confirmations");
+  while (bearCase.length < 2)
+    bearCase.push("Await more bearish confirmations");
 
   const confirms: string[] = [];
   const invalidates: string[] = [];
 
   if (bias === "LONG" || (bias === "WAIT" && weightedScore >= 0)) {
     confirms.push(
-      `Break above $${round(nearestResistance).toLocaleString()} with volume`
+      `Break above $${round(nearestResistance, dec).toLocaleString()} with volume`
     );
     confirms.push("Funding rate stays neutral or negative");
-    if (trend1h !== "bull")
-      confirms.push("1H trend flips bullish");
+    if (trend1h !== "bull") confirms.push("1H trend flips bullish");
     invalidates.push(
-      `Loss of $${round(nearestSupport).toLocaleString()} support`
+      `Loss of $${round(nearestSupport, dec).toLocaleString()} support`
     );
     invalidates.push("MACD crossover to bearish on 1H");
     invalidates.push("Sudden spike in funding rate above 0.05%");
   } else {
     confirms.push(
-      `Break below $${round(nearestSupport).toLocaleString()} with volume`
+      `Break below $${round(nearestSupport, dec).toLocaleString()} with volume`
     );
     confirms.push("Funding rate remains elevated");
-    if (trend1h !== "bear")
-      confirms.push("1H trend flips bearish");
+    if (trend1h !== "bear") confirms.push("1H trend flips bearish");
     invalidates.push(
-      `Reclaim of $${round(nearestResistance).toLocaleString()} resistance`
+      `Reclaim of $${round(nearestResistance, dec).toLocaleString()} resistance`
     );
     invalidates.push("MACD crossover to bullish on 1H");
     invalidates.push("Fear & Greed drops below 25 (capitulation)");
@@ -1397,12 +1637,12 @@ function computeMultiFactorCall(params: {
     confidence,
     grade,
     regime,
-    entry: round(entry),
+    entry: round(entry, dec),
     secondaryEntry,
-    stopLoss: round(stopLoss),
-    tp1: round(tp1),
-    tp2: round(tp2),
-    tp3: round(tp3),
+    stopLoss: round(stopLoss, dec),
+    tp1: round(tp1, dec),
+    tp2: round(tp2, dec),
+    tp3: round(tp3, dec),
     extendedTarget,
     riskReward,
     reasoning,
@@ -1438,77 +1678,107 @@ export async function GET(req: NextRequest) {
   const blocked = rateLimit(req, 30);
   if (blocked) return blocked;
 
-  if (cache && Date.now() - cache.timestamp < CACHE_TTL) {
-    return NextResponse.json(cache.data, {
+  const { searchParams } = new URL(req.url);
+  const symbol = (searchParams.get("symbol") ?? "BTC").toUpperCase();
+
+  const config = SYMBOL_MAP[symbol];
+  if (!config) {
+    return NextResponse.json(
+      { error: "Unknown symbol", supported: Object.keys(SYMBOL_MAP) },
+      { status: 400 }
+    );
+  }
+
+  const dec = config.decimals;
+  const isBTC = symbol === "BTC";
+  const isCrypto = config.isCrypto;
+
+  const cached = cache.get(symbol);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return NextResponse.json(cached.data, {
       headers: { "X-Cache": "HIT", "Cache-Control": "public, s-maxage=25" },
     });
   }
 
   const STRIKE = "https://api.strikefinance.org/price";
+  const strikeSymbol = config.strike;
 
-  const [
-    klines15mResult,
-    klines1hResult,
-    klines4hResult,
-    klinesDailyResult,
-    markResult,
-    fngResult,
-    deribitTickerResult,
-    deribitOptionsResult,
-    blockchainResult,
-    geckoGlobalResult,
-    etfFlowResult,
-    liqResult,
-  ] = await Promise.allSettled([
+  // Build fetch list dynamically based on asset
+  const fetches: Promise<unknown>[] = [
+    // 0: 15m klines
     fetchJSON(
-      `${STRIKE}/v2/klines?symbol=BTC-USD&interval=15m&limit=200&priceType=last`
+      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=15m&limit=200&priceType=last`
     ),
+    // 1: 1h klines
     fetchJSON(
-      `${STRIKE}/v2/klines?symbol=BTC-USD&interval=1h&limit=100&priceType=last`
+      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=1h&limit=100&priceType=last`
     ),
+    // 2: 4h klines
     fetchJSON(
-      `${STRIKE}/v2/klines?symbol=BTC-USD&interval=4h&limit=100&priceType=last`
+      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=4h&limit=100&priceType=last`
     ),
+    // 3: daily klines
     fetchJSON(
-      `${STRIKE}/v2/klines?symbol=BTC-USD&interval=1d&limit=50&priceType=last`
+      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=1d&limit=50&priceType=last`
     ),
-    fetchJSON(`${STRIKE}/v2/markPrice?symbol=BTC-USD`),
-    fetchJSON("https://api.alternative.me/fng/"),
+    // 4: mark price
+    fetchJSON(`${STRIKE}/v2/markPrice?symbol=${strikeSymbol}`),
+    // 5: 5m klines (for faster RSI updates)
     fetchJSON(
-      "https://www.deribit.com/api/v2/public/ticker?instrument_name=BTC-PERPETUAL"
+      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=5m&limit=100&priceType=last`
     ),
-    fetchJSON(
-      "https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option"
-    ),
-    fetchJSON("https://api.blockchain.info/stats"),
+    // 6: Fear & Greed (crypto only)
+    isCrypto
+      ? fetchJSON("https://api.alternative.me/fng/")
+      : Promise.resolve(null),
+    // 7: Deribit ticker (BTC only)
+    isBTC
+      ? fetchJSON(
+          "https://www.deribit.com/api/v2/public/ticker?instrument_name=BTC-PERPETUAL"
+        )
+      : Promise.resolve(null),
+    // 8: Deribit options (BTC only)
+    isBTC
+      ? fetchJSON(
+          "https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option"
+        )
+      : Promise.resolve(null),
+    // 9: Blockchain stats (BTC only)
+    isBTC
+      ? fetchJSON("https://api.blockchain.info/stats")
+      : Promise.resolve(null),
+    // 10: CoinGecko global
     fetchJSON("https://api.coingecko.com/api/v3/global"),
-    fetchJSON("https://api.coinglass.com/api/v3/etf/bitcoin/flow-total").catch(
-      () => null
-    ),
-    fetchJSON(
-      "https://api.coinglass.com/api/v3/futures/liquidation/info?symbol=BTC"
-    ).catch(() => null),
-  ]);
+    // 11: ETF flow (BTC only)
+    isBTC
+      ? fetchJSON(
+          "https://api.coinglass.com/api/v3/etf/bitcoin/flow-total"
+        ).catch(() => null)
+      : Promise.resolve(null),
+    // 12: Liquidations (BTC only)
+    isBTC
+      ? fetchJSON(
+          "https://api.coinglass.com/api/v3/futures/liquidation/info?symbol=BTC"
+        ).catch(() => null)
+      : Promise.resolve(null),
+  ];
+
+  const results = await Promise.allSettled(fetches);
+
+  const getResult = (i: number) =>
+    results[i].status === "fulfilled"
+      ? (results[i] as PromiseFulfilledResult<unknown>).value
+      : null;
 
   // Parse klines
-  const candles15m = parseKlines(
-    klines15mResult.status === "fulfilled" ? klines15mResult.value : null
-  );
-  const candles1h = parseKlines(
-    klines1hResult.status === "fulfilled" ? klines1hResult.value : null
-  );
-  const candles4h = parseKlines(
-    klines4hResult.status === "fulfilled" ? klines4hResult.value : null
-  );
-  const candlesDaily = parseKlines(
-    klinesDailyResult.status === "fulfilled" ? klinesDailyResult.value : null
-  );
+  const candles15m = parseKlines(getResult(0));
+  const candles1h = parseKlines(getResult(1));
+  const candles4h = parseKlines(getResult(2));
+  const candlesDaily = parseKlines(getResult(3));
+  const candles5m = parseKlines(getResult(5));
 
   // Parse mark price
-  const markData =
-    markResult.status === "fulfilled"
-      ? (markResult.value as Record<string, string>)
-      : null;
+  const markData = getResult(4) as Record<string, string> | null;
   const markPrice = markData ? parseFloat(markData.p) : null;
   const strikeFunding = markData ? parseFloat(markData.r) : null;
 
@@ -1531,8 +1801,8 @@ export async function GET(req: NextRequest) {
   const bbData = computeBB(closes15m);
   const supertrendDir = computeSupertrend(candles15m);
   const levels = findSwingLevels(candles15m);
-  const fibLevels = computeFibonacci(candles15m);
-  const fibExtension = computeFibExtension(candles15m);
+  const fibLevels = computeFibonacci(candles15m, dec);
+  const fibExtension = computeFibExtension(candles15m, dec);
 
   const rsi = tip(rsiArr);
   const ema9Val = tip(ema9Arr);
@@ -1558,16 +1828,23 @@ export async function GET(req: NextRequest) {
   // Volume analysis
   const volData = analyzeVolume(candles15m);
 
+  // 5m RSI
+  const closes5m = candles5m.map((c) => c.close);
+  const rsi5mArr = closes5m.length > 14 ? computeRSI(closes5m) : null;
+  const rsi5m = rsi5mArr ? tip(rsi5mArr) : null;
+
   // ── HTF indicators ─────────────────────────────────────────────────────────
   const closes1h = candles1h.map((c) => c.close);
   const closes4h = candles4h.map((c) => c.close);
   const closesDaily = candlesDaily.map((c) => c.close);
   const rsi1hArr = computeRSI(closes1h);
   const rsi4hArr = computeRSI(closes4h);
-  const rsiDailyArr = closesDaily.length > 14 ? computeRSI(closesDaily) : null;
+  const rsiDailyArr =
+    closesDaily.length > 14 ? computeRSI(closesDaily) : null;
   const trend1h = classifyTrend(closes1h);
   const trend4h = classifyTrend(closes4h);
-  const trendDaily = closesDaily.length >= 50 ? classifyTrend(closesDaily) : null;
+  const trendDaily =
+    closesDaily.length >= 50 ? classifyTrend(closesDaily) : null;
   const rsi1h = tip(rsi1hArr);
   const rsi4h = tip(rsi4hArr);
   const rsiDaily = rsiDailyArr ? tip(rsiDailyArr) : null;
@@ -1583,7 +1860,7 @@ export async function GET(req: NextRequest) {
   const squeeze = detectSqueeze(bbWidths, strikeFunding);
 
   // ── Time-based levels ──────────────────────────────────────────────────────
-  const tfLevels = computeTimeframeLevels(candles1h, candles4h);
+  const tfLevels = computeTimeframeLevels(candles1h, candles4h, dec);
 
   // ── 24h stats ──────────────────────────────────────────────────────────────
   const last96 = candles15m.slice(-96);
@@ -1600,8 +1877,9 @@ export async function GET(req: NextRequest) {
   // Fear & Greed
   let fearGreedValue: number | null = null;
   let fearGreedClass: string | null = null;
-  if (fngResult.status === "fulfilled") {
-    const fng = fngResult.value as {
+  const fngRaw = getResult(6);
+  if (fngRaw != null) {
+    const fng = fngRaw as {
       data?: { value: string; value_classification: string }[];
     };
     if (fng?.data?.[0]) {
@@ -1613,8 +1891,9 @@ export async function GET(req: NextRequest) {
   // Deribit ticker
   let openInterest: number | null = null;
   let deribitFunding8h: number | null = null;
-  if (deribitTickerResult.status === "fulfilled") {
-    const d = deribitTickerResult.value as {
+  const deribitTickerRaw = getResult(7);
+  if (deribitTickerRaw != null) {
+    const d = deribitTickerRaw as {
       result?: { open_interest?: number; funding_8h?: number };
     };
     openInterest = d?.result?.open_interest ?? null;
@@ -1623,9 +1902,10 @@ export async function GET(req: NextRequest) {
 
   // Put/call ratio
   let putCallRatio: number | null = null;
-  if (deribitOptionsResult.status === "fulfilled") {
+  const deribitOptionsRaw = getResult(8);
+  if (deribitOptionsRaw != null) {
     const options = (
-      deribitOptionsResult.value as {
+      deribitOptionsRaw as {
         result?: { instrument_name: string; open_interest: number }[];
       }
     )?.result;
@@ -1645,15 +1925,17 @@ export async function GET(req: NextRequest) {
 
   // Blockchain stats
   let hashRate: number | null = null;
-  if (blockchainResult.status === "fulfilled") {
-    const bc = blockchainResult.value as { hash_rate?: number };
+  const blockchainRaw = getResult(9);
+  if (blockchainRaw != null) {
+    const bc = blockchainRaw as { hash_rate?: number };
     hashRate = bc?.hash_rate ?? null;
   }
 
   // BTC dominance
   let btcDominance: number | null = null;
-  if (geckoGlobalResult.status === "fulfilled") {
-    const g = geckoGlobalResult.value as {
+  const geckoRaw = getResult(10);
+  if (geckoRaw != null) {
+    const g = geckoRaw as {
       data?: { market_cap_percentage?: { btc?: number } };
     };
     btcDominance =
@@ -1664,9 +1946,10 @@ export async function GET(req: NextRequest) {
 
   // ETF flows
   let etfFlowData: { net: number; description: string } | null = null;
-  if (etfFlowResult.status === "fulfilled" && etfFlowResult.value != null) {
+  const etfRaw = getResult(11);
+  if (etfRaw != null) {
     try {
-      const etf = etfFlowResult.value as {
+      const etf = etfRaw as {
         data?: { netFlow?: number; date?: string }[];
       };
       if (etf?.data && etf.data.length > 0) {
@@ -1690,9 +1973,10 @@ export async function GET(req: NextRequest) {
     longLiqs24h: number | null;
     shortLiqs24h: number | null;
   } | null = null;
-  if (liqResult.status === "fulfilled" && liqResult.value != null) {
+  const liqRaw = getResult(12);
+  if (liqRaw != null) {
     try {
-      const liq = liqResult.value as {
+      const liq = liqRaw as {
         data?: {
           longLiquidationUsd?: number;
           shortLiquidationUsd?: number;
@@ -1710,75 +1994,83 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Compute trade call ─────────────────────────────────────────────────────
-  const call = computeMultiFactorCall({
-    price: currentPrice,
-    rsi,
-    stochRsi,
-    ema9: ema9Val,
-    ema21: ema21Val,
-    ema50: ema50Val,
-    macdHist,
-    adx: adxVal,
-    atr: atrVal,
-    bbUpper,
-    bbLower,
-    bbMiddle,
-    bbWidth,
-    supertrendDir,
-    supports: levels.supports,
-    resistances: levels.resistances,
-    trend1h,
-    rsi1h,
-    trend4h,
-    rsi4h,
-    trendDaily,
-    rsiDaily,
-    fearGreed: fearGreedValue,
-    fundingRate: strikeFunding,
-    putCallRatio,
-    rsiDiv15m,
-    rsiDiv1h,
-    macdDiv,
-    volDiv,
-    squeeze,
-    pattern: candlestickPattern,
-    etfNet: etfFlowData?.net ?? null,
-    fibLevels,
-    fibExtension,
-    volData,
-  });
+  const call = computeMultiFactorCall(
+    {
+      price: currentPrice,
+      rsi,
+      rsi5m,
+      stochRsi,
+      ema9: ema9Val,
+      ema21: ema21Val,
+      ema50: ema50Val,
+      macdHist,
+      adx: adxVal,
+      atr: atrVal,
+      bbUpper,
+      bbLower,
+      bbMiddle,
+      bbWidth,
+      supertrendDir,
+      supports: levels.supports,
+      resistances: levels.resistances,
+      trend1h,
+      rsi1h,
+      trend4h,
+      rsi4h,
+      trendDaily,
+      rsiDaily,
+      fearGreed: fearGreedValue,
+      fundingRate: strikeFunding,
+      putCallRatio,
+      btcDominance,
+      rsiDiv15m,
+      rsiDiv1h,
+      macdDiv,
+      volDiv,
+      squeeze,
+      pattern: candlestickPattern,
+      etfNet: etfFlowData?.net ?? null,
+      fibLevels,
+      fibExtension,
+      volData,
+      isCrypto,
+    },
+    dec
+  );
 
   // ── Build response ─────────────────────────────────────────────────────────
   const response = {
     timestamp: Date.now(),
-    asset: "BTC" as const,
+    asset: symbol,
+    assetLabel: config.label,
     price: {
-      mark: round(currentPrice),
-      last: round(lastCandle?.close ?? 0),
-      high24h: round(high24h),
-      low24h: round(low24h),
+      mark: round(currentPrice, dec),
+      last: round(lastCandle?.close ?? 0, dec),
+      high24h: round(high24h, dec),
+      low24h: round(low24h, dec),
       change24h: Math.round(change24h * 100) / 100,
     },
     indicators: {
       rsi: Math.round(rsi * 100) / 100,
+      rsi5m: rsi5m != null ? Math.round(rsi5m * 100) / 100 : null,
       stochRsi,
-      ema9: round(ema9Val),
-      ema21: round(ema21Val),
-      ema50: round(ema50Val),
-      ema200: ema200Val != null ? round(ema200Val) : null,
-      sma50: sma50Val != null ? round(sma50Val) : null,
-      sma200: sma200Val != null ? round(sma200Val) : null,
+      ema9: round(ema9Val, dec),
+      ema21: round(ema21Val, dec),
+      ema50: round(ema50Val, dec),
+      ema200: ema200Val != null ? round(ema200Val, dec) : null,
+      sma50: sma50Val != null ? round(sma50Val, dec) : null,
+      sma200: sma200Val != null ? round(sma200Val, dec) : null,
       macd: {
         value: Math.round(macdVal * 100) / 100,
         signal: Math.round(macdSig * 100) / 100,
         histogram: Math.round(macdHist * 100) / 100,
       },
       adx: Math.round(adxVal * 100) / 100,
-      atr: round(atrVal),
+      atr: round(atrVal, dec),
       bb: {
-        upper: round(bbUpper),
-        middle: round(bbMiddle),
-        lower: round(bbLower),
+        upper: round(bbUpper, dec),
+        middle: round(bbMiddle, dec),
+        lower: round(bbLower, dec),
         width: Math.round(bbWidth * 10000) / 10000,
       },
       regime: call.regime,
@@ -1799,8 +2091,8 @@ export async function GET(req: NextRequest) {
       trendDaily,
     },
     levels: {
-      supports: levels.supports.map((s) => round(s)),
-      resistances: levels.resistances.map((r) => round(r)),
+      supports: levels.supports.map((s) => round(s, dec)),
+      resistances: levels.resistances.map((r) => round(r, dec)),
       fibonacci: fibLevels,
       dailyHigh: tfLevels.dailyHigh,
       dailyLow: tfLevels.dailyLow,
@@ -1845,7 +2137,7 @@ export async function GET(req: NextRequest) {
     })),
   };
 
-  cache = { data: response, timestamp: Date.now() };
+  cache.set(symbol, { data: response, timestamp: Date.now() });
 
   return NextResponse.json(response, {
     headers: { "X-Cache": "MISS", "Cache-Control": "public, s-maxage=25" },

@@ -1236,17 +1236,17 @@ function computeMultiFactorCall(params: {
     adx > 25 ? "trending" : adx < 20 ? "ranging" : "transitional";
 
   const signalFactors: SignalFactor[] = [
-    { category: "Market Structure", assessment: ms.score > 20 ? "Strong Bullish" : ms.score > 0 ? "Slightly Bullish" : ms.score > -20 ? "Slightly Bearish" : "Strong Bearish", weight: weights.marketStructure },
-    { category: "Momentum", assessment: mom.score > 20 ? "Bullish" : mom.score > -20 ? "Neutral" : "Bearish", weight: weights.momentum },
-    { category: "Volume", assessment: vol.score > 15 ? "Bullish" : vol.score > -15 ? "Neutral" : "Bearish", weight: weights.volume },
-    { category: "Derivatives", assessment: deriv.score > 15 ? "Bullish" : deriv.score > -15 ? "Neutral" : "Bearish", weight: weights.derivatives },
-    { category: "HTF Confirmation", assessment: htf.score > 15 ? "Bullish" : htf.score > -15 ? "Neutral" : "Bearish", weight: weights.htf },
-    { category: "Bollinger/Volatility", assessment: boll.score > 15 ? "Bullish" : boll.score > -15 ? "Neutral" : "Bearish", weight: weights.bollinger },
-    { category: "Divergences", assessment: divs.score > 10 ? "Bullish" : divs.score > -10 ? "Neutral" : "Bearish", weight: weights.divergences },
-    { category: "Sentiment", assessment: sent.score > 10 ? "Bullish" : sent.score > -10 ? "Neutral" : "Bearish", weight: weights.sentiment },
-    { category: "Patterns", assessment: pats.score > 10 ? "Bullish" : pats.score > -10 ? "Neutral" : "Bearish", weight: weights.patterns },
-    { category: "ETF Flows", assessment: etfScore.score > 10 ? "Bullish" : etfScore.score > -10 ? "Neutral" : "Bearish", weight: weights.etf },
-    { category: "Catalyst Risk", assessment: catalyst.score < -15 ? "Elevated" : "Low", weight: weights.catalyst },
+    { category: "Market Structure", assessment: ms.score > 20 ? "Strong Bullish" : ms.score > 0 ? "Slightly Bullish" : ms.score > -20 ? "Slightly Bearish" : "Strong Bearish", weight: Math.round(weights.marketStructure * 100) },
+    { category: "Momentum", assessment: mom.score > 20 ? "Bullish" : mom.score > -20 ? "Neutral" : "Bearish", weight: Math.round(weights.momentum * 100) },
+    { category: "Volume", assessment: vol.score > 15 ? "Bullish" : vol.score > -15 ? "Neutral" : "Bearish", weight: Math.round(weights.volume * 100) },
+    { category: "Derivatives", assessment: deriv.score > 15 ? "Bullish" : deriv.score > -15 ? "Neutral" : "Bearish", weight: Math.round(weights.derivatives * 100) },
+    { category: "HTF Confirmation", assessment: htf.score > 15 ? "Bullish" : htf.score > -15 ? "Neutral" : "Bearish", weight: Math.round(weights.htf * 100) },
+    { category: "Bollinger/Volatility", assessment: boll.score > 15 ? "Bullish" : boll.score > -15 ? "Neutral" : "Bearish", weight: Math.round(weights.bollinger * 100) },
+    { category: "Divergences", assessment: divs.score > 10 ? "Bullish" : divs.score > -10 ? "Neutral" : "Bearish", weight: Math.round(weights.divergences * 100) },
+    { category: "Sentiment", assessment: sent.score > 10 ? "Bullish" : sent.score > -10 ? "Neutral" : "Bearish", weight: Math.round(weights.sentiment * 100) },
+    { category: "Patterns", assessment: pats.score > 10 ? "Bullish" : pats.score > -10 ? "Neutral" : "Bearish", weight: Math.round(weights.patterns * 100) },
+    { category: "ETF Flows", assessment: etfScore.score > 10 ? "Bullish" : etfScore.score > -10 ? "Neutral" : "Bearish", weight: Math.round(weights.etf * 100) },
+    { category: "Catalyst Risk", assessment: catalyst.score < -15 ? "Elevated" : "Low", weight: Math.round(weights.catalyst * 100) },
   ];
 
   const strongCategories = signalFactors.filter(

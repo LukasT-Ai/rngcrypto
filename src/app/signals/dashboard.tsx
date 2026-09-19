@@ -268,8 +268,8 @@ function TVChartInner() {
   }, [])
 
   return (
-    <div className="tradingview-widget-container" style={{ height: 500 }}>
-      <div ref={containerRef} style={{ height: "100%", width: "100%" }} />
+    <div className="tradingview-widget-container" style={{ height: 500, width: "100%" }}>
+      <div className="tradingview-widget-container__widget" ref={containerRef} style={{ height: "100%", width: "100%" }} />
     </div>
   )
 }
@@ -1135,7 +1135,12 @@ export default function SignalsDashboard() {
                   if (d.levels.weeklyLow != null) extras.push(d.levels.weeklyLow)
                   const fibPrices = (d.levels.fibonacci ?? []).map((f) => f.price)
 
-                  const allPrices = [...d.levels.supports, ...d.levels.resistances, ...extras, ...fibPrices, currentPrice]
+                  const corePrices = [...d.levels.supports, ...d.levels.resistances, ...extras, currentPrice]
+                  const coreMin = Math.min(...corePrices)
+                  const coreMax = Math.max(...corePrices)
+                  const coreRange = coreMax - coreMin
+                  const filteredFibs = fibPrices.filter((p) => p >= coreMin - coreRange * 0.3 && p <= coreMax + coreRange * 0.3)
+                  const allPrices = [...corePrices, ...filteredFibs]
                   const min = Math.min(...allPrices) * 0.998
                   const max = Math.max(...allPrices) * 1.002
                   const range = max - min

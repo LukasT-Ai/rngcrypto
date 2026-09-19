@@ -29,6 +29,9 @@ const SYMBOL_MAP: Record<
     label: "SK Hynix",
   },
   GOLD: { strike: "XAU-USD", decimals: 2, isCrypto: false, label: "Gold" },
+  XRP: { strike: "XRP-USD", decimals: 4, isCrypto: true, label: "XRP" },
+  OIL: { strike: "OIL-USD", decimals: 2, isCrypto: false, label: "WTI Oil" },
+  SILVER: { strike: "SILVER-USD", decimals: 3, isCrypto: false, label: "Silver" },
 };
 
 // ── Cache (per-symbol) ──────────────────────────────────────────────────────

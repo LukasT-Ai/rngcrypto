@@ -46,6 +46,9 @@ const TICKERS = [
   { symbol: "NIGHT", label: "Night", color: "#8B5CF6" },
   { symbol: "SKHYNIX", label: "SK Hynix", color: "#E8622C" },
   { symbol: "GOLD", label: "Gold", color: "#FFD700" },
+  { symbol: "XRP", label: "XRP", color: "#23292F" },
+  { symbol: "OIL", label: "WTI Oil", color: "#8B6914" },
+  { symbol: "SILVER", label: "Silver", color: "#C0C0C0" },
 ]
 
 // ---------------------------------------------------------------------------
@@ -148,6 +151,29 @@ interface SignalsResponse {
     signalFactors: { category: string; assessment: string; weight: number }[]
   }
   candles: { time: number; open: number; high: number; low: number; close: number }[]
+}
+
+interface HotPlay {
+  symbol: string
+  label: string
+  color: string
+  price: number
+  change24h: number
+  bias: "LONG" | "SHORT" | "WAIT"
+  confidence: number
+  grade: string
+  entry: number
+  stopLoss: number
+  tp1: number
+  riskReward: number
+  regime: string
+  reasoning: string[]
+}
+
+interface HotResponse {
+  timestamp: number
+  hot: HotPlay[]
+  all: HotPlay[]
 }
 
 // ---------------------------------------------------------------------------
@@ -443,6 +469,17 @@ export default function SignalsDashboard() {
     refetchIntervalInBackground: true,
   })
 
+  const { data: hotData } = useQuery<HotResponse>({
+    queryKey: ["signals-hot"],
+    queryFn: async () => {
+      const res = await fetch("/api/signals/hot")
+      if (!res.ok) throw new Error(`API error: ${res.status}`)
+      return res.json()
+    },
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true,
+  })
+
   const countdown = useCountdown(30_000, fetchTs)
 
   const d = data
@@ -464,6 +501,84 @@ export default function SignalsDashboard() {
   return (
     <div className="min-h-screen bg-[#06080F] pt-24 pb-16">
       <div className="mx-auto max-w-7xl px-4 lg:px-8 space-y-6">
+
+        {/* ── Hot Plays Banner ────────────────────────────────────────── */}
+        {hotData && hotData.hot.length > 0 && (
+          <motion.div {...fadeUp}>
+            <div className="flex items-center gap-2 mb-2">
+              <Zap className="size-4 text-[#F59E0B]" />
+              <span className="text-xs font-bold uppercase tracking-wider text-[#F59E0B]">
+                Hot Plays
+              </span>
+              <span className="text-[10px] text-white/30">Score 75+</span>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+              {hotData.hot.map((play) => (
+                <button
+                  key={play.symbol}
+                  onClick={() => setSymbol(play.symbol)}
+                  className="shrink-0 rounded-xl border bg-white/[0.02] p-4 transition-all duration-200 hover:bg-white/[0.05] min-w-[220px]"
+                  style={{ borderColor: `${play.color}40` }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[10px] font-black uppercase"
+                        style={{ backgroundColor: `${play.color}20`, color: play.color }}
+                      >
+                        {play.symbol}
+                      </span>
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase flex items-center gap-1"
+                        style={{
+                          backgroundColor: `${dirColor(play.bias)}15`,
+                          color: dirColor(play.bias),
+                        }}
+                      >
+                        {play.bias === "LONG" ? <TrendingUp className="size-3" /> : <TrendingDown className="size-3" />}
+                        {play.bias}
+                      </span>
+                    </div>
+                    <span
+                      className="text-xs font-black"
+                      style={{ color: gradeColor(play.grade) }}
+                    >
+                      {play.grade}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between mb-2">
+                    <span className="font-mono text-lg font-bold text-white tabular-nums">
+                      ${fmtPrice(play.price)}
+                    </span>
+                    <span className={cn("font-mono text-xs font-semibold tabular-nums", play.change24h >= 0 ? "text-[#00FF88]" : "text-[#FF3B5C]")}>
+                      {play.change24h >= 0 ? "+" : ""}{play.change24h.toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] text-white/40">Confidence</span>
+                      <span className="font-mono text-xs font-bold" style={{ color: play.color }}>
+                        {play.confidence}/100
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${play.confidence}%`, backgroundColor: play.color }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-white/40">
+                    <span>R:R 1:{play.riskReward.toFixed(1)}</span>
+                    <span className="flex items-center gap-1" style={{ color: play.color }}>
+                      View <ChevronRight className="size-3" />
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
         {/* ── Ticker Selector Bar ─────────────────────────────────────── */}
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">

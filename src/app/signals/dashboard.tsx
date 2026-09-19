@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef, useCallback, memo } from "react"
+import React, { useState, useEffect, useCallback, memo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { motion } from "framer-motion"
 import {
@@ -226,51 +226,18 @@ function CopyBtn({ value }: { value: string }) {
 // ---------------------------------------------------------------------------
 
 function TVChartInner() {
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!containerRef.current) return
-    const container = containerRef.current
-    container.innerHTML = ""
-
-    const script = document.createElement("script")
-    script.src =
-      "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js"
-    script.type = "text/javascript"
-    script.async = true
-    script.innerHTML = JSON.stringify({
-      autosize: true,
-      symbol: "BINANCE:BTCUSDT",
-      interval: "15",
-      timezone: "Etc/UTC",
-      theme: "dark",
-      style: "1",
-      locale: "en",
-      backgroundColor: "rgba(6, 8, 15, 1)",
-      gridColor: "rgba(31, 41, 55, 0.15)",
-      hide_top_toolbar: false,
-      hide_legend: false,
-      allow_symbol_change: false,
-      save_image: false,
-      calendar: false,
-      studies: [
-        "RSI@tv-basicstudies",
-        "MAExp@tv-basicstudies",
-        "BB@tv-basicstudies",
-      ],
-      support_host: "https://www.tradingview.com",
-    })
-
-    container.appendChild(script)
-    return () => {
-      container.innerHTML = ""
-    }
-  }, [])
+  const src = "https://s.tradingview.com/widgetembed/?hideideas=1&overrides=%7B%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&locale=en" +
+    "&symbol=BINANCE%3ABTCUSDT&interval=15&theme=dark&style=1&timezone=Etc%2FUTC" +
+    "&studies=%5B%22RSI%40tv-basicstudies%22%2C%22MAExp%40tv-basicstudies%22%2C%22BB%40tv-basicstudies%22%5D" +
+    "&hide_top_toolbar=0&hide_legend=0&save_image=0&calendar=0&hide_volume=0" +
+    "&backgroundColor=rgba(6%2C8%2C15%2C1)&gridColor=rgba(31%2C41%2C55%2C0.15)"
 
   return (
-    <div className="tradingview-widget-container" style={{ height: 500, width: "100%" }}>
-      <div className="tradingview-widget-container__widget" ref={containerRef} style={{ height: "100%", width: "100%" }} />
-    </div>
+    <iframe
+      src={src}
+      style={{ width: "100%", height: 500, border: "none" }}
+      allowFullScreen
+    />
   )
 }
 
@@ -1128,21 +1095,22 @@ export default function SignalsDashboard() {
               {/* Visual price map */}
               <div className="relative h-12 mb-4">
                 {(() => {
-                  const extras: number[] = []
-                  if (d.levels.dailyHigh != null) extras.push(d.levels.dailyHigh)
-                  if (d.levels.dailyLow != null) extras.push(d.levels.dailyLow)
-                  if (d.levels.weeklyHigh != null) extras.push(d.levels.weeklyHigh)
-                  if (d.levels.weeklyLow != null) extras.push(d.levels.weeklyLow)
-                  const fibPrices = (d.levels.fibonacci ?? []).map((f) => f.price)
-
-                  const corePrices = [...d.levels.supports, ...d.levels.resistances, ...extras, currentPrice]
+                  const corePrices = [...d.levels.supports, ...d.levels.resistances, currentPrice]
                   const coreMin = Math.min(...corePrices)
                   const coreMax = Math.max(...corePrices)
-                  const coreRange = coreMax - coreMin
-                  const filteredFibs = fibPrices.filter((p) => p >= coreMin - coreRange * 0.3 && p <= coreMax + coreRange * 0.3)
-                  const allPrices = [...corePrices, ...filteredFibs]
-                  const min = Math.min(...allPrices) * 0.998
-                  const max = Math.max(...allPrices) * 1.002
+                  const coreRange = (coreMax - coreMin) || currentPrice * 0.01
+                  const pad = coreRange * 0.15
+                  const rangeMin = coreMin - pad
+                  const rangeMax = coreMax + pad
+                  const inRange = (p: number) => p >= rangeMin && p <= rangeMax
+                  const fibPrices = (d.levels.fibonacci ?? []).filter((f) => inRange(f.price))
+                  const extras: number[] = []
+                  if (d.levels.dailyHigh != null && inRange(d.levels.dailyHigh)) extras.push(d.levels.dailyHigh)
+                  if (d.levels.dailyLow != null && inRange(d.levels.dailyLow)) extras.push(d.levels.dailyLow)
+                  if (d.levels.weeklyHigh != null && inRange(d.levels.weeklyHigh)) extras.push(d.levels.weeklyHigh)
+                  if (d.levels.weeklyLow != null && inRange(d.levels.weeklyLow)) extras.push(d.levels.weeklyLow)
+                  const min = rangeMin * 0.9998
+                  const max = rangeMax * 1.0002
                   const range = max - min
                   const pct = (v: number) => Math.min(100, Math.max(0, ((v - min) / range) * 100))
 
@@ -1173,8 +1141,8 @@ export default function SignalsDashboard() {
                           </span>
                         </div>
                       ))}
-                      {/* Fib levels in cyan */}
-                      {(d.levels.fibonacci ?? []).map((fib, i) => (
+                      {/* Fib levels in cyan (only those within visible range) */}
+                      {fibPrices.map((fib, i) => (
                         <div
                           key={`fib-${i}`}
                           className="absolute top-0 bottom-0 flex flex-col items-center"
@@ -1183,13 +1151,13 @@ export default function SignalsDashboard() {
                           <div className="h-full w-px" style={{ backgroundColor: "#22D3EE30" }} />
                         </div>
                       ))}
-                      {/* Daily H/L */}
-                      {d.levels.dailyHigh != null && (
+                      {/* Daily H/L (only if within visible range) */}
+                      {d.levels.dailyHigh != null && inRange(d.levels.dailyHigh) && (
                         <div className="absolute top-0 bottom-0" style={{ left: `${pct(d.levels.dailyHigh)}%` }}>
                           <div className="h-full w-px border-l border-dashed border-[#F59E0B]/40" />
                         </div>
                       )}
-                      {d.levels.dailyLow != null && (
+                      {d.levels.dailyLow != null && inRange(d.levels.dailyLow) && (
                         <div className="absolute top-0 bottom-0" style={{ left: `${pct(d.levels.dailyLow)}%` }}>
                           <div className="h-full w-px border-l border-dashed border-[#F59E0B]/40" />
                         </div>

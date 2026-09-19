@@ -398,7 +398,8 @@ function findSwingLevelsFromCandles(
 function findMultiTFLevels(
   candles15m: Candle[],
   candles1h: Candle[],
-  candles4h: Candle[]
+  candles4h: Candle[],
+  referencePrice?: number
 ): { supports: number[]; resistances: number[] } {
   const tf15m = findSwingLevelsFromCandles(candles15m, 2, 50);
   const tf1h = findSwingLevelsFromCandles(candles1h, 2, 60);
@@ -407,7 +408,7 @@ function findMultiTFLevels(
   const allSupports = [...tf15m.rawSupports, ...tf1h.rawSupports, ...tf4h.rawSupports];
   const allResistances = [...tf15m.rawResistances, ...tf1h.rawResistances, ...tf4h.rawResistances];
 
-  const price = candles15m[candles15m.length - 1]?.close ?? 0;
+  const price = referencePrice ?? candles15m[candles15m.length - 1]?.close ?? 0;
   const tol = price * 0.005;
 
   const dedup = (arr: number[], tolerance: number) => {
@@ -1605,6 +1606,29 @@ function computeMultiFactorCall(
     extendedTarget = null;
   }
 
+  if (bias === "LONG") {
+    if (stopLoss >= entry) stopLoss = entry - ta;
+    if (tp1 <= entry) tp1 = entry + 1.5 * ta;
+    if (tp2 <= tp1) tp2 = tp1 + ta;
+    if (tp3 <= tp2) tp3 = tp2 + ta;
+    if (extendedTarget != null && extendedTarget <= tp3)
+      extendedTarget = round(price + 5 * ta, dec);
+  } else if (bias === "SHORT") {
+    if (stopLoss <= entry) stopLoss = entry + ta;
+    if (tp1 >= entry) tp1 = entry - 1.5 * ta;
+    if (tp2 >= tp1) tp2 = tp1 - ta;
+    if (tp3 >= tp2) tp3 = tp2 - ta;
+    if (extendedTarget != null && extendedTarget >= tp3)
+      extendedTarget = round(price - 5 * ta, dec);
+  }
+
+  entry = round(entry, dec);
+  stopLoss = round(stopLoss, dec);
+  tp1 = round(tp1, dec);
+  tp2 = round(tp2, dec);
+  tp3 = round(tp3, dec);
+  if (extendedTarget != null) extendedTarget = round(extendedTarget, dec);
+
   const risk = Math.abs(entry - stopLoss);
   const reward = Math.abs(tp2 - entry);
   const riskReward = risk > 0 ? Math.round((reward / risk) * 100) / 100 : 0;
@@ -1688,12 +1712,12 @@ function computeMultiFactorCall(
     confidence,
     grade,
     regime,
-    entry: round(entry, dec),
+    entry,
     secondaryEntry,
-    stopLoss: round(stopLoss, dec),
-    tp1: round(tp1, dec),
-    tp2: round(tp2, dec),
-    tp3: round(tp3, dec),
+    stopLoss,
+    tp1,
+    tp2,
+    tp3,
     extendedTarget,
     riskReward,
     reasoning,
@@ -1904,7 +1928,7 @@ export async function GET(req: NextRequest) {
   const rsiDaily = rsiDailyArr ? tip(rsiDailyArr) : null;
 
   // ── Multi-TF Support/Resistance ─────────────────────────────────────────────
-  const levels = findMultiTFLevels(candles15m, candles1h, candles4h);
+  const levels = findMultiTFLevels(candles15m, candles1h, candles4h, currentPrice);
 
   // 1h ATR for trade sizing (more meaningful than 15m ATR)
   const atr1hArr = computeATR(candles1h);

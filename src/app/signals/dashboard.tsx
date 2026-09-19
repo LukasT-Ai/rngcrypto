@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback, memo } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { motion } from "framer-motion"
 import {
@@ -220,28 +220,6 @@ function CopyBtn({ value }: { value: string }) {
     </button>
   )
 }
-
-// ---------------------------------------------------------------------------
-// TradingView Chart
-// ---------------------------------------------------------------------------
-
-function TVChartInner() {
-  const src = "https://s.tradingview.com/widgetembed/?hideideas=1&overrides=%7B%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&locale=en" +
-    "&symbol=BINANCE%3ABTCUSDT&interval=15&theme=dark&style=1&timezone=Etc%2FUTC" +
-    "&studies=%5B%22RSI%40tv-basicstudies%22%2C%22MAExp%40tv-basicstudies%22%2C%22BB%40tv-basicstudies%22%5D" +
-    "&hide_top_toolbar=0&hide_legend=0&save_image=0&calendar=0&hide_volume=0" +
-    "&backgroundColor=rgba(6%2C8%2C15%2C1)&gridColor=rgba(31%2C41%2C55%2C0.15)"
-
-  return (
-    <iframe
-      src={src}
-      style={{ width: "100%", height: 500, border: "none" }}
-      allowFullScreen
-    />
-  )
-}
-
-const TVChart = memo(TVChartInner)
 
 // ---------------------------------------------------------------------------
 // Stat Card
@@ -516,13 +494,6 @@ export default function SignalsDashboard() {
           </AlertBanner>
         )}
 
-        {/* ── 3. TradingView Chart ───────────────────────────────────── */}
-        <motion.div
-          {...fadeUp}
-          className="rounded-xl border border-white/[0.06] overflow-hidden"
-        >
-          <TVChart />
-        </motion.div>
 
         {/* ── 4. Trade Call Card ──────────────────────────────────────── */}
         {call && (

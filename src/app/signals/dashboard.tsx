@@ -31,6 +31,8 @@ import {
   Trophy,
   Calendar,
   Newspaper,
+  HelpCircle,
+  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -164,6 +166,13 @@ interface SignalsResponse {
     score: number
     label: string
     headlines: { title: string; sentiment: string }[]
+  } | null
+  positioning?: {
+    longShortRatio: number | null
+    longShortChange: number | null
+    topTraderLongRatio: number | null
+    binanceOI: number | null
+    squeezeRisk: string | null
   } | null
   events?: { name: string; time: string; impact: string; currency: string }[]
   candles: { time: number; open: number; high: number; low: number; close: number }[]
@@ -500,12 +509,140 @@ function FactorRow({ category, assessment, weight }: { category: string; assessm
 }
 
 // ---------------------------------------------------------------------------
+// Quick Guide Modal
+// ---------------------------------------------------------------------------
+
+function GuideModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null
+
+  const sections = [
+    {
+      title: "Signal Grades",
+      color: "#F59E0B",
+      items: [
+        { label: "A+", desc: "Highest conviction. 3+ categories aligned, confidence 85+. Rare." },
+        { label: "A", desc: "Strong setup. Confidence 75+. Worth a trade with proper sizing." },
+        { label: "B", desc: "Decent setup. Confidence 60+. Consider smaller position." },
+        { label: "C", desc: "Marginal. Confidence 45+. High risk, needs extra confirmation." },
+        { label: "NO TRADE", desc: "Below threshold. Stay out." },
+      ],
+    },
+    {
+      title: "Bias",
+      color: "#00FF88",
+      items: [
+        { label: "LONG", desc: "Multi-factor engine favors upside. TPs are above entry." },
+        { label: "SHORT", desc: "Multi-factor engine favors downside. TPs are below entry." },
+        { label: "WAIT", desc: "Conditions are unclear. No active setup. Don't force a trade." },
+      ],
+    },
+    {
+      title: "Regime",
+      color: "#627EEA",
+      items: [
+        { label: "Trending", desc: "ADX > 25. Price is moving directionally. Favor trend-following entries." },
+        { label: "Transitional", desc: "ADX 20-25. Market shifting between trend and range. Be cautious." },
+        { label: "Ranging", desc: "ADX < 20. Choppy price action. Fade extremes, tighten stops." },
+      ],
+    },
+    {
+      title: "What to Look At First",
+      color: "#FF3B5C",
+      items: [
+        { label: "1. Grade + Bias", desc: "If it's C or NO TRADE, skip. Only trade A+/A/B setups." },
+        { label: "2. HTF Alignment", desc: "Check if 1H, 4H, Daily trends agree. Aligned = stronger signal." },
+        { label: "3. Confluence", desc: "More green categories = higher conviction. Mixed = weaker." },
+        { label: "4. R:R Ratio", desc: "Only take trades where reward is at least 1.5x the risk." },
+        { label: "5. Alerts", desc: "Squeeze and catalyst warnings override everything. Respect them." },
+      ],
+    },
+    {
+      title: "Key Indicators",
+      color: "#7BEBC2",
+      items: [
+        { label: "RSI", desc: "Below 30 = oversold (look for longs). Above 70 = overbought (look for shorts)." },
+        { label: "MACD", desc: "Positive histogram = bullish momentum. Negative = bearish." },
+        { label: "Supertrend", desc: "Bullish/Bearish overlay. Confirms or contradicts the EMA stack." },
+        { label: "Bollinger Bands", desc: "Price at lower band = potential bounce. Upper = potential rejection." },
+        { label: "CVD", desc: "Cumulative Volume Delta. Positive = net buyers. Negative = net sellers." },
+        { label: "Divergences", desc: "Price makes new low but RSI doesn't = bullish reversal signal." },
+      ],
+    },
+  ]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-10 w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-white/[0.08] bg-[#0A0E17] shadow-2xl scrollbar-none"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-white/[0.06] bg-[#0A0E17]/95 backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+            <HelpCircle className="size-5 text-[#F59E0B]" />
+            <h2 className="text-lg font-bold text-white">Quick Guide</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-white/40 hover:text-white hover:bg-white/[0.06] transition-colors"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {sections.map((section) => (
+            <div key={section.title}>
+              <h3
+                className="text-xs font-bold uppercase tracking-wider mb-3"
+                style={{ color: section.color }}
+              >
+                {section.title}
+              </h3>
+              <div className="space-y-2">
+                {section.items.map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex gap-3 rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2.5"
+                  >
+                    <span
+                      className="shrink-0 font-mono text-xs font-bold mt-0.5 min-w-[80px]"
+                      style={{ color: section.color }}
+                    >
+                      {item.label}
+                    </span>
+                    <span className="text-sm text-white/60 leading-relaxed">
+                      {item.desc}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <div className="rounded-xl border border-[#F59E0B]/20 bg-[#F59E0B]/[0.04] p-4">
+            <p className="text-xs text-[#F59E0B]/80 leading-relaxed">
+              Signals auto-refresh every 30 seconds. This is a decision-support tool, not financial advice.
+              Always manage risk, use stop losses, and never risk more than you can afford to lose.
+            </p>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main Dashboard
 // ---------------------------------------------------------------------------
 
 export default function SignalsDashboard() {
   const [symbol, setSymbol] = useState("BTC")
   const [fetchTs, setFetchTs] = useState(Date.now())
+  const [guideOpen, setGuideOpen] = useState(false)
 
   const accent = TICKERS.find((t) => t.symbol === symbol)?.color ?? "#F59E0B"
 
@@ -569,6 +706,7 @@ export default function SignalsDashboard() {
 
   return (
     <div className="min-h-screen bg-[#06080F] pt-24 pb-16">
+      <GuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
       <div className="mx-auto max-w-7xl px-4 lg:px-8 space-y-6">
 
         {/* ── Hot Plays Banner ────────────────────────────────────────── */}
@@ -692,6 +830,13 @@ export default function SignalsDashboard() {
                     {d?.asset ?? symbol}
                   </span>
                   <h1 className="text-2xl font-bold text-white">Signals</h1>
+                  <button
+                    onClick={() => setGuideOpen(true)}
+                    className="rounded-full p-1 text-white/30 hover:text-white/60 hover:bg-white/[0.06] transition-colors"
+                    title="Quick Guide"
+                  >
+                    <HelpCircle className="size-4" />
+                  </button>
                   {ind && (
                     <span
                       className="rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide"
@@ -1369,6 +1514,123 @@ export default function SignalsDashboard() {
                 )}
               </div>
             </div>
+
+            {/* ── 9a. Positioning & Liquidation ────────────────────────────── */}
+            {d?.positioning && (
+              <motion.div {...fadeUp}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Activity className="size-4" style={{ color: accent }} />
+                  <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
+                    Positioning &amp; Liquidation
+                  </h2>
+                  {d.positioning.squeezeRisk && (
+                    <span
+                      className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase animate-pulse"
+                      style={{
+                        backgroundColor: d.positioning.squeezeRisk.includes("long") ? "#FF3B5C15" : "#00FF8815",
+                        color: d.positioning.squeezeRisk.includes("long") ? "#FF3B5C" : "#00FF88",
+                      }}
+                    >
+                      {d.positioning.squeezeRisk.replace(/_/g, " ")}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {d.positioning.longShortRatio != null && (
+                    <StatCard
+                      label="Long/Short Ratio"
+                      value={fmt(d.positioning.longShortRatio, 2)}
+                      sub={
+                        d.positioning.longShortRatio > 1.5
+                          ? "Longs crowded"
+                          : d.positioning.longShortRatio < 0.7
+                            ? "Shorts crowded"
+                            : "Balanced"
+                      }
+                      color={
+                        d.positioning.longShortRatio > 1.5
+                          ? "#FF3B5C"
+                          : d.positioning.longShortRatio < 0.7
+                            ? "#00FF88"
+                            : undefined
+                      }
+                      accent={accent}
+                      icon={BarChart3}
+                    />
+                  )}
+                  {d.positioning.longShortChange != null && (
+                    <StatCard
+                      label="L/S Change"
+                      value={`${d.positioning.longShortChange >= 0 ? "+" : ""}${d.positioning.longShortChange.toFixed(1)}%`}
+                      sub={
+                        d.positioning.longShortChange > 20
+                          ? "Longs surging"
+                          : d.positioning.longShortChange < -20
+                            ? "Shorts surging"
+                            : "Stable"
+                      }
+                      color={
+                        Math.abs(d.positioning.longShortChange) > 20
+                          ? "#F59E0B"
+                          : undefined
+                      }
+                      accent={accent}
+                      icon={GitBranch}
+                    />
+                  )}
+                  {d.positioning.topTraderLongRatio != null && (
+                    <StatCard
+                      label="Top Traders"
+                      value={`${(d.positioning.topTraderLongRatio * 100).toFixed(0)}% Long`}
+                      sub={
+                        d.positioning.topTraderLongRatio > 0.65
+                          ? "Smart money bullish"
+                          : d.positioning.topTraderLongRatio < 0.35
+                            ? "Smart money bearish"
+                            : "Neutral"
+                      }
+                      color={
+                        d.positioning.topTraderLongRatio > 0.65
+                          ? "#00FF88"
+                          : d.positioning.topTraderLongRatio < 0.35
+                            ? "#FF3B5C"
+                            : undefined
+                      }
+                      accent={accent}
+                      icon={Eye}
+                    />
+                  )}
+                  {market?.liquidations && (
+                    <StatCard
+                      label="Liq Imbalance"
+                      value={
+                        market.liquidations.longLiqs24h != null && market.liquidations.shortLiqs24h != null
+                          ? (() => {
+                              const total = market.liquidations.longLiqs24h! + market.liquidations.shortLiqs24h!
+                              if (total === 0) return "—"
+                              const longPct = (market.liquidations.longLiqs24h! / total) * 100
+                              return `${longPct.toFixed(0)}% Long`
+                            })()
+                          : "—"
+                      }
+                      sub={
+                        market.liquidations.longLiqs24h != null && market.liquidations.shortLiqs24h != null
+                          ? (market.liquidations.longLiqs24h! > market.liquidations.shortLiqs24h!
+                              ? "Longs getting flushed"
+                              : "Shorts getting squeezed")
+                          : undefined
+                      }
+                      color={
+                        market.liquidations.longLiqs24h != null && market.liquidations.shortLiqs24h != null
+                          ? market.liquidations.longLiqs24h! > market.liquidations.shortLiqs24h! ? "#00FF88" : "#FF3B5C"
+                          : undefined
+                      }
+                      icon={AlertTriangle}
+                    />
+                  )}
+                </div>
+              </motion.div>
+            )}
 
             {/* ── 9b. News Sentiment ──────────────────────────────────────── */}
             {d?.newsSentiment && d.newsSentiment.headlines.length > 0 && (

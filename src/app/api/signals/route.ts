@@ -10,31 +10,21 @@ export const dynamic = "force-dynamic";
 
 const SYMBOL_MAP: Record<
   string,
-  { strike: string; decimals: number; isCrypto: boolean; label: string }
+  { strike: string; decimals: number; isCrypto: boolean; label: string; binance?: string; okx?: string }
 > = {
-  BTC: { strike: "BTC-USD", decimals: 1, isCrypto: true, label: "Bitcoin" },
-  ETH: { strike: "ETH-USD", decimals: 2, isCrypto: true, label: "Ethereum" },
-  BNB: { strike: "BNB-USD", decimals: 2, isCrypto: true, label: "BNB" },
-  ADA: { strike: "ADA-USD", decimals: 5, isCrypto: true, label: "Cardano" },
-  HYPE: {
-    strike: "HYPE-USD",
-    decimals: 3,
-    isCrypto: true,
-    label: "Hyperliquid",
-  },
-  ZEC: { strike: "ZEC-USD", decimals: 2, isCrypto: true, label: "Zcash" },
-  PUMP: { strike: "PUMP-USD", decimals: 6, isCrypto: true, label: "PumpFun" },
-  NIGHT: { strike: "NIGHT-USD", decimals: 5, isCrypto: true, label: "Night" },
-  SKHYNIX: {
-    strike: "SKHYNIX-USD",
-    decimals: 2,
-    isCrypto: false,
-    label: "SK Hynix",
-  },
+  BTC: { strike: "BTC-USD", decimals: 1, isCrypto: true, label: "Bitcoin", binance: "BTCUSDT", okx: "BTC" },
+  ETH: { strike: "ETH-USD", decimals: 2, isCrypto: true, label: "Ethereum", binance: "ETHUSDT", okx: "ETH" },
+  BNB: { strike: "BNB-USD", decimals: 2, isCrypto: true, label: "BNB", binance: "BNBUSDT", okx: "BNB" },
+  ADA: { strike: "ADA-USD", decimals: 5, isCrypto: true, label: "Cardano", binance: "ADAUSDT", okx: "ADA" },
+  HYPE: { strike: "HYPE-USD", decimals: 3, isCrypto: true, label: "Hyperliquid", okx: "HYPE" },
+  ZEC: { strike: "ZEC-USD", decimals: 2, isCrypto: true, label: "Zcash", binance: "ZECUSDT", okx: "ZEC" },
+  PUMP: { strike: "PUMP-USD", decimals: 6, isCrypto: true, label: "PumpFun", okx: "PUMP" },
+  NIGHT: { strike: "NIGHT-USD", decimals: 5, isCrypto: true, label: "Night", okx: "NIGHT" },
+  SKHYNIX: { strike: "SKHYNIX-USD", decimals: 2, isCrypto: false, label: "SK Hynix" },
   GOLD: { strike: "XAU-USD", decimals: 2, isCrypto: false, label: "Gold" },
-  XRP: { strike: "XRP-USD", decimals: 4, isCrypto: true, label: "XRP" },
-  SOL: { strike: "SOL-USD", decimals: 2, isCrypto: true, label: "Solana" },
-  NEAR: { strike: "NEAR-USD", decimals: 4, isCrypto: true, label: "NEAR" },
+  XRP: { strike: "XRP-USD", decimals: 4, isCrypto: true, label: "XRP", binance: "XRPUSDT", okx: "XRP" },
+  SOL: { strike: "SOL-USD", decimals: 2, isCrypto: true, label: "Solana", binance: "SOLUSDT", okx: "SOL" },
+  NEAR: { strike: "NEAR-USD", decimals: 4, isCrypto: true, label: "NEAR", binance: "NEARUSDT", okx: "NEAR" },
   OIL: { strike: "WTI-USD", decimals: 2, isCrypto: false, label: "WTI Oil" },
   SILVER: { strike: "XAG-USD", decimals: 3, isCrypto: false, label: "Silver" },
   TSLA: { strike: "TSLA-USD", decimals: 2, isCrypto: false, label: "Tesla" },
@@ -1222,6 +1212,75 @@ function applyCatalystScore(
   return { score: clamp(score, -100, 100), note };
 }
 
+function scoreLiquidation(
+  longShortRatio: number | null,
+  longShortChange: number | null,
+  topTraderLongRatio: number | null,
+  longLiqs24h: number | null,
+  shortLiqs24h: number | null,
+  fundingRate: number | null
+): { score: number; notes: string[]; squeezeRisk: string | null } {
+  let score = 0;
+  const notes: string[] = [];
+  let squeezeRisk: string | null = null;
+
+  if (longShortRatio != null) {
+    if (longShortRatio > 2.0) {
+      score -= 30;
+      notes.push(`Crowded longs (L/S ${longShortRatio.toFixed(2)}) — contrarian bearish`);
+    } else if (longShortRatio > 1.5) {
+      score -= 15;
+      notes.push(`Elevated long positioning (L/S ${longShortRatio.toFixed(2)})`);
+    } else if (longShortRatio < 0.5) {
+      score += 30;
+      notes.push(`Crowded shorts (L/S ${longShortRatio.toFixed(2)}) — contrarian bullish`);
+    } else if (longShortRatio < 0.7) {
+      score += 15;
+      notes.push(`Elevated short positioning (L/S ${longShortRatio.toFixed(2)})`);
+    }
+  }
+
+  if (longShortChange != null) {
+    if (longShortChange > 20) {
+      score -= 15;
+      notes.push("Long positioning surging — long squeeze risk");
+      squeezeRisk = "long_squeeze_buildup";
+    } else if (longShortChange < -20) {
+      score += 15;
+      notes.push("Short positioning surging — short squeeze risk");
+      squeezeRisk = "short_squeeze_buildup";
+    }
+  }
+
+  if (topTraderLongRatio != null) {
+    if (topTraderLongRatio > 0.65) {
+      score += 10;
+      notes.push(`Top traders ${(topTraderLongRatio * 100).toFixed(0)}% long`);
+    } else if (topTraderLongRatio < 0.35) {
+      score -= 10;
+      notes.push(`Top traders ${((1 - topTraderLongRatio) * 100).toFixed(0)}% short`);
+    }
+  }
+
+  if (longLiqs24h != null && shortLiqs24h != null) {
+    const total = longLiqs24h + shortLiqs24h;
+    if (total > 0) {
+      const longPct = longLiqs24h / total;
+      if (longPct > 0.7) {
+        score += 20;
+        notes.push(`Longs being flushed (${(longPct * 100).toFixed(0)}% of liqs) — reversal potential`);
+        if (fundingRate != null && fundingRate > 0.02) squeezeRisk = "long_squeeze_active";
+      } else if (longPct < 0.3) {
+        score -= 20;
+        notes.push(`Shorts being squeezed (${((1 - longPct) * 100).toFixed(0)}% of liqs) — caution on longs`);
+        if (fundingRate != null && fundingRate < -0.005) squeezeRisk = "short_squeeze_active";
+      }
+    }
+  }
+
+  return { score: clamp(score, -100, 100), notes, squeezeRisk };
+}
+
 // ── Main Trade Call Computation ──────────────────────────────────────────────
 
 function computeMultiFactorCall(
@@ -1274,6 +1333,11 @@ function computeMultiFactorCall(
     catalystScore: number;
     catalystRiskNote: string | null;
     tradeATR: number;
+    longShortRatio: number | null;
+    longShortChange: number | null;
+    topTraderLongRatio: number | null;
+    longLiqs24h: number | null;
+    shortLiqs24h: number | null;
   },
   dec: number
 ) {
@@ -1319,27 +1383,34 @@ function computeMultiFactorCall(
     catalystScore: extCatalystScore,
     catalystRiskNote,
     tradeATR,
+    longShortRatio,
+    longShortChange,
+    topTraderLongRatio,
+    longLiqs24h,
+    shortLiqs24h,
   } = params;
 
   const weights = {
     marketStructure: 0.15,
     momentum: 0.12,
     volume: 0.1,
-    derivatives: 0.1,
+    derivatives: 0.08,
     htf: 0.1,
     bollinger: 0.08,
     divergences: 0.08,
-    sentiment: 0.05,
+    sentiment: 0.03,
     marketData: 0.05,
     patterns: 0.05,
     etf: 0.05,
     catalyst: 0.02,
+    liquidation: 0.05,
   };
 
   if (!isCrypto) {
     weights.sentiment = 0;
     weights.marketData = 0;
     weights.etf = 0;
+    weights.liquidation = 0;
     weights.marketStructure = 0.2;
     weights.momentum = 0.15;
     weights.volume = 0.13;
@@ -1379,6 +1450,14 @@ function computeMultiFactorCall(
   const pats = scorePatterns(pattern);
   const etfScore = scoreETFFlows(etfNet);
   const catalyst = applyCatalystScore(extCatalystScore, catalystRiskNote, fundingRate);
+  const liq = scoreLiquidation(
+    longShortRatio,
+    longShortChange,
+    topTraderLongRatio,
+    longLiqs24h,
+    shortLiqs24h,
+    fundingRate
+  );
 
   const weightedScore =
     ms.score * weights.marketStructure +
@@ -1392,7 +1471,8 @@ function computeMultiFactorCall(
     mktData.score * weights.marketData +
     pats.score * weights.patterns +
     etfScore.score * weights.etf +
-    catalyst.score * weights.catalyst;
+    catalyst.score * weights.catalyst +
+    liq.score * weights.liquidation;
 
   const confidence = clamp(Math.round(50 + weightedScore / 2), 0, 100);
 
@@ -1493,6 +1573,16 @@ function computeMultiFactorCall(
               ? "Neutral"
               : "Bearish",
         weight: Math.round(weights.etf * 100),
+      },
+      {
+        category: "Liquidation/Positioning",
+        assessment:
+          liq.score > 15
+            ? "Bullish"
+            : liq.score > -15
+              ? "Neutral"
+              : "Bearish",
+        weight: Math.round(weights.liquidation * 100),
       }
     );
   }
@@ -1644,7 +1734,8 @@ function computeMultiFactorCall(
     ...sent.notes,
     ...pats.notes,
     ...etfScore.notes,
-  ].slice(0, 12);
+    ...liq.notes,
+  ].slice(0, 14);
 
   const bullCase: string[] = [];
   const bearCase: string[] = [];
@@ -1674,6 +1765,8 @@ function computeMultiFactorCall(
   if (deriv.score < 0)
     bearCase.push("Overleveraged — funding rate extreme");
   if (divs.score < 0) bearCase.push("Bearish divergence signals weakness");
+  if (liq.score > 0) bullCase.push("Positioning data favors long side");
+  if (liq.score < 0) bearCase.push("Crowded positioning warns of downside");
 
   while (bullCase.length < 2)
     bullCase.push("Await more bullish confirmations");
@@ -1726,6 +1819,7 @@ function computeMultiFactorCall(
     confirms: confirms.slice(0, 3),
     invalidates: invalidates.slice(0, 3),
     catalystRisk: catalyst.note,
+    liqSqueezeRisk: liq.squeezeRisk,
     signalFactors,
   };
 }
@@ -1830,15 +1924,39 @@ export async function GET(req: NextRequest) {
           "https://api.coinglass.com/api/v3/etf/bitcoin/flow-total"
         ).catch(() => null)
       : Promise.resolve(null),
-    // 12: Liquidations (BTC only)
-    isBTC
+    // 12: Liquidations (all crypto)
+    isCrypto
       ? fetchJSON(
-          "https://api.coinglass.com/api/v3/futures/liquidation/info?symbol=BTC"
+          `https://api.coinglass.com/api/v3/futures/liquidation/info?symbol=${symbol}`
         ).catch(() => null)
       : Promise.resolve(null),
     // 13: News sentiment (crypto only)
     isCrypto
       ? getNewsSentiment(symbol).catch(() => null)
+      : Promise.resolve(null),
+    // 14: Binance OI (crypto with binance mapping only)
+    config.binance
+      ? fetchJSON(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${config.binance}`)
+      : Promise.resolve(null),
+    // 15: Binance long/short ratio (crypto with binance mapping only)
+    config.binance
+      ? fetchJSON(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${config.binance}&period=1h&limit=5`)
+      : Promise.resolve(null),
+    // 16: Binance top trader position ratio
+    config.binance
+      ? fetchJSON(`https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=${config.binance}&period=1h&limit=5`)
+      : Promise.resolve(null),
+    // 17: OKX long/short ratio (fallback for geo-blocked Binance)
+    config.okx
+      ? fetchJSON(`https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=${config.okx}&period=1H`).catch(() => null)
+      : Promise.resolve(null),
+    // 18: OKX open interest + volume
+    config.okx
+      ? fetchJSON(`https://www.okx.com/api/v5/rubik/stat/contracts/open-interest-volume?ccy=${config.okx}&period=1H`).catch(() => null)
+      : Promise.resolve(null),
+    // 19: OKX taker buy/sell volume
+    config.okx
+      ? fetchJSON(`https://www.okx.com/api/v5/rubik/stat/taker-volume-contract?instId=${config.okx}-USDT-SWAP&period=1H&limit=5`).catch(() => null)
       : Promise.resolve(null),
   ];
 
@@ -2082,6 +2200,82 @@ export async function GET(req: NextRequest) {
   // News sentiment
   const newsSentimentData = getResult(13) as NewsSentimentResult | null;
 
+  // Binance Open Interest
+  let binanceOI: number | null = null;
+  const binanceOIRaw = getResult(14);
+  if (binanceOIRaw != null) {
+    const oi = binanceOIRaw as { openInterest?: string };
+    binanceOI = oi?.openInterest ? parseFloat(oi.openInterest) : null;
+  }
+
+  // Binance Long/Short Ratio
+  let longShortRatio: number | null = null;
+  const lsRaw = getResult(15);
+  if (lsRaw != null && Array.isArray(lsRaw) && lsRaw.length > 0) {
+    const latest = lsRaw[lsRaw.length - 1] as { longShortRatio?: string };
+    longShortRatio = latest?.longShortRatio ? parseFloat(latest.longShortRatio) : null;
+  }
+
+  // Long/short ratio change (squeeze signal)
+  let longShortChange: number | null = null;
+  if (lsRaw != null && Array.isArray(lsRaw) && lsRaw.length >= 3) {
+    const recent = parseFloat((lsRaw[lsRaw.length - 1] as { longShortRatio: string }).longShortRatio);
+    const older = parseFloat((lsRaw[0] as { longShortRatio: string }).longShortRatio);
+    if (!isNaN(recent) && !isNaN(older) && older > 0) {
+      longShortChange = ((recent - older) / older) * 100;
+    }
+  }
+
+  // Top trader position ratio
+  let topTraderLongRatio: number | null = null;
+  const topTraderRaw = getResult(16);
+  if (topTraderRaw != null && Array.isArray(topTraderRaw) && topTraderRaw.length > 0) {
+    const latest = topTraderRaw[topTraderRaw.length - 1] as { longAccount?: string };
+    topTraderLongRatio = latest?.longAccount ? parseFloat(latest.longAccount) : null;
+  }
+
+  // OKX fallback for long/short ratio (Binance is geo-restricted from US)
+  const okxLSRaw = getResult(17) as { code?: string; data?: string[][] } | null;
+  if (longShortRatio == null && okxLSRaw?.code === "0" && Array.isArray(okxLSRaw.data) && okxLSRaw.data.length > 0) {
+    const latest = okxLSRaw.data[okxLSRaw.data.length - 1];
+    if (latest?.[1]) longShortRatio = parseFloat(latest[1]);
+    if (okxLSRaw.data.length >= 3) {
+      const recent = parseFloat(okxLSRaw.data[okxLSRaw.data.length - 1][1]);
+      const older = parseFloat(okxLSRaw.data[0][1]);
+      if (!isNaN(recent) && !isNaN(older) && older > 0) {
+        longShortChange = ((recent - older) / older) * 100;
+      }
+    }
+  }
+
+  // OKX OI + volume
+  let okxOI: number | null = null;
+  let okxOIChange: number | null = null;
+  const okxOIRaw = getResult(18) as { code?: string; data?: string[][] } | null;
+  if (okxOIRaw?.code === "0" && Array.isArray(okxOIRaw.data) && okxOIRaw.data.length > 0) {
+    const latest = okxOIRaw.data[okxOIRaw.data.length - 1];
+    if (latest?.[1]) okxOI = parseFloat(latest[1]);
+    if (okxOIRaw.data.length >= 5) {
+      const recentOI = parseFloat(okxOIRaw.data[okxOIRaw.data.length - 1][1]);
+      const olderOI = parseFloat(okxOIRaw.data[0][1]);
+      if (!isNaN(recentOI) && !isNaN(olderOI) && olderOI > 0) {
+        okxOIChange = ((recentOI - olderOI) / olderOI) * 100;
+      }
+    }
+  }
+
+  // OKX taker buy/sell volume (buy vs sell pressure)
+  let takerBuySellRatio: number | null = null;
+  const okxTakerRaw = getResult(19) as { code?: string; data?: string[][] } | null;
+  if (okxTakerRaw?.code === "0" && Array.isArray(okxTakerRaw.data) && okxTakerRaw.data.length > 0) {
+    let totalBuy = 0, totalSell = 0;
+    for (const row of okxTakerRaw.data) {
+      totalBuy += parseFloat(row[1] ?? "0");
+      totalSell += parseFloat(row[2] ?? "0");
+    }
+    if (totalSell > 0) takerBuySellRatio = totalBuy / totalSell;
+  }
+
   // ── Economic calendar / catalyst scoring ────────────────────────────────────
   const catalystData = await computeCatalystScore();
 
@@ -2130,6 +2324,11 @@ export async function GET(req: NextRequest) {
       catalystScore: catalystData.score,
       catalystRiskNote: catalystData.catalystRisk,
       tradeATR,
+      longShortRatio,
+      longShortChange,
+      topTraderLongRatio,
+      longLiqs24h: liquidations?.longLiqs24h ?? null,
+      shortLiqs24h: liquidations?.shortLiqs24h ?? null,
     },
     dec
   );
@@ -2229,7 +2428,16 @@ export async function GET(req: NextRequest) {
       hashRate,
       etfFlow: etfFlowData,
       liquidations,
+      longShortRatio,
+      topTraderLongRatio,
     },
+    positioning: isCrypto ? {
+      longShortRatio,
+      longShortChange: longShortChange != null ? Math.round(longShortChange * 100) / 100 : null,
+      topTraderLongRatio,
+      binanceOI: binanceOI,
+      squeezeRisk: call.liqSqueezeRisk ?? null,
+    } : null,
     divergences: {
       rsiDivergence15m: rsiDiv15m,
       rsiDivergence1h: rsiDiv1h,

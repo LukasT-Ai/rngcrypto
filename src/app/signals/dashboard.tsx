@@ -588,20 +588,25 @@ export default function SignalsDashboard() {
         )}
 
         {/* ── Ticker Selector Bar ─────────────────────────────────────── */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <div className="flex flex-wrap gap-2">
           {TICKERS.map((t) => {
             const active = t.symbol === symbol
+            const score = hotData?.all?.find((h) => h.symbol === t.symbol)?.confidence ?? null
+            const scoreColor = score != null ? (score >= 75 ? "#00FF88" : score >= 55 ? "#F59E0B" : "#FF3B5C") : undefined
             return (
               <button
                 key={t.symbol}
                 onClick={() => setSymbol(t.symbol)}
                 className={cn(
-                  "shrink-0 rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition-all duration-200 border",
+                  "rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition-all duration-200 border",
                   active
                     ? "text-white border-transparent"
-                    : "text-white/40 border-white/10 hover:text-white/70 hover:border-white/20 bg-transparent"
+                    : "border-white/10 hover:border-white/20 bg-transparent"
                 )}
-                style={active ? { backgroundColor: t.color, borderColor: t.color } : undefined}
+                style={active
+                  ? { backgroundColor: t.color, borderColor: t.color }
+                  : { color: scoreColor ?? "rgba(255,255,255,0.4)" }
+                }
               >
                 {t.symbol}
               </button>

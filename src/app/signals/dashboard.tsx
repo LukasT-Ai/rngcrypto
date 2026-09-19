@@ -61,6 +61,17 @@ const TICKERS = [
   { symbol: "GOOGL", label: "Google", color: "#4285F4" },
   { symbol: "COIN", label: "Coinbase", color: "#0052FF" },
   { symbol: "MU", label: "Micron", color: "#1A1AFF" },
+  { symbol: "SP500", label: "S&P 500", color: "#E63946" },
+  { symbol: "NAS100", label: "Nasdaq 100", color: "#457B9D" },
+  { symbol: "CRCL", label: "Circle", color: "#00D395" },
+  { symbol: "MINIMAX", label: "MiniMax", color: "#FF8C42" },
+  { symbol: "SPCX", label: "SpaceX", color: "#005288" },
+  { symbol: "DRAM", label: "DRAM", color: "#0EA5E9" },
+  { symbol: "AAOI", label: "AAOI", color: "#DC2626" },
+  { symbol: "SNDK", label: "SanDisk", color: "#E11D48" },
+  { symbol: "UNITREE", label: "Unitree", color: "#059669" },
+  { symbol: "ZHIPU", label: "Zhipu AI", color: "#7C3AED" },
+  { symbol: "CXMT", label: "CXMT", color: "#0284C7" },
 ]
 
 // ---------------------------------------------------------------------------

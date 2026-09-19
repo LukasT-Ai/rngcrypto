@@ -32,6 +32,17 @@ const SYMBOL_MAP: Record<
   GOOGL: { strike: "GOOGL-USD", decimals: 2, isCrypto: false, label: "Google" },
   COIN: { strike: "COIN-USD", decimals: 2, isCrypto: false, label: "Coinbase" },
   MU: { strike: "MU-USD", decimals: 2, isCrypto: false, label: "Micron" },
+  CRCL: { strike: "CRCL-USD", decimals: 4, isCrypto: true, label: "Circle" },
+  MINIMAX: { strike: "MINIMAX-USD", decimals: 4, isCrypto: true, label: "MiniMax" },
+  SPCX: { strike: "SPCX-USD", decimals: 2, isCrypto: true, label: "SpaceX" },
+  DRAM: { strike: "DRAM-USD", decimals: 4, isCrypto: true, label: "DRAM" },
+  SP500: { strike: "SP500-USD", decimals: 1, isCrypto: false, label: "S&P 500" },
+  NAS100: { strike: "NAS100-USD", decimals: 1, isCrypto: false, label: "Nasdaq 100" },
+  AAOI: { strike: "AAOI-USD", decimals: 2, isCrypto: false, label: "AAOI" },
+  SNDK: { strike: "SNDK-USD", decimals: 2, isCrypto: false, label: "SanDisk" },
+  UNITREE: { strike: "UNITREE-USD", decimals: 2, isCrypto: false, label: "Unitree" },
+  ZHIPU: { strike: "ZHIPU-USD", decimals: 2, isCrypto: false, label: "Zhipu AI" },
+  CXMT: { strike: "CXMT-USD", decimals: 2, isCrypto: false, label: "CXMT" },
 };
 
 // ── Cache (per-symbol) ──────────────────────────────────────────────────────

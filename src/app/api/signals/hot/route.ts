@@ -8,6 +8,8 @@ const SYMBOLS = [
   "ZEC", "PUMP", "NIGHT", "SKHYNIX", "GOLD",
   "XRP", "SOL", "NEAR", "OIL", "SILVER",
   "TSLA", "NVDA", "GOOGL", "COIN", "MU",
+  "SP500", "NAS100", "CRCL", "MINIMAX", "SPCX",
+  "DRAM", "AAOI", "SNDK", "UNITREE", "ZHIPU", "CXMT",
 ];
 
 const TICKER_META: Record<string, { label: string; color: string }> = {
@@ -31,6 +33,17 @@ const TICKER_META: Record<string, { label: string; color: string }> = {
   GOOGL: { label: "Google", color: "#4285F4" },
   COIN: { label: "Coinbase", color: "#0052FF" },
   MU: { label: "Micron", color: "#1A1AFF" },
+  SP500: { label: "S&P 500", color: "#E63946" },
+  NAS100: { label: "Nasdaq 100", color: "#457B9D" },
+  CRCL: { label: "Circle", color: "#00D395" },
+  MINIMAX: { label: "MiniMax", color: "#FF8C42" },
+  SPCX: { label: "SpaceX", color: "#005288" },
+  DRAM: { label: "DRAM", color: "#0EA5E9" },
+  AAOI: { label: "AAOI", color: "#DC2626" },
+  SNDK: { label: "SanDisk", color: "#E11D48" },
+  UNITREE: { label: "Unitree", color: "#059669" },
+  ZHIPU: { label: "Zhipu AI", color: "#7C3AED" },
+  CXMT: { label: "CXMT", color: "#0284C7" },
 };
 
 let hotCache: { data: unknown; timestamp: number } | null = null;

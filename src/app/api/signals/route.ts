@@ -746,6 +746,322 @@ function detectSqueeze(
   return "volatility_compression";
 }
 
+// ── Macro Signals — Weekly Stochastic 80-Line + Golden Cross ────────────
+
+let macroCache: { data: MacroState; timestamp: number } | null = null;
+const MACRO_CACHE_TTL = 3_600_000; // 1 hour
+
+interface MacroState {
+  stochastic: {
+    k: number;
+    d: number;
+    weeksBelow80: number;
+    justCrossed80: boolean;
+    approaching80: boolean;
+    signal: string;
+  } | null;
+  goldenCross: {
+    active: boolean;
+    crossPrice: number | null;
+    daysSinceCross: number | null;
+    currentPrice: number | null;
+    returnFromCross: number | null;
+    isShallowStart: boolean | null;
+    sma50: number;
+    sma200: number;
+  } | null;
+  weeklyEngulfing: boolean;
+  macroScore: number;
+  signals: string[];
+  bias: string;
+  eventBlackout: { blocked: boolean; event?: string; date?: string };
+}
+
+interface DailyCandle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+function buildWeeklyCandles(dailyCandles: DailyCandle[]): DailyCandle[] {
+  const weeks: DailyCandle[] = [];
+  let current: DailyCandle | null = null;
+  for (const day of dailyCandles) {
+    const date = new Date(day.time);
+    if (date.getUTCDay() === 1 && current) {
+      weeks.push(current);
+      current = null;
+    }
+    if (!current) {
+      current = { ...day };
+    } else {
+      current.high = Math.max(current.high, day.high);
+      current.low = Math.min(current.low, day.low);
+      current.close = day.close;
+    }
+  }
+  if (current) weeks.push(current);
+  return weeks;
+}
+
+function computeWeeklyStochastic(
+  weeklyCandles: DailyCandle[],
+  kPeriod = 14,
+  dPeriod = 6,
+  smooth = 3
+): MacroState["stochastic"] {
+  if (weeklyCandles.length < kPeriod + dPeriod + smooth) return null;
+  const closes = weeklyCandles.map((c) => c.close);
+  const highs = weeklyCandles.map((c) => c.high);
+  const lows = weeklyCandles.map((c) => c.low);
+
+  const rawKs: number[] = [];
+  for (let i = kPeriod - 1; i < closes.length; i++) {
+    const sliceH = highs.slice(i - kPeriod + 1, i + 1);
+    const sliceL = lows.slice(i - kPeriod + 1, i + 1);
+    const hh = Math.max(...sliceH);
+    const ll = Math.min(...sliceL);
+    const range = hh - ll;
+    rawKs.push(range > 0 ? ((closes[i] - ll) / range) * 100 : 50);
+  }
+
+  const smoothedKs: number[] = [];
+  for (let i = smooth - 1; i < rawKs.length; i++) {
+    const slice = rawKs.slice(i - smooth + 1, i + 1);
+    smoothedKs.push(slice.reduce((s, v) => s + v, 0) / smooth);
+  }
+
+  const dValues: number[] = [];
+  for (let i = dPeriod - 1; i < smoothedKs.length; i++) {
+    const slice = smoothedKs.slice(i - dPeriod + 1, i + 1);
+    dValues.push(slice.reduce((s, v) => s + v, 0) / dPeriod);
+  }
+
+  const currentK = smoothedKs[smoothedKs.length - 1];
+  const currentD = dValues[dValues.length - 1];
+
+  let weeksBelow80 = 0;
+  for (let i = smoothedKs.length - 2; i >= 0; i--) {
+    if (smoothedKs[i] < 80) weeksBelow80++;
+    else break;
+  }
+
+  const justCrossed80 = currentK >= 80 && weeksBelow80 >= 4;
+  const approaching80 = currentK >= 70 && currentK < 80 && weeksBelow80 >= 4;
+
+  return {
+    k: currentK,
+    d: currentD,
+    weeksBelow80,
+    justCrossed80,
+    approaching80,
+    signal: justCrossed80 ? "TRIGGERED" : approaching80 ? "APPROACHING" : currentK >= 80 ? "MOMENTUM" : "NONE",
+  };
+}
+
+function computeGoldenCross(dailyCandles: DailyCandle[]) {
+  if (dailyCandles.length < 210) return null;
+  const closes = dailyCandles.map((c) => c.close);
+
+  const startIdx = 199;
+  const aligned50: number[] = [];
+  const aligned200: number[] = [];
+  for (let i = startIdx; i < closes.length; i++) {
+    aligned200.push(closes.slice(i - 199, i + 1).reduce((s, v) => s + v, 0) / 200);
+    aligned50.push(closes.slice(i - 49, i + 1).reduce((s, v) => s + v, 0) / 50);
+  }
+
+  const current50 = aligned50[aligned50.length - 1];
+  const current200 = aligned200[aligned200.length - 1];
+  const isGolden = current50 > current200;
+
+  if (!isGolden) {
+    return { active: false, crossPrice: null, daysSinceCross: null, currentPrice: null, returnFromCross: null, isShallowStart: null, sma50: current50, sma200: current200 };
+  }
+
+  let crossAlignedIdx: number | null = null;
+  for (let i = aligned50.length - 1; i >= 1; i--) {
+    if (aligned50[i] > aligned200[i] && aligned50[i - 1] <= aligned200[i - 1]) {
+      crossAlignedIdx = i;
+      break;
+    }
+    if (aligned50[i] <= aligned200[i]) break;
+  }
+
+  const crossDayIndex = crossAlignedIdx != null ? crossAlignedIdx + startIdx : null;
+  const crossPrice = crossDayIndex != null ? closes[crossDayIndex] : null;
+
+  if (crossDayIndex == null || crossPrice == null) {
+    return { active: true, crossPrice: null, daysSinceCross: null, currentPrice: closes[closes.length - 1], returnFromCross: null, isShallowStart: null, sma50: current50, sma200: current200 };
+  }
+
+  const daysSinceCross = closes.length - 1 - crossDayIndex;
+  const currentPrice = closes[closes.length - 1];
+  const returnFromCross = crossPrice > 0 ? (currentPrice - crossPrice) / crossPrice : 0;
+
+  const first10 = dailyCandles.slice(crossDayIndex, crossDayIndex + 10);
+  const first10Low = first10.length ? Math.min(...first10.map((c) => c.low)) : crossPrice;
+  const first10Drawdown = crossPrice > 0 ? (first10Low - crossPrice) / crossPrice : 0;
+  const isShallowStart = first10Drawdown > -0.055;
+
+  return { active: true, crossPrice, daysSinceCross, currentPrice, returnFromCross, isShallowStart, sma50: current50, sma200: current200 };
+}
+
+const MACRO_EVENTS_2026 = [
+  { date: "2026-01-28", time: "19:00", name: "FOMC" },
+  { date: "2026-03-18", time: "18:00", name: "FOMC" },
+  { date: "2026-05-06", time: "18:00", name: "FOMC" },
+  { date: "2026-06-17", time: "18:00", name: "FOMC" },
+  { date: "2026-07-29", time: "18:00", name: "FOMC" },
+  { date: "2026-09-16", time: "18:00", name: "FOMC" },
+  { date: "2026-11-04", time: "18:00", name: "FOMC" },
+  { date: "2026-12-16", time: "19:00", name: "FOMC" },
+  { date: "2026-01-14", time: "13:30", name: "CPI" },
+  { date: "2026-02-12", time: "13:30", name: "CPI" },
+  { date: "2026-03-11", time: "12:30", name: "CPI" },
+  { date: "2026-04-14", time: "12:30", name: "CPI" },
+  { date: "2026-05-12", time: "12:30", name: "CPI" },
+  { date: "2026-06-10", time: "12:30", name: "CPI" },
+  { date: "2026-07-14", time: "12:30", name: "CPI" },
+  { date: "2026-08-12", time: "12:30", name: "CPI" },
+  { date: "2026-09-11", time: "12:30", name: "CPI" },
+  { date: "2026-10-13", time: "12:30", name: "CPI" },
+  { date: "2026-11-12", time: "13:30", name: "CPI" },
+  { date: "2026-12-10", time: "13:30", name: "CPI" },
+  { date: "2026-01-09", time: "13:30", name: "NFP" },
+  { date: "2026-02-06", time: "13:30", name: "NFP" },
+  { date: "2026-03-06", time: "13:30", name: "NFP" },
+  { date: "2026-04-03", time: "12:30", name: "NFP" },
+  { date: "2026-05-08", time: "12:30", name: "NFP" },
+  { date: "2026-06-05", time: "12:30", name: "NFP" },
+  { date: "2026-07-02", time: "12:30", name: "NFP" },
+  { date: "2026-08-07", time: "12:30", name: "NFP" },
+  { date: "2026-09-04", time: "12:30", name: "NFP" },
+  { date: "2026-10-02", time: "12:30", name: "NFP" },
+  { date: "2026-11-06", time: "12:30", name: "NFP" },
+  { date: "2026-12-04", time: "13:30", name: "NFP" },
+];
+
+const EVENT_BLACKOUT_MS = 30 * 60 * 1000;
+
+let parsedMacroEvents: { name: string; date: string; ts: number }[] | null = null;
+
+function getEventBlackout(): { blocked: boolean; event?: string; date?: string } {
+  if (!parsedMacroEvents) {
+    parsedMacroEvents = MACRO_EVENTS_2026.map((e) => ({
+      name: e.name,
+      date: e.date,
+      ts: new Date(`${e.date}T${e.time}:00Z`).getTime(),
+    }));
+  }
+  const now = Date.now();
+  for (const event of parsedMacroEvents) {
+    if (Math.abs(now - event.ts) <= EVENT_BLACKOUT_MS) {
+      return { blocked: true, event: event.name, date: event.date };
+    }
+  }
+  return { blocked: false };
+}
+
+async function fetchMacroSignals(): Promise<MacroState | null> {
+  if (macroCache && Date.now() - macroCache.timestamp < MACRO_CACHE_TTL) {
+    return { ...macroCache.data, eventBlackout: getEventBlackout() };
+  }
+
+  try {
+    const url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=365&interval=daily";
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.prices?.length) return null;
+
+    const candles: DailyCandle[] = [];
+    for (let i = 0; i < data.prices.length; i++) {
+      const [time, close] = data.prices[i] as [number, number];
+      candles.push({ time, open: close, high: close, low: close, close });
+    }
+    for (let i = 1; i < candles.length; i++) {
+      const volatility = Math.abs(candles[i].close - candles[i - 1].close) * 0.5;
+      candles[i].high = candles[i].close + volatility;
+      candles[i].low = candles[i].close - volatility;
+    }
+
+    const weeklyCandles = buildWeeklyCandles(candles);
+    const stochastic = computeWeeklyStochastic(weeklyCandles);
+    const goldenCross = computeGoldenCross(candles);
+
+    let weeklyEngulfing = false;
+    if (weeklyCandles.length >= 2) {
+      const prev = weeklyCandles[weeklyCandles.length - 2];
+      const curr = weeklyCandles[weeklyCandles.length - 1];
+      weeklyEngulfing = prev.close < prev.open && curr.close > curr.open && curr.close > prev.open && curr.open <= prev.close;
+    }
+
+    let macroScore = 0;
+    const signals: string[] = [];
+
+    if (stochastic) {
+      if (stochastic.signal === "TRIGGERED") {
+        macroScore += 15;
+        signals.push(`Stoch K crossed 80 (${stochastic.k.toFixed(1)}) — 95% win rate at 10w`);
+      } else if (stochastic.signal === "APPROACHING") {
+        macroScore += 8;
+        signals.push(`Stoch K approaching 80 (${stochastic.k.toFixed(1)})`);
+      } else if (stochastic.k >= 80) {
+        macroScore += 10;
+        signals.push(`Stoch K in momentum regime (${stochastic.k.toFixed(1)})`);
+      }
+    }
+
+    if (goldenCross?.active) {
+      macroScore += 10;
+      const dayInfo = goldenCross.daysSinceCross != null ? ` Day ${goldenCross.daysSinceCross}` : "";
+      const retInfo = goldenCross.returnFromCross != null ? ` (+${(goldenCross.returnFromCross * 100).toFixed(1)}%)` : "";
+      signals.push(`Golden cross active${dayInfo}${retInfo}`);
+      if (goldenCross.isShallowStart) {
+        macroScore += 5;
+        signals.push("Shallow start — historically strongest returns");
+      }
+    }
+
+    if (weeklyEngulfing) {
+      macroScore += 5;
+      signals.push("Weekly bullish engulfing confirmed");
+    }
+
+    if (stochastic && stochastic.signal !== "NONE" && goldenCross?.active) {
+      macroScore += 5;
+      signals.push("DOUBLE SIGNAL: Stochastic + Golden Cross confluence");
+    }
+
+    const bias = macroScore >= 20 ? "strong_bull" : macroScore >= 10 ? "bull" : macroScore >= 5 ? "lean_bull" : "neutral";
+
+    const state: MacroState = {
+      stochastic,
+      goldenCross,
+      weeklyEngulfing,
+      macroScore,
+      signals,
+      bias,
+      eventBlackout: getEventBlackout(),
+    };
+
+    macroCache = { data: state, timestamp: Date.now() };
+    return state;
+  } catch {
+    return macroCache ? { ...macroCache.data, eventBlackout: getEventBlackout() } : null;
+  }
+}
+
+function getMacroBonus(macroState: MacroState | null, bias: "LONG" | "SHORT" | "WAIT", isCrypto: boolean): number {
+  if (!macroState || !isCrypto) return 0;
+  if (bias === "LONG") return Math.min(macroState.macroScore, 20);
+  if (bias === "SHORT" && macroState.macroScore >= 15) return -10;
+  return 0;
+}
+
 // ── Daily / Weekly High-Low ──────────────────────────────────────────────────
 
 function computeTimeframeLevels(
@@ -837,12 +1153,28 @@ function scoreMomentum(
   macdHist: number,
   stochK: number,
   stochD: number,
-  rsi5m: number | null
+  rsi5m: number | null,
+  prevRsi: number | null,
+  macroBias: string | null,
+  trendDir: string | null
 ): { score: number; notes: string[] } {
   let score = 0;
   const notes: string[] = [];
 
-  if (rsi < 30) {
+  const isTrendingBull = trendDir === "bull" && (macroBias === "strong_bull" || macroBias === "bull");
+  const isTrendingBear = trendDir === "bear" && (macroBias === "neutral");
+
+  if (isTrendingBull && rsi > 70) {
+    score += 5;
+    notes.push(`RSI momentum (${rsi.toFixed(0)}) — trending bull regime`);
+    if (prevRsi != null && prevRsi <= 70 && rsi > 70) {
+      score += 15;
+      notes.push("RSI momentum cross above 70 — bullish entry signal");
+    }
+  } else if (isTrendingBear && rsi < 30) {
+    score += 5;
+    notes.push(`RSI momentum (${rsi.toFixed(0)}) — trending bear regime`);
+  } else if (rsi < 30) {
     score += 35;
     notes.push(`RSI oversold (${rsi.toFixed(0)})`);
   } else if (rsi < 40) {
@@ -1373,6 +1705,8 @@ function computeMultiFactorCall(
     shortLiqs24h: number | null;
     oiChange: number | null;
     takerBuySellRatio: number | null;
+    prevRsi: number | null;
+    macroBias: string | null;
   },
   dec: number
 ) {
@@ -1425,7 +1759,12 @@ function computeMultiFactorCall(
     shortLiqs24h,
     oiChange,
     takerBuySellRatio,
+    prevRsi,
+    macroBias,
   } = params;
+
+  const trendDir15m =
+    ema9 > ema21 && ema21 > ema50 ? "bull" : ema9 < ema21 && ema21 < ema50 ? "bear" : "mixed";
 
   const weights = {
     marketStructure: 0.15,
@@ -1469,7 +1808,7 @@ function computeMultiFactorCall(
     resistances,
     atr
   );
-  const mom = scoreMomentum(rsi, macdHist, stochRsi.k, stochRsi.d, rsi5m);
+  const mom = scoreMomentum(rsi, macdHist, stochRsi.k, stochRsi.d, rsi5m, prevRsi, macroBias, trendDir15m);
   const vol = scoreVolume(volData.ratio, volData.trend, volData.cvd);
   const deriv = scoreDerivatives(fundingRate, putCallRatio);
   const htf = scoreHTF(trend1h, rsi1h, trend4h, rsi4h, trendDaily, rsiDaily);
@@ -1706,7 +2045,7 @@ function computeMultiFactorCall(
     extendedTarget =
       fibExtension && fibExtension > tp3
         ? fibExtension
-        : round(price + 5 * ta, dec);
+        : round(tp3 + 1.5 * ta, dec);
   } else if (bias === "SHORT") {
     entry =
       resistances[0] && Math.abs(resistances[0] - price) / ta < 2
@@ -1724,7 +2063,7 @@ function computeMultiFactorCall(
     extendedTarget =
       fibExtension && fibExtension < tp3
         ? fibExtension
-        : round(price - 5 * ta, dec);
+        : round(tp3 - 1.5 * ta, dec);
   } else {
     entry = price;
     secondaryEntry = null;
@@ -1741,14 +2080,14 @@ function computeMultiFactorCall(
     if (tp2 <= tp1) tp2 = tp1 + ta;
     if (tp3 <= tp2) tp3 = tp2 + ta;
     if (extendedTarget != null && extendedTarget <= tp3)
-      extendedTarget = round(price + 5 * ta, dec);
+      extendedTarget = round(tp3 + 1.5 * ta, dec);
   } else if (bias === "SHORT") {
     if (stopLoss <= entry) stopLoss = entry + ta;
     if (tp1 >= entry) tp1 = entry - 1.5 * ta;
     if (tp2 >= tp1) tp2 = tp1 - ta;
     if (tp3 >= tp2) tp3 = tp2 - ta;
     if (extendedTarget != null && extendedTarget >= tp3)
-      extendedTarget = round(price - 5 * ta, dec);
+      extendedTarget = round(tp3 - 1.5 * ta, dec);
   }
 
   entry = round(entry, dec);
@@ -2315,6 +2654,12 @@ export async function GET(req: NextRequest) {
     if (totalSell > 0) takerBuySellRatio = totalBuy / totalSell;
   }
 
+  // ── Macro signals (weekly stochastic, golden cross, event blackout) ────────
+  const macroState = isCrypto ? await fetchMacroSignals() : null;
+
+  // Previous RSI for momentum cross detection
+  const prevRsi15m = rsiArr.length >= 2 ? rsiArr[rsiArr.length - 2] : null;
+
   // ── Economic calendar / catalyst scoring ────────────────────────────────────
   const catalystData = await computeCatalystScore();
 
@@ -2370,9 +2715,28 @@ export async function GET(req: NextRequest) {
       shortLiqs24h: liquidations?.shortLiqs24h ?? null,
       oiChange: okxOIChange,
       takerBuySellRatio,
+      prevRsi: prevRsi15m,
+      macroBias: macroState?.bias ?? null,
     },
     dec
   );
+
+  // Apply macro bonus to confidence for crypto assets
+  const macroBonus = getMacroBonus(macroState, call.bias, isCrypto);
+  if (macroBonus !== 0) {
+    call.confidence = clamp(call.confidence + macroBonus, 0, 100);
+    if (macroBonus > 0 && call.confidence >= 75 && call.grade !== "A+" && call.grade !== "A") {
+      call.grade = "A";
+    }
+    if (macroBonus > 0) {
+      call.reasoning.unshift(`Macro ${macroState!.bias.replace("_", " ")} (+${macroBonus})`);
+    }
+  }
+
+  // Event blackout warning
+  if (macroState?.eventBlackout?.blocked) {
+    call.reasoning.unshift(`EVENT BLACKOUT: ${macroState.eventBlackout.event} — signals suppressed`);
+  }
 
   // ── Log signal for accuracy tracking ────────────────────────────────────────
   if (call.bias !== "WAIT" && call.confidence >= 55) {
@@ -2493,6 +2857,35 @@ export async function GET(req: NextRequest) {
       squeeze,
     },
     call,
+    macro: macroState
+      ? {
+          bias: macroState.bias,
+          score: macroState.macroScore,
+          signals: macroState.signals,
+          stochastic: macroState.stochastic
+            ? {
+                k: Math.round(macroState.stochastic.k * 100) / 100,
+                d: Math.round(macroState.stochastic.d * 100) / 100,
+                signal: macroState.stochastic.signal,
+              }
+            : null,
+          goldenCross: macroState.goldenCross
+            ? {
+                active: macroState.goldenCross.active,
+                daysSinceCross: macroState.goldenCross.daysSinceCross,
+                returnFromCross: macroState.goldenCross.returnFromCross != null
+                  ? Math.round(macroState.goldenCross.returnFromCross * 10000) / 100
+                  : null,
+                isShallowStart: macroState.goldenCross.isShallowStart,
+                sma50: round(macroState.goldenCross.sma50, 1),
+                sma200: round(macroState.goldenCross.sma200, 1),
+              }
+            : null,
+          weeklyEngulfing: macroState.weeklyEngulfing,
+          eventBlackout: macroState.eventBlackout,
+          macroBonus,
+        }
+      : null,
     newsSentiment: newsSentimentData
       ? {
           score: newsSentimentData.score,

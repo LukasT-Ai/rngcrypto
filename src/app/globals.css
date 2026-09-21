@@ -230,3 +230,14 @@
 .tabular-nums {
   font-variant-numeric: lining-nums tabular-nums;
 }
+
+/* Scrolling ticker tape */
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-ticker {
+  animation: ticker-scroll 60s linear infinite;
+}
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }

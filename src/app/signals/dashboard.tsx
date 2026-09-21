@@ -801,31 +801,58 @@ export default function SignalsDashboard() {
           </motion.div>
         )}
 
-        {/* ── Ticker Selector Bar ─────────────────────────────────────── */}
-        <div className="flex flex-wrap gap-2">
-          {TICKERS.map((t) => {
-            const active = t.symbol === symbol
-            const score = hotData?.all?.find((h) => h.symbol === t.symbol)?.confidence ?? null
-            const scoreColor = score != null ? (score >= 75 ? "#00FF88" : score >= 55 ? "#F59E0B" : "#FF3B5C") : undefined
-            return (
-              <button
-                key={t.symbol}
-                onClick={() => setSymbol(t.symbol)}
-                className={cn(
-                  "rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition-all duration-200 border",
-                  active
-                    ? "text-white border-transparent"
-                    : "border-white/10 hover:border-white/20 bg-transparent"
-                )}
-                style={active
-                  ? { backgroundColor: t.color, borderColor: t.color }
-                  : { color: scoreColor ?? "rgba(255,255,255,0.4)" }
-                }
-              >
-                {t.symbol}
-              </button>
-            )
-          })}
+        {/* ── Scrolling Ticker Tape ────────────────────────────────────── */}
+        <div className="relative overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
+          <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-[#06080F] to-transparent z-10 pointer-events-none" />
+          <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-[#06080F] to-transparent z-10 pointer-events-none" />
+          <div className="flex animate-ticker hover:[animation-play-state:paused]">
+            {[...TICKERS, ...TICKERS].map((t, i) => {
+              const isActive = t.symbol === symbol
+              const tickerData = hotData?.all?.find((h) => h.symbol === t.symbol)
+              const score = tickerData?.confidence ?? null
+              const change = tickerData?.change24h ?? null
+              const price = tickerData?.price ?? null
+              const scoreColor = score != null ? (score >= 75 ? "#00FF88" : score >= 55 ? "#F59E0B" : "#FF3B5C") : "rgba(255,255,255,0.3)"
+              return (
+                <button
+                  key={`${t.symbol}-${i}`}
+                  onClick={() => setSymbol(t.symbol)}
+                  className={cn(
+                    "shrink-0 flex items-center gap-2 px-4 py-2.5 border-r border-white/[0.04] transition-all duration-200 hover:bg-white/[0.05]",
+                    isActive && "bg-white/[0.06]"
+                  )}
+                >
+                  <span
+                    className="font-mono text-xs font-black uppercase tracking-wide"
+                    style={{ color: isActive ? t.color : scoreColor }}
+                  >
+                    {t.symbol}
+                  </span>
+                  {price != null && (
+                    <span className="font-mono text-[11px] text-white/60 tabular-nums">
+                      ${fmtPrice(price)}
+                    </span>
+                  )}
+                  {change != null && (
+                    <span className={cn(
+                      "font-mono text-[10px] font-semibold tabular-nums",
+                      change >= 0 ? "text-[#00FF88]" : "text-[#FF3B5C]"
+                    )}>
+                      {change >= 0 ? "+" : ""}{change.toFixed(1)}%
+                    </span>
+                  )}
+                  {score != null && (
+                    <span
+                      className="rounded-full px-1.5 py-0.5 text-[9px] font-black tabular-nums"
+                      style={{ backgroundColor: `${scoreColor}15`, color: scoreColor }}
+                    >
+                      {score}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {isLoading ? (

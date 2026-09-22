@@ -732,72 +732,94 @@ export default function SignalsDashboard() {
                 Hot Plays
               </span>
               <span className="text-[10px] text-white/30">Score 75+</span>
+              {hotData.hot.length > 6 && (
+                <span className="text-[10px] text-white/20 ml-auto">{hotData.hot.length} signals</span>
+              )}
             </div>
-            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
-              {hotData.hot.map((play) => (
-                <button
-                  key={play.symbol}
-                  onClick={() => setSymbol(play.symbol)}
-                  className="shrink-0 rounded-xl border bg-white/[0.02] p-4 transition-all duration-200 hover:bg-white/[0.05] min-w-[220px]"
-                  style={{ borderColor: `${play.color}40` }}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="rounded-full px-2 py-0.5 text-[10px] font-black uppercase"
-                        style={{ backgroundColor: `${play.color}20`, color: play.color }}
+            {(() => {
+              const shouldScroll = hotData.hot.length > 6
+              const plays = shouldScroll ? [...hotData.hot, ...hotData.hot] : hotData.hot
+              return (
+                <div className={cn("relative", shouldScroll && "overflow-hidden")}>
+                  {shouldScroll && (
+                    <>
+                      <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-[#06080F] to-transparent z-10 pointer-events-none" />
+                      <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-[#06080F] to-transparent z-10 pointer-events-none" />
+                    </>
+                  )}
+                  <div
+                    className={cn(
+                      "flex gap-3 pb-2",
+                      shouldScroll ? "animate-hot-scroll hover:[animation-play-state:paused]" : "overflow-x-auto scrollbar-none"
+                    )}
+                  >
+                    {plays.map((play, i) => (
+                      <button
+                        key={`${play.symbol}-${i}`}
+                        onClick={() => setSymbol(play.symbol)}
+                        className="shrink-0 rounded-xl border bg-white/[0.02] p-4 transition-all duration-200 hover:bg-white/[0.05] min-w-[220px]"
+                        style={{ borderColor: `${play.color}40` }}
                       >
-                        {play.symbol}
-                      </span>
-                      <span
-                        className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase flex items-center gap-1"
-                        style={{
-                          backgroundColor: `${dirColor(play.bias)}15`,
-                          color: dirColor(play.bias),
-                        }}
-                      >
-                        {play.bias === "LONG" ? <TrendingUp className="size-3" /> : <TrendingDown className="size-3" />}
-                        {play.bias}
-                      </span>
-                    </div>
-                    <span
-                      className="text-xs font-black"
-                      style={{ color: gradeColor(play.grade) }}
-                    >
-                      {play.grade}
-                    </span>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="rounded-full px-2 py-0.5 text-[10px] font-black uppercase"
+                              style={{ backgroundColor: `${play.color}20`, color: play.color }}
+                            >
+                              {play.symbol}
+                            </span>
+                            <span
+                              className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase flex items-center gap-1"
+                              style={{
+                                backgroundColor: `${dirColor(play.bias)}15`,
+                                color: dirColor(play.bias),
+                              }}
+                            >
+                              {play.bias === "LONG" ? <TrendingUp className="size-3" /> : <TrendingDown className="size-3" />}
+                              {play.bias}
+                            </span>
+                          </div>
+                          <span
+                            className="text-xs font-black"
+                            style={{ color: gradeColor(play.grade) }}
+                          >
+                            {play.grade}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between mb-2">
+                          <span className="font-mono text-lg font-bold text-white tabular-nums">
+                            ${fmtPrice(play.price)}
+                          </span>
+                          <span className={cn("font-mono text-xs font-semibold tabular-nums", play.change24h >= 0 ? "text-[#00FF88]" : "text-[#FF3B5C]")}>
+                            {play.change24h >= 0 ? "+" : ""}{play.change24h.toFixed(2)}%
+                          </span>
+                        </div>
+                        <div className="mb-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] text-white/40">Confidence</span>
+                            <span className="font-mono text-xs font-bold" style={{ color: play.color }}>
+                              {play.confidence}/100
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{ width: `${play.confidence}%`, backgroundColor: play.color }}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-white/40">
+                          <span>R:R 1:{play.riskReward.toFixed(1)}</span>
+                          <span className="flex items-center gap-1" style={{ color: play.color }}>
+                            View <ChevronRight className="size-3" />
+                          </span>
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                  <div className="flex items-baseline justify-between mb-2">
-                    <span className="font-mono text-lg font-bold text-white tabular-nums">
-                      ${fmtPrice(play.price)}
-                    </span>
-                    <span className={cn("font-mono text-xs font-semibold tabular-nums", play.change24h >= 0 ? "text-[#00FF88]" : "text-[#FF3B5C]")}>
-                      {play.change24h >= 0 ? "+" : ""}{play.change24h.toFixed(2)}%
-                    </span>
-                  </div>
-                  <div className="mb-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] text-white/40">Confidence</span>
-                      <span className="font-mono text-xs font-bold" style={{ color: play.color }}>
-                        {play.confidence}/100
-                      </span>
-                    </div>
-                    <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${play.confidence}%`, backgroundColor: play.color }}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-white/40">
-                    <span>R:R 1:{play.riskReward.toFixed(1)}</span>
-                    <span className="flex items-center gap-1" style={{ color: play.color }}>
-                      View <ChevronRight className="size-3" />
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
+                </div>
+              )
+            })()}
           </motion.div>
         )}
 

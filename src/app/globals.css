@@ -230,3 +230,14 @@
 .tabular-nums {
   font-variant-numeric: lining-nums tabular-nums;
 }
+
+/* Hot plays auto-scroll when >6 cards */
+@keyframes hot-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-hot-scroll {
+  animation: hot-scroll 40s linear infinite;
+}
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }

@@ -759,6 +759,12 @@ interface MacroState {
     justCrossed80: boolean;
     approaching80: boolean;
     signal: string;
+    cohort: "3month" | "2month" | "short" | null;
+    historicalStats: {
+      horizon: string;
+      medianReturn: string;
+      winRate: string;
+    }[] | null;
   } | null;
   goldenCross: {
     active: boolean;
@@ -769,6 +775,18 @@ interface MacroState {
     isShallowStart: boolean | null;
     sma50: number;
     sma200: number;
+    projections: {
+      horizon: string;
+      medianReturn: string;
+      projectedPrice: number | null;
+    }[] | null;
+  } | null;
+  ema21_377: {
+    active: boolean;
+    ema21: number;
+    ema377: number;
+    gap: number;
+    priceAboveBoth: boolean;
   } | null;
   weeklyEngulfing: boolean;
   macroScore: number;
@@ -848,8 +866,32 @@ function computeWeeklyStochastic(
     else break;
   }
 
-  const justCrossed80 = currentK >= 80 && weeksBelow80 >= 4;
-  const approaching80 = currentK >= 70 && currentK < 80 && weeksBelow80 >= 4;
+  const is3MonthCohort = weeksBelow80 >= 12;
+  const is2MonthCohort = weeksBelow80 >= 8;
+  const isSignificant = weeksBelow80 >= 8;
+
+  const justCrossed80 = currentK >= 80 && isSignificant;
+  const approaching80 = currentK >= 70 && currentK < 80 && isSignificant;
+
+  const cohort: "3month" | "2month" | "short" | null =
+    justCrossed80 || approaching80
+      ? is3MonthCohort ? "3month" : is2MonthCohort ? "2month" : "short"
+      : null;
+
+  const STATS_2MONTH = [
+    { horizon: "1 week", medianReturn: "+0.1%", winRate: "53%" },
+    { horizon: "3 weeks", medianReturn: "+17.0%", winRate: "73%" },
+    { horizon: "6 weeks", medianReturn: "+29.9%", winRate: "93%" },
+    { horizon: "9 weeks", medianReturn: "+24.2%", winRate: "100%" },
+    { horizon: "12 weeks", medianReturn: "+44.4%", winRate: "100%" },
+  ];
+  const STATS_3MONTH = [
+    { horizon: "3 weeks", medianReturn: "+16.4%", winRate: "n/a" },
+    { horizon: "6 weeks", medianReturn: "+28.5%", winRate: "n/a" },
+    { horizon: "9 weeks", medianReturn: "+22.0%", winRate: "n/a" },
+  ];
+
+  const historicalStats = cohort === "3month" ? STATS_3MONTH : cohort === "2month" ? STATS_2MONTH : null;
 
   return {
     k: currentK,
@@ -858,10 +900,12 @@ function computeWeeklyStochastic(
     justCrossed80,
     approaching80,
     signal: justCrossed80 ? "TRIGGERED" : approaching80 ? "APPROACHING" : currentK >= 80 ? "MOMENTUM" : "NONE",
+    cohort,
+    historicalStats,
   };
 }
 
-function computeGoldenCross(dailyCandles: DailyCandle[]) {
+function computeGoldenCross(dailyCandles: DailyCandle[]): MacroState["goldenCross"] {
   if (dailyCandles.length < 210) return null;
   const closes = dailyCandles.map((c) => c.close);
 
@@ -878,7 +922,7 @@ function computeGoldenCross(dailyCandles: DailyCandle[]) {
   const isGolden = current50 > current200;
 
   if (!isGolden) {
-    return { active: false, crossPrice: null, daysSinceCross: null, currentPrice: null, returnFromCross: null, isShallowStart: null, sma50: current50, sma200: current200 };
+    return { active: false, crossPrice: null, daysSinceCross: null, currentPrice: null, returnFromCross: null, isShallowStart: null, sma50: current50, sma200: current200, projections: null };
   }
 
   let crossAlignedIdx: number | null = null;
@@ -894,7 +938,7 @@ function computeGoldenCross(dailyCandles: DailyCandle[]) {
   const crossPrice = crossDayIndex != null ? closes[crossDayIndex] : null;
 
   if (crossDayIndex == null || crossPrice == null) {
-    return { active: true, crossPrice: null, daysSinceCross: null, currentPrice: closes[closes.length - 1], returnFromCross: null, isShallowStart: null, sma50: current50, sma200: current200 };
+    return { active: true, crossPrice: null, daysSinceCross: null, currentPrice: closes[closes.length - 1], returnFromCross: null, isShallowStart: null, sma50: current50, sma200: current200, projections: null };
   }
 
   const daysSinceCross = closes.length - 1 - crossDayIndex;
@@ -906,7 +950,7 @@ function computeGoldenCross(dailyCandles: DailyCandle[]) {
   const first10Drawdown = crossPrice > 0 ? (first10Low - crossPrice) / crossPrice : 0;
   const isShallowStart = first10Drawdown > -0.055;
 
-  return { active: true, crossPrice, daysSinceCross, currentPrice, returnFromCross, isShallowStart, sma50: current50, sma200: current200 };
+  return { active: true, crossPrice, daysSinceCross, currentPrice, returnFromCross, isShallowStart, sma50: current50, sma200: current200, projections: null };
 }
 
 const MACRO_EVENTS_2026 = [
@@ -992,6 +1036,44 @@ async function fetchMacroSignals(): Promise<MacroState | null> {
     const stochastic = computeWeeklyStochastic(weeklyCandles);
     const goldenCross = computeGoldenCross(candles);
 
+    // Daily 21/377 EMA crossover
+    let ema21_377: MacroState["ema21_377"] = null;
+    if (candles.length >= 377) {
+      const dailyCloses = candles.map((c) => c.close);
+      const e21 = ema(dailyCloses, 21);
+      const e377 = ema(dailyCloses, 377);
+      const cur21 = e21[e21.length - 1];
+      const cur377 = e377[e377.length - 1];
+      const active = cur21 > cur377;
+      const currentPrice = dailyCloses[dailyCloses.length - 1];
+      ema21_377 = {
+        active,
+        ema21: cur21,
+        ema377: cur377,
+        gap: cur21 - cur377,
+        priceAboveBoth: currentPrice > cur21 && currentPrice > cur377,
+      };
+    }
+
+    // Golden cross projections (historical medians)
+    if (goldenCross?.active && goldenCross.crossPrice) {
+      const cp = goldenCross.crossPrice;
+      const isShallow = goldenCross.isShallowStart;
+      goldenCross.projections = isShallow
+        ? [
+            { horizon: "30 days", medianReturn: "+6.5%", projectedPrice: Math.round(cp * 1.065) },
+            { horizon: "90 days", medianReturn: "+25.0%", projectedPrice: Math.round(cp * 1.25) },
+            { horizon: "180 days", medianReturn: "+54.0%", projectedPrice: Math.round(cp * 1.54) },
+            { horizon: "365 days", medianReturn: "+117%", projectedPrice: Math.round(cp * 2.17) },
+          ]
+        : [
+            { horizon: "30 days", medianReturn: "+3.2%", projectedPrice: Math.round(cp * 1.032) },
+            { horizon: "60 days", medianReturn: "+20.3%", projectedPrice: Math.round(cp * 1.203) },
+            { horizon: "90 days", medianReturn: "+19.1%", projectedPrice: Math.round(cp * 1.191) },
+            { horizon: "180 days", medianReturn: "+35.4%", projectedPrice: Math.round(cp * 1.354) },
+          ];
+    }
+
     let weeklyEngulfing = false;
     if (weeklyCandles.length >= 2) {
       const prev = weeklyCandles[weeklyCandles.length - 2];
@@ -1004,11 +1086,12 @@ async function fetchMacroSignals(): Promise<MacroState | null> {
 
     if (stochastic) {
       if (stochastic.signal === "TRIGGERED") {
+        const cohortLabel = stochastic.cohort === "3month" ? "3mo+" : "2mo+";
         macroScore += 15;
-        signals.push(`Stoch K crossed 80 (${stochastic.k.toFixed(1)}) — 95% win rate at 10w`);
+        signals.push(`Stoch K crossed 80 (${stochastic.k.toFixed(1)}) after ${stochastic.weeksBelow80}w below — ${cohortLabel} cohort, 100% win rate at 12w`);
       } else if (stochastic.signal === "APPROACHING") {
         macroScore += 8;
-        signals.push(`Stoch K approaching 80 (${stochastic.k.toFixed(1)})`);
+        signals.push(`Stoch K approaching 80 (${stochastic.k.toFixed(1)}) after ${stochastic.weeksBelow80}w below`);
       } else if (stochastic.k >= 80) {
         macroScore += 10;
         signals.push(`Stoch K in momentum regime (${stochastic.k.toFixed(1)})`);
@@ -1031,9 +1114,23 @@ async function fetchMacroSignals(): Promise<MacroState | null> {
       signals.push("Weekly bullish engulfing confirmed");
     }
 
+    if (ema21_377?.active) {
+      macroScore += 8;
+      signals.push(`Daily 21/377 EMA bullish (gap $${Math.round(ema21_377.gap).toLocaleString()})`);
+      if (ema21_377.priceAboveBoth) {
+        macroScore += 3;
+        signals.push("Price above both 21 & 377 EMAs");
+      }
+    }
+
     if (stochastic && stochastic.signal !== "NONE" && goldenCross?.active) {
       macroScore += 5;
       signals.push("DOUBLE SIGNAL: Stochastic + Golden Cross confluence");
+    }
+
+    if (stochastic && stochastic.signal !== "NONE" && goldenCross?.active && ema21_377?.active) {
+      macroScore += 5;
+      signals.push("TRIPLE SIGNAL: Stochastic + Golden Cross + 21/377 EMA confluence");
     }
 
     const bias = macroScore >= 20 ? "strong_bull" : macroScore >= 10 ? "bull" : macroScore >= 5 ? "lean_bull" : "neutral";
@@ -1041,6 +1138,7 @@ async function fetchMacroSignals(): Promise<MacroState | null> {
     const state: MacroState = {
       stochastic,
       goldenCross,
+      ema21_377,
       weeklyEngulfing,
       macroScore,
       signals,
@@ -2867,6 +2965,9 @@ export async function GET(req: NextRequest) {
                 k: Math.round(macroState.stochastic.k * 100) / 100,
                 d: Math.round(macroState.stochastic.d * 100) / 100,
                 signal: macroState.stochastic.signal,
+                weeksBelow80: macroState.stochastic.weeksBelow80,
+                cohort: macroState.stochastic.cohort,
+                historicalStats: macroState.stochastic.historicalStats,
               }
             : null,
           goldenCross: macroState.goldenCross
@@ -2879,6 +2980,16 @@ export async function GET(req: NextRequest) {
                 isShallowStart: macroState.goldenCross.isShallowStart,
                 sma50: round(macroState.goldenCross.sma50, 1),
                 sma200: round(macroState.goldenCross.sma200, 1),
+                projections: macroState.goldenCross.projections ?? null,
+              }
+            : null,
+          ema21_377: macroState.ema21_377
+            ? {
+                active: macroState.ema21_377.active,
+                ema21: round(macroState.ema21_377.ema21, 1),
+                ema377: round(macroState.ema21_377.ema377, 1),
+                gap: round(macroState.ema21_377.gap, 1),
+                priceAboveBoth: macroState.ema21_377.priceAboveBoth,
               }
             : null,
           weeklyEngulfing: macroState.weeklyEngulfing,

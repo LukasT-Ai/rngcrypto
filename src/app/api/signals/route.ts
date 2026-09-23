@@ -2121,6 +2121,7 @@ function computeMultiFactorCall(
   let entry: number;
   let secondaryEntry: number | null;
   let stopLoss: number;
+  let secondaryStopLoss: number | null;
   let tp1: number;
   let tp2: number;
   let tp3: number;
@@ -2135,6 +2136,15 @@ function computeMultiFactorCall(
       secondSupport !== entry ? round(secondSupport, dec) : null;
     stopLoss = nearestSupport - 0.5 * ta;
     if (Math.abs(entry - stopLoss) < minDist) stopLoss = entry - ta;
+
+    if (secondaryEntry != null) {
+      const thirdSupport = supports[2] ?? secondaryEntry - 1.5 * ta;
+      secondaryStopLoss = thirdSupport - 0.5 * ta;
+      if (secondaryStopLoss >= secondaryEntry) secondaryStopLoss = secondaryEntry - ta;
+      if (Math.abs(secondaryEntry - secondaryStopLoss) < minDist) secondaryStopLoss = secondaryEntry - ta;
+    } else {
+      secondaryStopLoss = null;
+    }
 
     tp1 = resistances[0] ?? price + 1.5 * ta;
     if (Math.abs(tp1 - entry) < minDist) tp1 = entry + 1.5 * ta;
@@ -2154,6 +2164,15 @@ function computeMultiFactorCall(
     stopLoss = nearestResistance + 0.5 * ta;
     if (Math.abs(stopLoss - entry) < minDist) stopLoss = entry + ta;
 
+    if (secondaryEntry != null) {
+      const thirdResistance = resistances[2] ?? secondaryEntry + 1.5 * ta;
+      secondaryStopLoss = thirdResistance + 0.5 * ta;
+      if (secondaryStopLoss <= secondaryEntry) secondaryStopLoss = secondaryEntry + ta;
+      if (Math.abs(secondaryStopLoss - secondaryEntry) < minDist) secondaryStopLoss = secondaryEntry + ta;
+    } else {
+      secondaryStopLoss = null;
+    }
+
     tp1 = supports[0] ?? price - 1.5 * ta;
     if (Math.abs(entry - tp1) < minDist) tp1 = entry - 1.5 * ta;
     tp2 = supports[1] && supports[1] < tp1 ? supports[1] : tp1 - ta;
@@ -2165,6 +2184,7 @@ function computeMultiFactorCall(
   } else {
     entry = price;
     secondaryEntry = null;
+    secondaryStopLoss = null;
     stopLoss = price - 1.5 * ta;
     tp1 = price + 1.5 * ta;
     tp2 = price + 2.5 * ta;
@@ -2174,6 +2194,8 @@ function computeMultiFactorCall(
 
   if (bias === "LONG") {
     if (stopLoss >= entry) stopLoss = entry - ta;
+    if (secondaryStopLoss != null && secondaryEntry != null && secondaryStopLoss >= secondaryEntry)
+      secondaryStopLoss = secondaryEntry - ta;
     if (tp1 <= entry) tp1 = entry + 1.5 * ta;
     if (tp2 <= tp1) tp2 = tp1 + ta;
     if (tp3 <= tp2) tp3 = tp2 + ta;
@@ -2181,6 +2203,8 @@ function computeMultiFactorCall(
       extendedTarget = round(tp3 + 1.5 * ta, dec);
   } else if (bias === "SHORT") {
     if (stopLoss <= entry) stopLoss = entry + ta;
+    if (secondaryStopLoss != null && secondaryEntry != null && secondaryStopLoss <= secondaryEntry)
+      secondaryStopLoss = secondaryEntry + ta;
     if (tp1 >= entry) tp1 = entry - 1.5 * ta;
     if (tp2 >= tp1) tp2 = tp1 - ta;
     if (tp3 >= tp2) tp3 = tp2 - ta;
@@ -2190,6 +2214,7 @@ function computeMultiFactorCall(
 
   entry = round(entry, dec);
   stopLoss = round(stopLoss, dec);
+  if (secondaryStopLoss != null) secondaryStopLoss = round(secondaryStopLoss, dec);
   tp1 = round(tp1, dec);
   tp2 = round(tp2, dec);
   tp3 = round(tp3, dec);
@@ -2284,6 +2309,7 @@ function computeMultiFactorCall(
     entry,
     secondaryEntry,
     stopLoss,
+    secondaryStopLoss,
     tp1,
     tp2,
     tp3,

@@ -160,6 +160,7 @@ interface SignalsResponse {
     entry: number
     secondaryEntry: number | null
     stopLoss: number
+    secondaryStopLoss: number | null
     tp1: number
     tp2: number
     tp3: number
@@ -1058,6 +1059,9 @@ export default function SignalsDashboard() {
                       <PriceLevel label="Secondary Entry" price={call.secondaryEntry} color="#D97706" icon={Target} dp={dp} />
                     )}
                     <PriceLevel label="Stop Loss" price={call.stopLoss} color="#FF3B5C" icon={Shield} dp={dp} />
+                    {call.secondaryStopLoss != null && (
+                      <PriceLevel label="Secondary SL" price={call.secondaryStopLoss} color="#CC2244" icon={Shield} dp={dp} />
+                    )}
                     <PriceLevel label="TP1" price={call.tp1} color="#00FF88" icon={ArrowUpRight} dp={dp} />
                     <PriceLevel label="TP2" price={call.tp2} color="#00CC6A" icon={ArrowUpRight} dp={dp} />
                     <PriceLevel label="TP3" price={call.tp3} color="#00AA55" icon={ArrowUpRight} dp={dp} />

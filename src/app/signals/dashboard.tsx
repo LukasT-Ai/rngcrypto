@@ -271,6 +271,16 @@ interface MarketMapResponse {
     direction: "bullish" | "bearish" | null
     details: { rsi1h: number | null; rsi4h: number | null; rsi1d: number | null; conflict?: string }
   } | null
+  signal: {
+    bias: "LONG" | "SHORT" | "WAIT"
+    conviction: number
+    grade: "A+" | "A" | "B" | "C" | "NO TRADE"
+    rawScore: number
+    factors: { module: string; score: number; weight: number; note: string }[]
+    reasoning: string[]
+    activeSignals: number
+    totalModules: number
+  }
   generatedAt: string
 }
 
@@ -1300,6 +1310,125 @@ export default function SignalsDashboard() {
                   </h2>
                   <span className="text-[10px] text-white/20">Daily Structure Analysis</span>
                 </div>
+
+                {/* ── Signal Recommendation Card ──────────────────────────── */}
+                {mapData.signal && (
+                  <motion.div
+                    {...fadeUp}
+                    className="relative rounded-xl overflow-hidden mb-4"
+                    style={{
+                      background: `linear-gradient(135deg, ${dirColor(mapData.signal.bias)}06 0%, transparent 60%)`,
+                      border: `1px solid ${dirColor(mapData.signal.bias)}30`,
+                    }}
+                  >
+                    <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: dirColor(mapData.signal.bias) }} />
+                    <div className="p-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="flex items-center gap-2 rounded-lg px-4 py-2 text-base font-black uppercase"
+                            style={{ backgroundColor: `${dirColor(mapData.signal.bias)}15`, color: dirColor(mapData.signal.bias) }}
+                          >
+                            {mapData.signal.bias === "LONG" ? (
+                              <TrendingUp className="size-5" />
+                            ) : mapData.signal.bias === "SHORT" ? (
+                              <TrendingDown className="size-5" />
+                            ) : (
+                              <Minus className="size-5" />
+                            )}
+                            MAP: {mapData.signal.bias}
+                          </div>
+                          <div
+                            className="rounded-lg px-3 py-2 text-sm font-black uppercase"
+                            style={{ backgroundColor: `${gradeColor(mapData.signal.grade)}15`, color: gradeColor(mapData.signal.grade) }}
+                          >
+                            {mapData.signal.grade}
+                          </div>
+                          <span className="text-[10px] text-white/30">
+                            {mapData.signal.activeSignals}/{mapData.signal.totalModules} modules active
+                          </span>
+                        </div>
+
+                        <div className="w-full sm:w-44">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] uppercase tracking-wider text-white/40">Conviction</span>
+                            <span className="font-mono text-sm font-bold" style={{ color: dirColor(mapData.signal.bias) }}>
+                              {mapData.signal.conviction}/100
+                            </span>
+                          </div>
+                          <div className="h-2 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{ width: `${mapData.signal.conviction}%`, backgroundColor: dirColor(mapData.signal.bias) }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Score meter: visual -100 to +100 */}
+                      <div className="mb-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] text-[#FF3B5C] font-bold">SHORT</span>
+                          <span className="text-[10px] text-white/20">0</span>
+                          <span className="text-[10px] text-[#00FF88] font-bold">LONG</span>
+                        </div>
+                        <div className="relative h-3 w-full rounded-full overflow-hidden" style={{ background: "linear-gradient(90deg, #FF3B5C20 0%, #FF3B5C05 45%, transparent 50%, #00FF8805 55%, #00FF8820 100%)" }}>
+                          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/10" />
+                          <div
+                            className="absolute top-0 bottom-0 w-3 rounded-full transition-all duration-500"
+                            style={{
+                              left: `calc(${50 + mapData.signal.rawScore / 2}% - 6px)`,
+                              backgroundColor: mapData.signal.rawScore > 0 ? "#00FF88" : mapData.signal.rawScore < 0 ? "#FF3B5C" : "#6B7280",
+                              boxShadow: `0 0 8px ${mapData.signal.rawScore > 0 ? "#00FF8880" : mapData.signal.rawScore < 0 ? "#FF3B5C80" : "transparent"}`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Module factor bars */}
+                      <div className="space-y-1.5 mb-4">
+                        {mapData.signal.factors.map((f, i) => {
+                          const barColor = f.score > 10 ? "#00FF88" : f.score < -10 ? "#FF3B5C" : "#6B7280";
+                          const barWidth = Math.abs(f.score);
+                          const isPositive = f.score >= 0;
+                          return (
+                            <div key={i} className="flex items-center gap-2">
+                              <span className="text-[10px] text-white/40 w-28 shrink-0 truncate">{f.module}</span>
+                              <div className="flex-1 flex items-center">
+                                <div className="relative w-full h-1.5 rounded-full bg-white/[0.04]">
+                                  <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/[0.06]" />
+                                  <div
+                                    className="absolute top-0 bottom-0 rounded-full transition-all duration-500"
+                                    style={{
+                                      left: isPositive ? "50%" : `${50 - barWidth / 2}%`,
+                                      width: `${barWidth / 2}%`,
+                                      backgroundColor: barColor,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="font-mono text-[10px] font-bold w-8 text-right" style={{ color: barColor }}>
+                                {f.score > 0 ? "+" : ""}{f.score}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Reasoning */}
+                      {mapData.signal.reasoning.length > 0 && (
+                        <div className="space-y-1">
+                          {mapData.signal.reasoning.map((r, i) => (
+                            <div key={i} className="flex items-start gap-2 text-xs text-white/50">
+                              <span className="mt-1.5 h-1 w-1 rounded-full shrink-0" style={{ backgroundColor: dirColor(mapData.signal.bias) }} />
+                              {r}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 

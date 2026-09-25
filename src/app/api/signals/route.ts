@@ -509,9 +509,10 @@ function analyzeVolume(candles: Candle[]): {
   ratio: number;
   trend: string;
   cvd: number;
+  available: boolean;
 } {
   if (candles.length < 2)
-    return { current: 0, average: 0, ratio: 1, trend: "neutral", cvd: 0 };
+    return { current: 0, average: 0, ratio: 1, trend: "neutral", cvd: 0, available: false };
 
   const lastCandle = candles[candles.length - 1];
   const current = lastCandle.volume;
@@ -519,7 +520,13 @@ function analyzeVolume(candles: Candle[]): {
   const lookback = Math.min(50, candles.length);
   const recentCandles = candles.slice(-lookback);
   const volumes = recentCandles.map((c) => c.volume);
-  const average = volumes.reduce((s, v) => s + v, 0) / volumes.length;
+  const totalVol = volumes.reduce((s, v) => s + v, 0);
+
+  if (totalVol === 0) {
+    return { current: 0, average: 0, ratio: 1, trend: "unavailable", cvd: 0, available: false };
+  }
+
+  const average = totalVol / volumes.length;
   const ratio = average > 0 ? current / average : 1;
 
   const halfLen = Math.floor(lookback / 2);
@@ -551,6 +558,7 @@ function analyzeVolume(candles: Candle[]): {
     ratio: Math.round(ratio * 100) / 100,
     trend,
     cvd: round(cvd, 2),
+    available: true,
   };
 }
 
@@ -1321,10 +1329,16 @@ function scoreMomentum(
 function scoreVolume(
   volRatio: number,
   volTrend: string,
-  cvd: number
+  cvd: number,
+  available: boolean
 ): { score: number; notes: string[] } {
   let score = 0;
   const notes: string[] = [];
+
+  if (!available) {
+    notes.push("Volume data unavailable for this ticker");
+    return { score: 0, notes };
+  }
 
   if (volRatio > 1.5) {
     notes.push(`Volume ${volRatio.toFixed(1)}x above average`);
@@ -1790,6 +1804,7 @@ function computeMultiFactorCall(
       ratio: number;
       trend: string;
       cvd: number;
+      available: boolean;
     };
     isCrypto: boolean;
     newsSentimentScore: number | null;
@@ -1907,7 +1922,7 @@ function computeMultiFactorCall(
     atr
   );
   const mom = scoreMomentum(rsi, macdHist, stochRsi.k, stochRsi.d, rsi5m, prevRsi, macroBias, trendDir15m);
-  const vol = scoreVolume(volData.ratio, volData.trend, volData.cvd);
+  const vol = scoreVolume(volData.ratio, volData.trend, volData.cvd, volData.available);
   const deriv = scoreDerivatives(fundingRate, putCallRatio);
   const htf = scoreHTF(trend1h, rsi1h, trend4h, rsi4h, trendDaily, rsiDaily);
   const boll = scoreBollinger(

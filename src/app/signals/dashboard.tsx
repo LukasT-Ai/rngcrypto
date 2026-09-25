@@ -193,6 +193,87 @@ interface SignalsResponse {
   candles: { time: number; open: number; high: number; low: number; close: number }[]
 }
 
+// Market Map types
+interface MarketMapResponse {
+  ema5Disconnect: {
+    price: number
+    ema5: number
+    deviation: number
+    deviationATR: number
+    side: "above" | "below" | "at"
+    isDisconnected: boolean
+    daysSinceReconnect: number
+    reconnectWindow: { total: number; pct3day: number; pct5day: number; pct7day: number }
+    signal: { direction: "long" | "short"; reason: string; targetPrice: number } | null
+  } | null
+  ema5xSma200: {
+    ema5: number
+    sma200: number
+    smaPeriod: number
+    price: number
+    isAbove: boolean
+    freshCross: boolean
+    crossType: "bullish" | "bearish" | null
+    daysSinceCross: number
+    ema5Slope: number
+    sma200Slope: number
+    totalCrossovers: number
+    recentCrossovers: { type: "bullish" | "bearish"; fwdReturn5: number | null; fwdReturn10: number | null }[]
+  } | null
+  rsiStructure: {
+    daily: {
+      currentRSI: number
+      rsiTrend: "bullish" | "bearish" | "neutral"
+      swingHighs: { value: number; barsAgo: number }[]
+      swingLows: { value: number; barsAgo: number }[]
+      consecutiveHH: number; consecutiveHL: number
+      consecutiveLH: number; consecutiveLL: number
+      pullbacksHoldAbove50: boolean
+      ralliesFailBelow50: boolean
+      trendline: {
+        support: { slope: number; projected: number } | null
+        resistance: { slope: number; projected: number } | null
+        breakDetected: boolean
+        breakType: "support_break" | "resistance_break" | null
+      } | null
+      divergence: { type: "bullish" | "bearish" | null; description: string | null }
+    } | null
+    h4: { currentRSI: number; rsiTrend: string } | null
+    h1: { currentRSI: number; rsiTrend: string } | null
+  }
+  ema21Bounce: {
+    price: number
+    ema21: number
+    distancePct: number
+    distanceATR: number
+    isAbove: boolean
+    slopeRising: boolean
+    recentBounce: boolean
+    bounceType: "support_bounce" | "resistance_bounce" | null
+    bounceBar: number | null
+    invalidation: boolean
+    invalidationType: "bullish_invalidated" | "bearish_invalidated" | null
+    bounceSuccessRate: number | null
+    bounceSampleSize: number
+  } | null
+  bounceProbabilities: {
+    currentPrice: number
+    rsiZone: string
+    ema5Side: string
+    sma200Side: string | null
+    windows: Record<string, {
+      all: { sampleSize: number; positivePct: number; avgReturn: number; medianReturn: number } | null
+      conditioned: { sampleSize: number; positivePct: number; avgReturn: number; medianReturn: number } | null
+    }>
+  } | null
+  rsiAlignment: {
+    aligned: boolean
+    direction: "bullish" | "bearish" | null
+    details: { rsi1h: number | null; rsi4h: number | null; rsi1d: number | null; conflict?: string }
+  } | null
+  generatedAt: string
+}
+
 interface HotPlay {
   symbol: string
   label: string
@@ -682,6 +763,16 @@ export default function SignalsDashboard() {
     },
     refetchInterval: 60_000,
     refetchIntervalInBackground: true,
+  })
+
+  const { data: mapData } = useQuery<MarketMapResponse>({
+    queryKey: ["market-map", symbol],
+    queryFn: async () => {
+      const res = await fetch(`/api/signals/market-map?symbol=${symbol}`)
+      if (!res.ok) throw new Error(`API error: ${res.status}`)
+      return res.json()
+    },
+    refetchInterval: 120_000,
   })
 
   const { data: historyData } = useQuery<HistoryResponse>({
@@ -1196,6 +1287,374 @@ export default function SignalsDashboard() {
                     <span className="text-sm font-semibold" style={{ color: accent }}>{pats.candlestick}</span>
                   </div>
                 )}
+              </motion.div>
+            )}
+
+            {/* ── 6b. Market Map ──────────────────────────────────────── */}
+            {mapData && (
+              <motion.div {...fadeUp}>
+                <div className="flex items-center gap-2 mb-4">
+                  <Activity className="size-4" style={{ color: accent }} />
+                  <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
+                    Market Map
+                  </h2>
+                  <span className="text-[10px] text-white/20">Daily Structure Analysis</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                  {/* EMA5 Disconnect */}
+                  {mapData.ema5Disconnect && (
+                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold uppercase tracking-wider text-white/40">EMA5 Disconnect</span>
+                        {mapData.ema5Disconnect.isDisconnected && (
+                          <span
+                            className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase animate-pulse"
+                            style={{
+                              backgroundColor: mapData.ema5Disconnect.side === "below" ? "#00FF8815" : "#FF3B5C15",
+                              color: mapData.ema5Disconnect.side === "below" ? "#00FF88" : "#FF3B5C",
+                            }}
+                          >
+                            {mapData.ema5Disconnect.signal?.direction === "long" ? "MEAN REVERT LONG" : "MEAN REVERT SHORT"}
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/40">Deviation</span>
+                          <span
+                            className="font-mono text-sm font-bold"
+                            style={{ color: Math.abs(mapData.ema5Disconnect.deviationATR) >= 1.5 ? (mapData.ema5Disconnect.side === "below" ? "#00FF88" : "#FF3B5C") : accent }}
+                          >
+                            {mapData.ema5Disconnect.deviation > 0 ? "+" : ""}{mapData.ema5Disconnect.deviation.toFixed(2)}%
+                            <span className="text-white/30 text-[10px] ml-1">({Math.abs(mapData.ema5Disconnect.deviationATR).toFixed(1)} ATR)</span>
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/40">EMA5</span>
+                          <span className="font-mono text-xs text-white/60">${fmtPrice(mapData.ema5Disconnect.ema5)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/40">Days since reconnect</span>
+                          <span className="font-mono text-xs text-white/60">{mapData.ema5Disconnect.daysSinceReconnect}</span>
+                        </div>
+                        {mapData.ema5Disconnect.reconnectWindow.total > 0 && (
+                          <div className="mt-2 pt-2 border-t border-white/[0.04]">
+                            <span className="text-[10px] text-white/30 uppercase tracking-wider">Reconnect Probability</span>
+                            <div className="flex gap-3 mt-1">
+                              {[
+                                { label: "3d", pct: mapData.ema5Disconnect.reconnectWindow.pct3day },
+                                { label: "5d", pct: mapData.ema5Disconnect.reconnectWindow.pct5day },
+                                { label: "7d", pct: mapData.ema5Disconnect.reconnectWindow.pct7day },
+                              ].map(({ label, pct }) => (
+                                <div key={label} className="text-center">
+                                  <span className="font-mono text-sm font-bold" style={{ color: pct >= 70 ? "#00FF88" : pct >= 50 ? "#F59E0B" : "#FF3B5C" }}>
+                                    {pct}%
+                                  </span>
+                                  <span className="block text-[9px] text-white/30">{label}</span>
+                                </div>
+                              ))}
+                              <span className="text-[9px] text-white/20 self-end">n={mapData.ema5Disconnect.reconnectWindow.total}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* EMA5 × SMA200 Crossover */}
+                  {mapData.ema5xSma200 && (
+                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold uppercase tracking-wider text-white/40">EMA5 × SMA{mapData.ema5xSma200.smaPeriod}</span>
+                        {mapData.ema5xSma200.freshCross && (
+                          <span
+                            className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase animate-pulse"
+                            style={{
+                              backgroundColor: mapData.ema5xSma200.crossType === "bullish" ? "#00FF8815" : "#FF3B5C15",
+                              color: mapData.ema5xSma200.crossType === "bullish" ? "#00FF88" : "#FF3B5C",
+                            }}
+                          >
+                            FRESH {mapData.ema5xSma200.crossType} CROSS
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/40">Position</span>
+                          <span
+                            className="text-xs font-bold"
+                            style={{ color: mapData.ema5xSma200.isAbove ? "#00FF88" : "#FF3B5C" }}
+                          >
+                            EMA5 {mapData.ema5xSma200.isAbove ? "Above" : "Below"} SMA{mapData.ema5xSma200.smaPeriod}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/40">Last Cross</span>
+                          <span className="font-mono text-xs text-white/60">
+                            {mapData.ema5xSma200.crossType ? `${mapData.ema5xSma200.crossType} ${mapData.ema5xSma200.daysSinceCross}d ago` : "None found"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/40">EMA5 Slope</span>
+                          <span className="font-mono text-xs" style={{ color: mapData.ema5xSma200.ema5Slope > 0 ? "#00FF88" : "#FF3B5C" }}>
+                            {mapData.ema5xSma200.ema5Slope > 0 ? "+" : ""}{mapData.ema5xSma200.ema5Slope.toFixed(3)}%
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/40">Total Crosses</span>
+                          <span className="font-mono text-xs text-white/60">{mapData.ema5xSma200.totalCrossovers}</span>
+                        </div>
+                        {mapData.ema5xSma200.recentCrossovers.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-white/[0.04]">
+                            <span className="text-[10px] text-white/30 uppercase tracking-wider">Recent Cross Returns</span>
+                            <div className="space-y-1 mt-1">
+                              {mapData.ema5xSma200.recentCrossovers.slice(-3).map((cross, i) => (
+                                <div key={i} className="flex items-center gap-2 text-[10px]">
+                                  <span
+                                    className="rounded-full px-1.5 py-0.5 font-bold uppercase"
+                                    style={{
+                                      backgroundColor: cross.type === "bullish" ? "#00FF8810" : "#FF3B5C10",
+                                      color: cross.type === "bullish" ? "#00FF88" : "#FF3B5C",
+                                    }}
+                                  >
+                                    {cross.type === "bullish" ? "Bull" : "Bear"}
+                                  </span>
+                                  {cross.fwdReturn5 != null && (
+                                    <span className="font-mono" style={{ color: cross.fwdReturn5 > 0 ? "#00FF88" : "#FF3B5C" }}>
+                                      5d: {cross.fwdReturn5 > 0 ? "+" : ""}{cross.fwdReturn5.toFixed(1)}%
+                                    </span>
+                                  )}
+                                  {cross.fwdReturn10 != null && (
+                                    <span className="font-mono" style={{ color: cross.fwdReturn10 > 0 ? "#00FF88" : "#FF3B5C" }}>
+                                      10d: {cross.fwdReturn10 > 0 ? "+" : ""}{cross.fwdReturn10.toFixed(1)}%
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* RSI Structure (Daily) */}
+                  {mapData.rsiStructure.daily && (
+                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold uppercase tracking-wider text-white/40">RSI Structure</span>
+                        <span
+                          className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
+                          style={{
+                            backgroundColor: mapData.rsiStructure.daily.rsiTrend === "bullish" ? "#00FF8815" : mapData.rsiStructure.daily.rsiTrend === "bearish" ? "#FF3B5C15" : `${accent}15`,
+                            color: mapData.rsiStructure.daily.rsiTrend === "bullish" ? "#00FF88" : mapData.rsiStructure.daily.rsiTrend === "bearish" ? "#FF3B5C" : accent,
+                          }}
+                        >
+                          {mapData.rsiStructure.daily.rsiTrend}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/40">Daily RSI</span>
+                          <span className="font-mono text-lg font-bold" style={{ color: mapData.rsiStructure.daily.currentRSI < 30 ? "#00FF88" : mapData.rsiStructure.daily.currentRSI > 70 ? "#FF3B5C" : accent }}>
+                            {mapData.rsiStructure.daily.currentRSI.toFixed(1)}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="text-center rounded-lg bg-white/[0.02] p-2">
+                            <span className="text-[10px] text-white/30">HH / HL</span>
+                            <p className="font-mono text-xs font-bold text-[#00FF88]">
+                              {mapData.rsiStructure.daily.consecutiveHH} / {mapData.rsiStructure.daily.consecutiveHL}
+                            </p>
+                          </div>
+                          <div className="text-center rounded-lg bg-white/[0.02] p-2">
+                            <span className="text-[10px] text-white/30">LH / LL</span>
+                            <p className="font-mono text-xs font-bold text-[#FF3B5C]">
+                              {mapData.rsiStructure.daily.consecutiveLH} / {mapData.rsiStructure.daily.consecutiveLL}
+                            </p>
+                          </div>
+                        </div>
+                        {mapData.rsiStructure.daily.pullbacksHoldAbove50 && (
+                          <div className="flex items-center gap-1.5 text-[10px] text-[#00FF88]">
+                            <Check className="size-3" />
+                            Pullbacks hold above 50
+                          </div>
+                        )}
+                        {mapData.rsiStructure.daily.ralliesFailBelow50 && (
+                          <div className="flex items-center gap-1.5 text-[10px] text-[#FF3B5C]">
+                            <AlertTriangle className="size-3" />
+                            Rallies failing below 50
+                          </div>
+                        )}
+                        {mapData.rsiStructure.daily.trendline?.breakDetected && (
+                          <div className="flex items-center gap-1.5 text-[10px] animate-pulse" style={{ color: mapData.rsiStructure.daily.trendline.breakType === "resistance_break" ? "#00FF88" : "#FF3B5C" }}>
+                            <Zap className="size-3" />
+                            RSI {mapData.rsiStructure.daily.trendline.breakType === "resistance_break" ? "resistance" : "support"} break
+                          </div>
+                        )}
+                        {mapData.rsiStructure.daily.divergence.type && (
+                          <div className="mt-1 pt-1 border-t border-white/[0.04]">
+                            <div className="flex items-center gap-1.5 text-[10px]" style={{ color: mapData.rsiStructure.daily.divergence.type === "bullish" ? "#00FF88" : "#FF3B5C" }}>
+                              <GitBranch className="size-3" />
+                              {mapData.rsiStructure.daily.divergence.description}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* EMA21 Bounce */}
+                  {mapData.ema21Bounce && (
+                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold uppercase tracking-wider text-white/40">EMA21 Bounce</span>
+                        {mapData.ema21Bounce.invalidation && (
+                          <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase animate-pulse bg-[#FF3B5C15] text-[#FF3B5C]">
+                            {mapData.ema21Bounce.invalidationType === "bullish_invalidated" ? "BULL INVALID" : "BEAR INVALID"}
+                          </span>
+                        )}
+                        {mapData.ema21Bounce.recentBounce && !mapData.ema21Bounce.invalidation && (
+                          <span
+                            className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
+                            style={{
+                              backgroundColor: mapData.ema21Bounce.bounceType === "support_bounce" ? "#00FF8815" : "#FF3B5C15",
+                              color: mapData.ema21Bounce.bounceType === "support_bounce" ? "#00FF88" : "#FF3B5C",
+                            }}
+                          >
+                            {mapData.ema21Bounce.bounceType === "support_bounce" ? "SUPPORT HOLD" : "RESIST HOLD"}
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/40">Distance</span>
+                          <span className="font-mono text-sm font-bold" style={{ color: mapData.ema21Bounce.isAbove ? "#00FF88" : "#FF3B5C" }}>
+                            {mapData.ema21Bounce.distancePct > 0 ? "+" : ""}{mapData.ema21Bounce.distancePct.toFixed(2)}%
+                            <span className="text-white/30 text-[10px] ml-1">({Math.abs(mapData.ema21Bounce.distanceATR).toFixed(1)} ATR)</span>
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/40">EMA21</span>
+                          <span className="font-mono text-xs text-white/60">${fmtPrice(mapData.ema21Bounce.ema21)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-white/40">Slope</span>
+                          <span className="text-xs" style={{ color: mapData.ema21Bounce.slopeRising ? "#00FF88" : "#FF3B5C" }}>
+                            {mapData.ema21Bounce.slopeRising ? "Rising" : "Falling"}
+                          </span>
+                        </div>
+                        {mapData.ema21Bounce.bounceSuccessRate != null && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-white/40">Bounce success rate</span>
+                            <span className="font-mono text-xs" style={{ color: mapData.ema21Bounce.bounceSuccessRate >= 60 ? "#00FF88" : "#FF3B5C" }}>
+                              {mapData.ema21Bounce.bounceSuccessRate}%
+                              <span className="text-white/20 ml-1">n={mapData.ema21Bounce.bounceSampleSize}</span>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* RSI Alignment */}
+                  {mapData.rsiAlignment && (
+                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold uppercase tracking-wider text-white/40">RSI Alignment</span>
+                        <span
+                          className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
+                          style={{
+                            backgroundColor: mapData.rsiAlignment.aligned
+                              ? mapData.rsiAlignment.direction === "bullish" ? "#00FF8815" : "#FF3B5C15"
+                              : `${accent}15`,
+                            color: mapData.rsiAlignment.aligned
+                              ? mapData.rsiAlignment.direction === "bullish" ? "#00FF88" : "#FF3B5C"
+                              : accent,
+                          }}
+                        >
+                          {mapData.rsiAlignment.aligned ? `Aligned ${mapData.rsiAlignment.direction}` : "Divergent"}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {(["rsi1h", "rsi4h", "rsi1d"] as const).map((key) => {
+                          const label = key === "rsi1h" ? "1H" : key === "rsi4h" ? "4H" : "Daily"
+                          const val = mapData.rsiAlignment!.details[key]
+                          if (val == null) return null
+                          const c = val > 50 ? "#00FF88" : val < 50 ? "#FF3B5C" : accent
+                          return (
+                            <div key={key} className="flex items-center justify-between">
+                              <span className="text-xs text-white/40">{label} RSI</span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-sm font-bold" style={{ color: c }}>{val.toFixed(1)}</span>
+                                <div className="w-12 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                                  <div className="h-full rounded-full" style={{ width: `${val}%`, backgroundColor: c }} />
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {mapData.rsiAlignment.details.conflict && (
+                          <div className="flex items-center gap-1.5 text-[10px] text-[#F59E0B]">
+                            <AlertTriangle className="size-3" />
+                            {mapData.rsiAlignment.details.conflict}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bounce Probabilities */}
+                  {mapData.bounceProbabilities && (
+                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold uppercase tracking-wider text-white/40">Forward Returns</span>
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style={{ backgroundColor: `${accent}15`, color: accent }}>
+                          RSI {mapData.bounceProbabilities.rsiZone}
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[10px]">
+                          <thead>
+                            <tr className="text-white/30 border-b border-white/[0.04]">
+                              <th className="text-left py-1 font-medium">Window</th>
+                              <th className="text-right py-1 font-medium">Win %</th>
+                              <th className="text-right py-1 font-medium">Avg</th>
+                              <th className="text-right py-1 font-medium">Median</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(mapData.bounceProbabilities.windows).map(([window, data]) => {
+                              const d = data.conditioned ?? data.all
+                              if (!d) return null
+                              return (
+                                <tr key={window} className="border-b border-white/[0.02]">
+                                  <td className="py-1.5 text-white/50 font-mono">{window}</td>
+                                  <td className="py-1.5 text-right font-mono font-bold" style={{ color: d.positivePct >= 55 ? "#00FF88" : d.positivePct <= 45 ? "#FF3B5C" : accent }}>
+                                    {d.positivePct}%
+                                  </td>
+                                  <td className="py-1.5 text-right font-mono" style={{ color: d.avgReturn > 0 ? "#00FF88" : "#FF3B5C" }}>
+                                    {d.avgReturn > 0 ? "+" : ""}{d.avgReturn.toFixed(2)}%
+                                  </td>
+                                  <td className="py-1.5 text-right font-mono" style={{ color: d.medianReturn > 0 ? "#00FF88" : "#FF3B5C" }}>
+                                    {d.medianReturn > 0 ? "+" : ""}{d.medianReturn.toFixed(2)}%
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-2 flex gap-3 text-[9px] text-white/20">
+                        <span>EMA5: {mapData.bounceProbabilities.ema5Side}</span>
+                        {mapData.bounceProbabilities.sma200Side && <span>SMA200: {mapData.bounceProbabilities.sma200Side}</span>}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
               </motion.div>
             )}
 

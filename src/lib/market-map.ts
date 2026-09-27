@@ -197,6 +197,24 @@ export interface RSIAlignmentResult {
   };
 }
 
+export interface MapSignalFactor {
+  module: string;
+  score: number; // -100 to +100
+  weight: number;
+  note: string;
+}
+
+export interface MapSignal {
+  bias: "LONG" | "SHORT" | "WAIT";
+  conviction: number; // 0-100
+  grade: "A+" | "A" | "B" | "C" | "NO TRADE";
+  rawScore: number; // -100 to +100, negative = short
+  factors: MapSignalFactor[];
+  reasoning: string[];
+  activeSignals: number;
+  totalModules: number;
+}
+
 export interface MarketMapResult {
   ema5Disconnect: EMA5DisconnectResult | null;
   ema5xSma200: EMA5xSMA200Result | null;
@@ -208,6 +226,7 @@ export interface MarketMapResult {
   ema21Bounce: EMA21BounceResult | null;
   bounceProbabilities: BounceProbResult | null;
   rsiAlignment: RSIAlignmentResult | null;
+  signal: MapSignal;
   generatedAt: string;
 }
 
@@ -697,37 +716,389 @@ export function analyzeRSIAlignment(rsi1h: number[], rsi4h: number[], rsi1d: num
   return result;
 }
 
+// ── 7. Unified Signal Scorer ────────────────────────────────────────────────
+// Symmetric scoring: positive = long, negative = short. Zero-centered.
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+export function computeMapSignal(map: Omit<MarketMapResult, "signal" | "generatedAt">): MapSignal {
+  const factors: MapSignalFactor[] = [];
+  const reasoning: string[] = [];
+  let activeSignals = 0;
+  const totalModules = 6;
+
+  // ── 1. EMA5 Disconnect (weight 20) ──────────────────────────────────────
+  // Disconnected below → long (mean revert up). Disconnected above → short.
+  // NOT disconnected but close proximity → slight directional lean.
+  if (map.ema5Disconnect) {
+    activeSignals++;
+    let score = 0;
+    let note = "";
+    const d = map.ema5Disconnect;
+
+    if (d.isDisconnected) {
+      if (d.side === "below") {
+        // Overextended down → mean reversion LONG
+        score = 40 + Math.min(Math.abs(d.deviationATR) * 15, 40); // 40-80
+        note = `Disconnected ${Math.abs(d.deviationATR).toFixed(1)} ATR below — mean revert long`;
+        reasoning.push(`EMA5: Price stretched ${Math.abs(d.deviation).toFixed(1)}% below — snap-back long setup`);
+      } else {
+        // Overextended up → mean reversion SHORT
+        score = -(40 + Math.min(d.deviationATR * 15, 40)); // -40 to -80
+        note = `Disconnected ${d.deviationATR.toFixed(1)} ATR above — mean revert short`;
+        reasoning.push(`EMA5: Price stretched ${d.deviation.toFixed(1)}% above — snap-back short setup`);
+      }
+      // Boost if reconnection backtest shows high probability
+      if (d.reconnectWindow.pct5day >= 70) {
+        score = score > 0 ? Math.min(score + 15, 100) : Math.max(score - 15, -100);
+        reasoning.push(`Historical: ${d.reconnectWindow.pct5day}% reconnect within 5 days`);
+      }
+    } else {
+      // Not disconnected — slight directional lean based on side
+      if (d.side === "below") {
+        score = -15; // below EMA5 = slight bearish
+        note = "Price below EMA5 — slight bearish lean";
+      } else if (d.side === "above") {
+        score = 15; // above EMA5 = slight bullish
+        note = "Price above EMA5 — slight bullish lean";
+      } else {
+        note = "At EMA5 — neutral";
+      }
+    }
+    factors.push({ module: "EMA5 Disconnect", score: clamp(score, -100, 100), weight: 20, note });
+  }
+
+  // ── 2. EMA5 × SMA200 (weight 20) ───────────────────────────────────────
+  // EMA5 above SMA200 = bullish structure. Below = bearish. Fresh cross = strong.
+  if (map.ema5xSma200) {
+    activeSignals++;
+    let score = 0;
+    let note = "";
+    const x = map.ema5xSma200;
+
+    if (x.freshCross) {
+      score = x.crossType === "bullish" ? 80 : -80;
+      note = `Fresh ${x.crossType} cross — strong signal`;
+      reasoning.push(`EMA5×SMA200: Fresh ${x.crossType} crossover just fired`);
+    } else if (x.crossType) {
+      // Decay signal over time: full strength first 5 days, fade to 30 by day 20
+      const dayFade = Math.max(30, 65 - x.daysSinceCross * 2);
+      score = x.crossType === "bullish" ? dayFade : -dayFade;
+      note = `${x.crossType} cross ${x.daysSinceCross}d ago`;
+    }
+
+    // Slope reinforcement: if both slopes agree, strengthen
+    if (x.ema5Slope > 0.1 && x.isAbove) {
+      score = Math.min(score + 10, 100);
+    } else if (x.ema5Slope < -0.1 && !x.isAbove) {
+      score = Math.max(score - 10, -100);
+    }
+
+    // Position: above/below SMA200 is structural
+    if (!x.freshCross) {
+      if (x.isAbove) score = Math.max(score, 20);
+      else score = Math.min(score, -20);
+    }
+
+    factors.push({ module: "EMA5 × SMA200", score: clamp(score, -100, 100), weight: 20, note });
+  }
+
+  // ── 3. RSI Structure (weight 25) ────────────────────────────────────────
+  // This is the heaviest module: swing structure + divergences + trendlines
+  if (map.rsiStructure.daily) {
+    activeSignals++;
+    let score = 0;
+    let note = "";
+    const r = map.rsiStructure.daily;
+
+    // Swing structure: HH/HL = bullish, LH/LL = bearish
+    if (r.rsiTrend === "bullish") {
+      score += 35;
+      note = `RSI bullish (HH:${r.consecutiveHH} HL:${r.consecutiveHL})`;
+    } else if (r.rsiTrend === "bearish") {
+      score -= 35;
+      note = `RSI bearish (LH:${r.consecutiveLH} LL:${r.consecutiveLL})`;
+    } else {
+      note = "RSI structure neutral";
+    }
+
+    // Pullbacks holding above 50 = strong bull base
+    if (r.pullbacksHoldAbove50) {
+      score += 20;
+      reasoning.push("RSI: Pullbacks holding above 50 — bull regime intact");
+    }
+    // Rallies failing below 50 = strong bear base
+    if (r.ralliesFailBelow50) {
+      score -= 20;
+      reasoning.push("RSI: Rallies failing below 50 — bear regime intact");
+    }
+
+    // Divergence — these are reversal signals, weight heavily
+    if (r.divergence.type === "bullish") {
+      score += 25;
+      reasoning.push(`RSI divergence: ${r.divergence.description}`);
+    } else if (r.divergence.type === "bearish") {
+      score -= 25;
+      reasoning.push(`RSI divergence: ${r.divergence.description}`);
+    }
+
+    // Trendline breaks
+    if (r.trendline?.breakDetected) {
+      if (r.trendline.breakType === "resistance_break") {
+        score += 15;
+        reasoning.push("RSI broke resistance trendline — bullish acceleration");
+      } else {
+        score -= 15;
+        reasoning.push("RSI broke support trendline — bearish breakdown");
+      }
+    }
+
+    // Extreme RSI zones
+    if (r.currentRSI > 75) {
+      score -= 10; // overbought caution
+    } else if (r.currentRSI < 25) {
+      score += 10; // oversold bounce potential
+    }
+
+    factors.push({ module: "RSI Structure", score: clamp(score, -100, 100), weight: 25, note });
+  }
+
+  // ── 4. EMA21 Bounce (weight 15) ─────────────────────────────────────────
+  if (map.ema21Bounce) {
+    activeSignals++;
+    let score = 0;
+    let note = "";
+    const b = map.ema21Bounce;
+
+    // Invalidation = strongest signal from this module
+    if (b.invalidation) {
+      if (b.invalidationType === "bullish_invalidated") {
+        score = -60; // was bullish, broke down = bearish
+        note = "EMA21 bullish structure invalidated — bearish";
+        reasoning.push("EMA21: Price closed below after sustained hold — trend reversal");
+      } else {
+        score = 60; // was bearish, broke up = bullish
+        note = "EMA21 bearish structure invalidated — bullish";
+        reasoning.push("EMA21: Price closed above after sustained stay below — reversal");
+      }
+    } else if (b.recentBounce) {
+      if (b.bounceType === "support_bounce" && b.slopeRising) {
+        score = 40;
+        note = "EMA21 support bounce with rising slope";
+        reasoning.push("EMA21: Clean support bounce on rising 21 EMA");
+      } else if (b.bounceType === "resistance_bounce" && !b.slopeRising) {
+        score = -40;
+        note = "EMA21 resistance rejection with falling slope";
+        reasoning.push("EMA21: Rejected at falling 21 EMA — bearish continuation");
+      } else if (b.bounceType === "support_bounce") {
+        score = 25;
+        note = "EMA21 support bounce";
+      } else {
+        score = -25;
+        note = "EMA21 resistance rejection";
+      }
+    } else {
+      // No bounce, just proximity context
+      if (b.isAbove && b.slopeRising) {
+        score = 15;
+        note = "Above rising EMA21";
+      } else if (!b.isAbove && !b.slopeRising) {
+        score = -15;
+        note = "Below falling EMA21";
+      } else if (b.isAbove) {
+        score = 5;
+        note = "Above EMA21";
+      } else {
+        score = -5;
+        note = "Below EMA21";
+      }
+    }
+
+    // Bounce success rate amplifier
+    if (b.bounceSuccessRate != null && b.bounceSampleSize >= 5) {
+      if (b.bounceSuccessRate >= 70) {
+        score = score > 0 ? Math.min(score + 10, 100) : Math.max(score - 10, -100);
+      } else if (b.bounceSuccessRate <= 40) {
+        score = Math.round(score * 0.7); // dampen if historically unreliable
+      }
+    }
+
+    factors.push({ module: "EMA21 Bounce", score: clamp(score, -100, 100), weight: 15, note });
+  }
+
+  // ── 5. RSI Alignment (weight 15) ────────────────────────────────────────
+  if (map.rsiAlignment) {
+    activeSignals++;
+    let score = 0;
+    let note = "";
+    const a = map.rsiAlignment;
+
+    if (a.aligned && a.direction === "bullish") {
+      score = 50;
+      note = "All timeframes aligned bullish";
+      reasoning.push("RSI Alignment: 1H + 4H + Daily all above 50 — full bull confluence");
+    } else if (a.aligned && a.direction === "bearish") {
+      score = -50;
+      note = "All timeframes aligned bearish";
+      reasoning.push("RSI Alignment: 1H + 4H + Daily all below 50 — full bear confluence");
+    } else if (a.details.conflict) {
+      // Explicit timeframe conflict — this is noise, penalize conviction
+      score = 0;
+      note = `TF conflict: ${a.details.conflict}`;
+      reasoning.push(`RSI conflict: ${a.details.conflict} — wait for alignment`);
+    } else {
+      // Partial alignment
+      const vals = [a.details.rsi1h, a.details.rsi4h, a.details.rsi1d].filter(v => v != null) as number[];
+      const bullCount = vals.filter(v => v > 50).length;
+      const bearCount = vals.filter(v => v < 50).length;
+      if (bullCount > bearCount) {
+        score = 20;
+        note = `${bullCount}/${vals.length} TFs bullish`;
+      } else if (bearCount > bullCount) {
+        score = -20;
+        note = `${bearCount}/${vals.length} TFs bearish`;
+      } else {
+        note = "TFs split — no edge";
+      }
+    }
+
+    factors.push({ module: "RSI Alignment", score: clamp(score, -100, 100), weight: 15, note });
+  }
+
+  // ── 6. Forward Returns / Probabilities (weight 5) ───────────────────────
+  if (map.bounceProbabilities) {
+    activeSignals++;
+    let score = 0;
+    let note = "";
+    const p = map.bounceProbabilities;
+
+    // Use 5-day conditioned window as primary
+    const w5 = p.windows["5d"]?.conditioned ?? p.windows["5d"]?.all;
+    if (w5) {
+      if (w5.positivePct >= 65) {
+        score = 30;
+        note = `5d win rate ${w5.positivePct}% (avg ${w5.avgReturn > 0 ? "+" : ""}${w5.avgReturn.toFixed(1)}%)`;
+      } else if (w5.positivePct <= 35) {
+        score = -30;
+        note = `5d win rate only ${w5.positivePct}% (avg ${w5.avgReturn.toFixed(1)}%)`;
+      } else if (w5.avgReturn > 0.5) {
+        score = 15;
+        note = `5d avg return +${w5.avgReturn.toFixed(1)}%`;
+      } else if (w5.avgReturn < -0.5) {
+        score = -15;
+        note = `5d avg return ${w5.avgReturn.toFixed(1)}%`;
+      } else {
+        note = `5d: ${w5.positivePct}% win, ${w5.avgReturn > 0 ? "+" : ""}${w5.avgReturn.toFixed(2)}% avg`;
+      }
+    }
+
+    factors.push({ module: "Forward Probabilities", score: clamp(score, -100, 100), weight: 5, note });
+  }
+
+  // ── Weighted aggregation ────────────────────────────────────────────────
+  let totalWeight = 0;
+  let weightedSum = 0;
+  for (const f of factors) {
+    weightedSum += f.score * f.weight;
+    totalWeight += f.weight;
+  }
+
+  const rawScore = totalWeight > 0 ? weightedSum / totalWeight : 0;
+
+  // Conviction: how far from zero (both directions equally strong)
+  const absScore = Math.abs(rawScore);
+  const conviction = clamp(Math.round(absScore), 0, 100);
+
+  // Module agreement bonus: if 4+ modules agree on direction, boost conviction
+  const bullModules = factors.filter(f => f.score > 10).length;
+  const bearModules = factors.filter(f => f.score < -10).length;
+  const agreementRatio = Math.max(bullModules, bearModules) / Math.max(factors.length, 1);
+  const agreementBonus = agreementRatio >= 0.7 ? 10 : agreementRatio >= 0.5 ? 5 : 0;
+
+  const finalConviction = clamp(conviction + agreementBonus, 0, 100);
+
+  // Bias: needs minimum conviction threshold
+  let bias: MapSignal["bias"];
+  if (finalConviction < 15 || factors.length < 2) {
+    bias = "WAIT";
+  } else if (rawScore > 0) {
+    bias = "LONG";
+  } else {
+    bias = "SHORT";
+  }
+
+  // Grade thresholds — symmetric for long and short
+  let grade: MapSignal["grade"];
+  if (finalConviction >= 70 && factors.length >= 4 && agreementRatio >= 0.6) {
+    grade = "A+";
+  } else if (finalConviction >= 55 && factors.length >= 3) {
+    grade = "A";
+  } else if (finalConviction >= 35 && factors.length >= 2) {
+    grade = "B";
+  } else if (finalConviction >= 15) {
+    grade = "C";
+  } else {
+    grade = "NO TRADE";
+    bias = "WAIT";
+  }
+
+  // Add agreement info to reasoning
+  if (agreementRatio >= 0.7) {
+    reasoning.unshift(`${Math.max(bullModules, bearModules)}/${factors.length} modules agree on ${rawScore > 0 ? "long" : "short"} — high conviction`);
+  } else if (bullModules > 0 && bearModules > 0) {
+    reasoning.push(`Mixed signals: ${bullModules} bull vs ${bearModules} bear modules`);
+  }
+
+  return {
+    bias,
+    conviction: finalConviction,
+    grade,
+    rawScore: Math.round(rawScore * 100) / 100,
+    factors,
+    reasoning: reasoning.slice(0, 8),
+    activeSignals,
+    totalModules,
+  };
+}
+
 // ── Full Market Map Builder ─────────────────────────────────────────────────
 
 export function buildMarketMap(dailyCandles: Candle[], candles1h: Candle[], candles4h: Candle[]): MarketMapResult {
-  const map: MarketMapResult = {
+  const modules: Omit<MarketMapResult, "signal" | "generatedAt"> = {
     ema5Disconnect: null,
     ema5xSma200: null,
     rsiStructure: { daily: null, h4: null, h1: null },
     ema21Bounce: null,
     bounceProbabilities: null,
     rsiAlignment: null,
-    generatedAt: new Date().toISOString(),
   };
 
   if (dailyCandles.length >= 30) {
-    map.ema5Disconnect = analyzeEMA5Disconnect(dailyCandles);
-    map.ema21Bounce = analyzeEMA21Bounce(dailyCandles);
+    modules.ema5Disconnect = analyzeEMA5Disconnect(dailyCandles);
+    modules.ema21Bounce = analyzeEMA21Bounce(dailyCandles);
 
     const dailyCloses = closesFrom(dailyCandles);
     const dailyRSI = rsiCalc(dailyCloses, 14);
-    map.rsiStructure.daily = analyzeRSIStructure(dailyCandles);
+    modules.rsiStructure.daily = analyzeRSIStructure(dailyCandles);
 
-    if (dailyCandles.length >= 60) map.ema5xSma200 = analyzeEMA5xSMA200(dailyCandles);
-    if (dailyCandles.length >= 100) map.bounceProbabilities = analyzeBounceProbabilities(dailyCandles);
+    if (dailyCandles.length >= 60) modules.ema5xSma200 = analyzeEMA5xSMA200(dailyCandles);
+    if (dailyCandles.length >= 100) modules.bounceProbabilities = analyzeBounceProbabilities(dailyCandles);
 
     const rsi1h = candles1h.length >= 30 ? rsiCalc(closesFrom(candles1h), 14) : [];
     const rsi4h = candles4h.length >= 30 ? rsiCalc(closesFrom(candles4h), 14) : [];
-    map.rsiAlignment = analyzeRSIAlignment(rsi1h, rsi4h, dailyRSI);
+    modules.rsiAlignment = analyzeRSIAlignment(rsi1h, rsi4h, dailyRSI);
   }
 
-  if (candles4h.length >= 50) map.rsiStructure.h4 = analyzeRSIStructure(candles4h);
-  if (candles1h.length >= 50) map.rsiStructure.h1 = analyzeRSIStructure(candles1h);
+  if (candles4h.length >= 50) modules.rsiStructure.h4 = analyzeRSIStructure(candles4h);
+  if (candles1h.length >= 50) modules.rsiStructure.h1 = analyzeRSIStructure(candles1h);
 
-  return map;
+  const signal = computeMapSignal(modules);
+
+  return {
+    ...modules,
+    signal,
+    generatedAt: new Date().toISOString(),
+  };
 }

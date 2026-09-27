@@ -510,9 +510,13 @@ function analyzeVolume(candles: Candle[]): {
   trend: string;
   cvd: number;
   available: boolean;
+  ema20: number;
+  spikeRatio: number;
+  spikeLabel: string;
+  absorption: { detected: boolean; direction: "bullish" | "bearish" | null; strength: number } | null;
 } {
-  if (candles.length < 2)
-    return { current: 0, average: 0, ratio: 1, trend: "neutral", cvd: 0, available: false };
+  const empty = { current: 0, average: 0, ratio: 1, trend: "neutral", cvd: 0, available: false, ema20: 0, spikeRatio: 0, spikeLabel: "no data", absorption: null };
+  if (candles.length < 2) return empty;
 
   const lastCandle = candles[candles.length - 1];
   const current = lastCandle.volume;
@@ -523,7 +527,7 @@ function analyzeVolume(candles: Candle[]): {
   const totalVol = volumes.reduce((s, v) => s + v, 0);
 
   if (totalVol === 0) {
-    return { current: 0, average: 0, ratio: 1, trend: "unavailable", cvd: 0, available: false };
+    return { ...empty, trend: "unavailable" };
   }
 
   const average = totalVol / volumes.length;
@@ -552,6 +556,62 @@ function analyzeVolume(candles: Candle[]): {
     cvd += c.close >= c.open ? c.volume : -c.volume;
   }
 
+  // 20-period EMA on volume for spike detection
+  const volEma20 = ema(volumes, 20);
+  const ema20Val = tip(volEma20);
+
+  // Spike ratio: how far current volume is above the 20 EMA
+  const spikeRatio = ema20Val > 0 ? current / ema20Val : 0;
+
+  // Standard deviation of volume around the 20 EMA for z-score context
+  const recentVols = volumes.slice(-20);
+  const volMean = recentVols.reduce((s, v) => s + v, 0) / recentVols.length;
+  const volVariance = recentVols.reduce((s, v) => s + (v - volMean) ** 2, 0) / recentVols.length;
+  const volStdDev = Math.sqrt(volVariance);
+  const zScore = volStdDev > 0 ? (current - ema20Val) / volStdDev : 0;
+
+  // Raised thresholds: only highlight when well above EMA
+  let spikeLabel: string;
+  if (spikeRatio >= 3.5 || zScore >= 3.0) spikeLabel = "EXTREME SPIKE";
+  else if (spikeRatio >= 2.5 || zScore >= 2.0) spikeLabel = "HIGH SPIKE";
+  else if (spikeRatio >= 1.8 || zScore >= 1.5) spikeLabel = "ELEVATED";
+  else if (spikeRatio >= 0.7) spikeLabel = "NORMAL";
+  else spikeLabel = "DRY";
+
+  // Absorption detection: big volume but tiny price movement = other side absorbing
+  // If volume spikes hard but candle body is tiny relative to ATR, someone is absorbing
+  let absorption: { detected: boolean; direction: "bullish" | "bearish" | null; strength: number } | null = null;
+  if (candles.length >= 5 && spikeRatio >= 1.8) {
+    const recent5 = candles.slice(-5);
+    const avgRange = recent5.reduce((s, c) => s + (c.high - c.low), 0) / 5;
+    const bodySize = Math.abs(lastCandle.close - lastCandle.open);
+    const candleRange = lastCandle.high - lastCandle.low;
+
+    // Absorption = volume is spiking but the body is small relative to recent ranges
+    // High volume + small body = the other side is absorbing all the pressure
+    if (avgRange > 0 && bodySize / avgRange < 0.3 && spikeRatio >= 1.8) {
+      const wickRatio = candleRange > 0 ? bodySize / candleRange : 0;
+      const absorptionStrength = Math.round(spikeRatio * (1 - wickRatio) * 100) / 100;
+
+      // Determine which side is absorbing:
+      // Big volume + failed to push higher (upper wick) = sellers absorbing -> bearish reversal likely
+      // Big volume + failed to push lower (lower wick) = buyers absorbing -> bullish reversal likely
+      const upperWick = lastCandle.high - Math.max(lastCandle.open, lastCandle.close);
+      const lowerWick = Math.min(lastCandle.open, lastCandle.close) - lastCandle.low;
+
+      let direction: "bullish" | "bearish" | null = null;
+      if (candleRange > 0) {
+        if (lowerWick / candleRange > 0.5) {
+          direction = "bullish";
+        } else if (upperWick / candleRange > 0.5) {
+          direction = "bearish";
+        }
+      }
+
+      absorption = { detected: true, direction, strength: absorptionStrength };
+    }
+  }
+
   return {
     current: round(current, 2),
     average: round(average, 2),
@@ -559,6 +619,10 @@ function analyzeVolume(candles: Candle[]): {
     trend,
     cvd: round(cvd, 2),
     available: true,
+    ema20: round(ema20Val, 2),
+    spikeRatio: Math.round(spikeRatio * 100) / 100,
+    spikeLabel,
+    absorption,
   };
 }
 
@@ -1330,7 +1394,10 @@ function scoreVolume(
   volRatio: number,
   volTrend: string,
   cvd: number,
-  available: boolean
+  available: boolean,
+  spikeRatio: number,
+  spikeLabel: string,
+  absorption: { detected: boolean; direction: "bullish" | "bearish" | null; strength: number } | null
 ): { score: number; notes: string[] } {
   let score = 0;
   const notes: string[] = [];
@@ -1347,6 +1414,21 @@ function scoreVolume(
     notes.push("Volume below average");
   }
 
+  // 20 EMA spike scoring — validates or invalidates breakouts
+  if (spikeLabel === "EXTREME SPIKE") {
+    score += 25;
+    notes.push(`Vol spike ${spikeRatio.toFixed(1)}x above 20 EMA — real breakout`);
+  } else if (spikeLabel === "HIGH SPIKE") {
+    score += 15;
+    notes.push(`Vol spike ${spikeRatio.toFixed(1)}x above 20 EMA — conviction move`);
+  } else if (spikeLabel === "ELEVATED") {
+    score += 5;
+    notes.push(`Vol elevated ${spikeRatio.toFixed(1)}x vs 20 EMA`);
+  } else if (spikeLabel === "DRY") {
+    score -= 15;
+    notes.push(`Vol dry (${spikeRatio.toFixed(1)}x EMA) — low conviction, fakeout risk`);
+  }
+
   if (volTrend === "increasing") {
     score += 15;
     notes.push("Volume trend increasing");
@@ -1361,6 +1443,19 @@ function scoreVolume(
   } else {
     score -= 30;
     notes.push("Negative CVD — net selling pressure");
+  }
+
+  // Absorption: big volume but price didn't move = other side absorbing
+  if (absorption?.detected) {
+    if (absorption.direction === "bullish") {
+      score += 20;
+      notes.push(`ABSORPTION: Buyers absorbing sell pressure (${absorption.strength.toFixed(1)}x) — bullish reversal likely`);
+    } else if (absorption.direction === "bearish") {
+      score -= 20;
+      notes.push(`ABSORPTION: Sellers absorbing buy pressure (${absorption.strength.toFixed(1)}x) — bearish reversal likely`);
+    } else {
+      notes.push(`ABSORPTION: High volume, no price movement (${absorption.strength.toFixed(1)}x) — indecision, expect reversal`);
+    }
   }
 
   return { score: clamp(score, -100, 100), notes };
@@ -1805,6 +1900,10 @@ function computeMultiFactorCall(
       trend: string;
       cvd: number;
       available: boolean;
+      ema20: number;
+      spikeRatio: number;
+      spikeLabel: string;
+      absorption: { detected: boolean; direction: "bullish" | "bearish" | null; strength: number } | null;
     };
     isCrypto: boolean;
     newsSentimentScore: number | null;
@@ -1922,7 +2021,7 @@ function computeMultiFactorCall(
     atr
   );
   const mom = scoreMomentum(rsi, macdHist, stochRsi.k, stochRsi.d, rsi5m, prevRsi, macroBias, trendDir15m);
-  const vol = scoreVolume(volData.ratio, volData.trend, volData.cvd, volData.available);
+  const vol = scoreVolume(volData.ratio, volData.trend, volData.cvd, volData.available, volData.spikeRatio, volData.spikeLabel, volData.absorption);
   const deriv = scoreDerivatives(fundingRate, putCallRatio);
   const htf = scoreHTF(trend1h, rsi1h, trend4h, rsi4h, trendDaily, rsiDaily);
   const boll = scoreBollinger(
@@ -2294,7 +2393,7 @@ function computeMultiFactorCall(
 
   if (bias === "LONG" || (bias === "WAIT" && weightedScore >= 0)) {
     confirms.push(
-      `Break above $${round(nearestResistance, dec).toLocaleString()} with volume`
+      `Break above $${round(nearestResistance, dec).toLocaleString()} with volume above 20 EMA`
     );
     confirms.push("Funding rate stays neutral or negative");
     if (trend1h !== "bull") confirms.push("1H trend flips bullish");
@@ -2302,10 +2401,11 @@ function computeMultiFactorCall(
       `Loss of $${round(nearestSupport, dec).toLocaleString()} support`
     );
     invalidates.push("MACD crossover to bearish on 1H");
-    invalidates.push("Sudden spike in funding rate above 0.05%");
+    if (volData.spikeLabel === "DRY") invalidates.push("Volume dry — breakout lacks conviction");
+    else invalidates.push("Sudden spike in funding rate above 0.05%");
   } else {
     confirms.push(
-      `Break below $${round(nearestSupport, dec).toLocaleString()} with volume`
+      `Break below $${round(nearestSupport, dec).toLocaleString()} with volume above 20 EMA`
     );
     confirms.push("Funding rate remains elevated");
     if (trend1h !== "bear") confirms.push("1H trend flips bearish");
@@ -2313,7 +2413,8 @@ function computeMultiFactorCall(
       `Reclaim of $${round(nearestResistance, dec).toLocaleString()} resistance`
     );
     invalidates.push("MACD crossover to bullish on 1H");
-    invalidates.push("Fear & Greed drops below 25 (capitulation)");
+    if (volData.spikeLabel === "DRY") invalidates.push("Volume dry — breakdown lacks conviction");
+    else invalidates.push("Fear & Greed drops below 25 (capitulation)");
   }
 
   return {

@@ -130,6 +130,10 @@ interface SignalsResponse {
     ratio: number
     trend: string
     cvd: number
+    ema20: number
+    spikeRatio: number
+    spikeLabel: string
+    absorption: { detected: boolean; direction: "bullish" | "bearish" | null; strength: number } | null
   }
   market: {
     fearGreed: { value: number; classification: string } | null
@@ -299,6 +303,8 @@ interface HotPlay {
   riskReward: number
   regime: string
   reasoning: string[]
+  volSpikeRatio: number | null
+  volSpikeLabel: string | null
 }
 
 interface HotResponse {
@@ -912,6 +918,16 @@ export default function SignalsDashboard() {
                         </div>
                         <div className="flex items-center justify-between text-[10px] text-white/40">
                           <span>R:R 1:{play.riskReward.toFixed(1)}</span>
+                          {play.volSpikeRatio != null && play.volSpikeLabel && play.volSpikeLabel !== "NORMAL" && play.volSpikeLabel !== "no data" && (
+                            <span
+                              className="font-mono font-bold"
+                              style={{
+                                color: play.volSpikeLabel === "EXTREME SPIKE" || play.volSpikeLabel === "HIGH SPIKE" ? "#00FF88" : play.volSpikeLabel === "ELEVATED" ? "#F59E0B" : "#FF3B5C",
+                              }}
+                            >
+                              {play.volSpikeRatio.toFixed(1)}x VOL
+                            </span>
+                          )}
                           <span className="flex items-center gap-1" style={{ color: play.color }}>
                             View <ChevronRight className="size-3" />
                           </span>
@@ -1032,6 +1048,19 @@ export default function SignalsDashboard() {
                 CATALYST RISK: {call.catalystRisk}
               </AlertBanner>
             )}
+            {vol?.absorption?.detected && (
+              <AlertBanner
+                icon={BarChart3}
+                color={vol.absorption.direction === "bullish" ? "#00FF88" : vol.absorption.direction === "bearish" ? "#FF3B5C" : "#F59E0B"}
+              >
+                VOLUME ABSORPTION ({vol.absorption.strength.toFixed(1)}x):{" "}
+                {vol.absorption.direction === "bullish"
+                  ? "Buyers absorbing sell pressure — price likely to reverse UP"
+                  : vol.absorption.direction === "bearish"
+                    ? "Sellers absorbing buy pressure — price likely to reverse DOWN"
+                    : "High volume with no price movement — expect a reversal"}
+              </AlertBanner>
+            )}
 
             {/* ── 3. Upcoming Catalysts ────────────────────────────────── */}
             {d?.events && d.events.length > 0 && (
@@ -1136,6 +1165,30 @@ export default function SignalsDashboard() {
                           {call.regime}
                         </p>
                       </div>
+                      {vol && (vol.spikeLabel === "EXTREME SPIKE" || vol.spikeLabel === "HIGH SPIKE" || vol.absorption?.detected) && (
+                        <div
+                          className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-black uppercase"
+                          style={{
+                            backgroundColor: `${vol.absorption?.detected ? (vol.absorption.direction === "bullish" ? "#00FF88" : vol.absorption.direction === "bearish" ? "#FF3B5C" : "#F59E0B") : vol.spikeLabel === "EXTREME SPIKE" ? "#00FF88" : "#00CC6A"}15`,
+                            color: vol.absorption?.detected ? (vol.absorption.direction === "bullish" ? "#00FF88" : vol.absorption.direction === "bearish" ? "#FF3B5C" : "#F59E0B") : vol.spikeLabel === "EXTREME SPIKE" ? "#00FF88" : "#00CC6A",
+                          }}
+                        >
+                          <BarChart3 className="size-4" />
+                          {vol.absorption?.detected ? (
+                            <>
+                              <span>ABS</span>
+                              <span className="text-[10px] font-semibold opacity-70">
+                                {vol.absorption.direction === "bullish" ? "BUY" : vol.absorption.direction === "bearish" ? "SELL" : "???"}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span>{vol.spikeRatio.toFixed(1)}x</span>
+                              <span className="text-[10px] font-semibold opacity-70">VOL</span>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="w-full sm:w-48">
@@ -1990,7 +2043,85 @@ export default function SignalsDashboard() {
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Volume Analysis
                 </h2>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+
+                {/* Volume Spike Banner — only when well above EMA */}
+                {vol.spikeLabel && vol.spikeLabel !== "NORMAL" && vol.spikeLabel !== "no data" && vol.spikeLabel !== "ELEVATED" && vol.spikeLabel !== "DRY" && (
+                  <div
+                    className="flex items-center gap-3 rounded-xl border px-4 py-3 mb-3"
+                    style={{
+                      borderColor: `${vol.spikeLabel === "EXTREME SPIKE" ? "#00FF88" : vol.spikeLabel === "HIGH SPIKE" ? "#00CC6A" : vol.spikeLabel === "ELEVATED" ? "#F59E0B" : "#FF3B5C"}40`,
+                      backgroundColor: `${vol.spikeLabel === "EXTREME SPIKE" ? "#00FF88" : vol.spikeLabel === "HIGH SPIKE" ? "#00CC6A" : vol.spikeLabel === "ELEVATED" ? "#F59E0B" : "#FF3B5C"}08`,
+                    }}
+                  >
+                    <BarChart3
+                      className="size-5 shrink-0"
+                      style={{
+                        color: vol.spikeLabel === "EXTREME SPIKE" ? "#00FF88" : vol.spikeLabel === "HIGH SPIKE" ? "#00CC6A" : vol.spikeLabel === "ELEVATED" ? "#F59E0B" : "#FF3B5C",
+                      }}
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="text-xs font-black uppercase tracking-wider"
+                          style={{
+                            color: vol.spikeLabel === "EXTREME SPIKE" ? "#00FF88" : vol.spikeLabel === "HIGH SPIKE" ? "#00CC6A" : vol.spikeLabel === "ELEVATED" ? "#F59E0B" : "#FF3B5C",
+                          }}
+                        >
+                          {vol.spikeLabel}
+                        </span>
+                        <span className="font-mono text-sm font-bold text-white">
+                          {vol.spikeRatio.toFixed(1)}x
+                        </span>
+                        <span className="text-[10px] text-white/40">vs 20 EMA</span>
+                      </div>
+                      <p className="text-[11px] text-white/40 mt-0.5">
+                        {vol.spikeLabel === "EXTREME SPIKE" || vol.spikeLabel === "HIGH SPIKE"
+                          ? "Volume well above 20 EMA — high conviction move, real breakout signal"
+                          : vol.spikeLabel === "ELEVATED"
+                            ? "Volume above 20 EMA — moderate conviction, watch for follow through"
+                            : "Volume below 20 EMA — low conviction, fakeout risk on any move"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Absorption Alert in Volume Section */}
+                {vol.absorption?.detected && (
+                  <div
+                    className="flex items-center gap-3 rounded-xl border px-4 py-3 mb-3"
+                    style={{
+                      borderColor: `${vol.absorption.direction === "bullish" ? "#00FF88" : vol.absorption.direction === "bearish" ? "#FF3B5C" : "#F59E0B"}40`,
+                      backgroundColor: `${vol.absorption.direction === "bullish" ? "#00FF88" : vol.absorption.direction === "bearish" ? "#FF3B5C" : "#F59E0B"}08`,
+                    }}
+                  >
+                    <AlertTriangle
+                      className="size-5 shrink-0"
+                      style={{
+                        color: vol.absorption.direction === "bullish" ? "#00FF88" : vol.absorption.direction === "bearish" ? "#FF3B5C" : "#F59E0B",
+                      }}
+                    />
+                    <div>
+                      <span
+                        className="text-xs font-black uppercase tracking-wider"
+                        style={{
+                          color: vol.absorption.direction === "bullish" ? "#00FF88" : vol.absorption.direction === "bearish" ? "#FF3B5C" : "#F59E0B",
+                        }}
+                      >
+                        {vol.absorption.direction === "bullish" ? "Bullish" : vol.absorption.direction === "bearish" ? "Bearish" : "Neutral"} Absorption
+                      </span>
+                      <p className="text-[11px] text-white/50 mt-0.5">
+                        Volume spiked {vol.absorption.strength.toFixed(1)}x but price barely moved.
+                        {vol.absorption.direction === "bullish"
+                          ? " Buyers are absorbing sell orders — expect upward reversal."
+                          : vol.absorption.direction === "bearish"
+                            ? " Sellers are absorbing buy orders — expect downward reversal."
+                            : " Neither side winning — big move incoming."}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <StatCard
                     label="Current Volume"
                     value={fmtCompact(vol.current)}
@@ -1999,10 +2130,19 @@ export default function SignalsDashboard() {
                     icon={BarChart3}
                   />
                   <StatCard
-                    label="Avg Volume"
-                    value={fmtCompact(vol.average)}
+                    label="20 EMA Volume"
+                    value={fmtCompact(vol.ema20)}
+                    sub="Baseline"
                     accent={accent}
-                    icon={BarChart}
+                    icon={Activity}
+                  />
+                  <StatCard
+                    label="Spike Ratio"
+                    value={`${vol.spikeRatio.toFixed(1)}x`}
+                    sub={vol.spikeLabel}
+                    color={vol.spikeLabel === "EXTREME SPIKE" || vol.spikeLabel === "HIGH SPIKE" ? "#00FF88" : vol.spikeLabel === "ELEVATED" ? "#F59E0B" : vol.spikeLabel === "DRY" ? "#FF3B5C" : undefined}
+                    accent={accent}
+                    icon={Zap}
                   />
                   <StatCard
                     label="Volume Ratio"

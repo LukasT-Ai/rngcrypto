@@ -90,6 +90,8 @@ export async function GET(req: NextRequest) {
           riskReward: data.call?.riskReward ?? 0,
           regime: data.call?.regime ?? "unknown",
           reasoning: (data.call?.reasoning ?? []).slice(0, 3),
+          volSpikeRatio: data.volume?.spikeRatio ?? null,
+          volSpikeLabel: data.volume?.spikeLabel ?? null,
         };
       } catch {
         return null;

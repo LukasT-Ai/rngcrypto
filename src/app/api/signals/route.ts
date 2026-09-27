@@ -1414,16 +1414,13 @@ function scoreVolume(
     notes.push("Volume below average");
   }
 
-  // 20 EMA spike scoring — validates or invalidates breakouts
+  // 20 EMA spike scoring — best as confirmation, DRY filter is strongest edge
   if (spikeLabel === "EXTREME SPIKE") {
-    score += 25;
+    score += 15;
     notes.push(`Vol spike ${spikeRatio.toFixed(1)}x above 20 EMA — real breakout`);
   } else if (spikeLabel === "HIGH SPIKE") {
-    score += 15;
+    score += 10;
     notes.push(`Vol spike ${spikeRatio.toFixed(1)}x above 20 EMA — conviction move`);
-  } else if (spikeLabel === "ELEVATED") {
-    score += 5;
-    notes.push(`Vol elevated ${spikeRatio.toFixed(1)}x vs 20 EMA`);
   } else if (spikeLabel === "DRY") {
     score -= 15;
     notes.push(`Vol dry (${spikeRatio.toFixed(1)}x EMA) — low conviction, fakeout risk`);
@@ -1445,16 +1442,14 @@ function scoreVolume(
     notes.push("Negative CVD — net selling pressure");
   }
 
-  // Absorption: big volume but price didn't move = other side absorbing
+  // Absorption: informational only — backtest shows weak predictive power at short TFs
   if (absorption?.detected) {
     if (absorption.direction === "bullish") {
-      score += 20;
-      notes.push(`ABSORPTION: Buyers absorbing sell pressure (${absorption.strength.toFixed(1)}x) — bullish reversal likely`);
+      notes.push(`ABSORPTION: Buyers absorbing sell pressure (${absorption.strength.toFixed(1)}x) — watch for reversal`);
     } else if (absorption.direction === "bearish") {
-      score -= 20;
-      notes.push(`ABSORPTION: Sellers absorbing buy pressure (${absorption.strength.toFixed(1)}x) — bearish reversal likely`);
+      notes.push(`ABSORPTION: Sellers absorbing buy pressure (${absorption.strength.toFixed(1)}x) — watch for reversal`);
     } else {
-      notes.push(`ABSORPTION: High volume, no price movement (${absorption.strength.toFixed(1)}x) — indecision, expect reversal`);
+      notes.push(`ABSORPTION: High volume, no price movement (${absorption.strength.toFixed(1)}x) — indecision`);
     }
   }
 

@@ -1848,6 +1848,751 @@ function scoreLiquidation(
   return { score: clamp(score, -100, 100), notes, squeezeRisk };
 }
 
+// ── Anticipatory Signal Engine ──────────────────────────────────────────────
+
+function computeAnticipatorySignals(params: {
+  candles15m: Candle[];
+  currentPrice: number;
+  atr: number;
+  supports: number[];
+  resistances: number[];
+  fibLevels: { level: string; price: number }[];
+  rsi: number;
+  rsiArr: number[];
+  stochRsi: { k: number; d: number };
+  macdHistArr: number[];
+  ema9Arr: number[];
+  ema21Arr: number[];
+  bbWidths: number[];
+  bbWidth: number;
+  volData: {
+    current: number;
+    average: number;
+    ratio: number;
+    trend: string;
+    cvd: number;
+    available: boolean;
+    ema20: number;
+    spikeRatio: number;
+    spikeLabel: string;
+    absorption: { detected: boolean; direction: "bullish" | "bearish" | null; strength: number } | null;
+  };
+  fundingRate: number | null;
+  oiChange: number | null;
+  dec: number;
+}) {
+  const {
+    candles15m, currentPrice, atr, supports, resistances, fibLevels,
+    rsi, rsiArr, stochRsi, macdHistArr, ema9Arr, ema21Arr,
+    bbWidths, bbWidth, volData, fundingRate, oiChange, dec,
+  } = params;
+
+  // ── Module 1: Key Level Proximity Scanner ─────────────────────────────────
+
+  const velocityCandles = candles15m.slice(-5);
+  const priceVelocity = velocityCandles.length >= 2
+    ? (velocityCandles[velocityCandles.length - 1].close - velocityCandles[0].close) / (velocityCandles.length - 1)
+    : 0;
+  const velocityPerATR = atr > 0 ? Math.abs(priceVelocity) / atr : 0;
+
+  const orderBlocks: number[] = [];
+  const volEmaForOB = ema(candles15m.map(c => c.volume), 20);
+  const recentOB = candles15m.slice(-30);
+  const obStartIdx = candles15m.length - 30;
+  for (let i = 0; i < recentOB.length; i++) {
+    const c = recentOB[i];
+    const range = c.high - c.low;
+    if (range <= 0) continue;
+    const bodyRatio = Math.abs(c.close - c.open) / range;
+    const volEmaIdx = obStartIdx + i;
+    const volEma = volEmaIdx >= 0 && volEmaIdx < volEmaForOB.length ? volEmaForOB[volEmaIdx] : 0;
+    if (bodyRatio < 0.3 && volEma > 0 && c.volume > 1.8 * volEma) {
+      orderBlocks.push((c.high + c.low) / 2);
+    }
+  }
+
+  type ApproachingLevel = {
+    level: number;
+    type: "support" | "resistance" | "fib" | "order_block";
+    distance: number;
+    tier: "IMMINENT" | "APPROACHING" | "WATCHLIST";
+    velocity: number;
+    estimatedCandles: number | null;
+    fibLevel?: string;
+  };
+
+  const approachingLevels: ApproachingLevel[] = [];
+
+  const classifyLevel = (
+    level: number,
+    type: "support" | "resistance" | "fib" | "order_block",
+    fibLabel?: string
+  ) => {
+    const rawDist = Math.abs(currentPrice - level);
+    const distATR = atr > 0 ? rawDist / atr : Infinity;
+    if (distATR > 2.0) return;
+
+    const movingToward = type === "support" || type === "fib"
+      ? priceVelocity < 0
+      : priceVelocity > 0;
+
+    let tier: "IMMINENT" | "APPROACHING" | "WATCHLIST";
+    if (distATR < 0.3) tier = "IMMINENT";
+    else if (distATR < 1.0) tier = "APPROACHING";
+    else tier = "WATCHLIST";
+
+    if (movingToward && velocityPerATR > 0.5 && tier !== "IMMINENT") {
+      tier = tier === "WATCHLIST" ? "APPROACHING" : "IMMINENT";
+    }
+
+    let estCandles: number | null = null;
+    if (movingToward && Math.abs(priceVelocity) > 0) {
+      const est = rawDist / Math.abs(priceVelocity);
+      if (est > 0 && est < 50) estCandles = Math.round(est);
+    }
+
+    const entry: ApproachingLevel = {
+      level: round(level, dec),
+      type,
+      distance: Math.round(distATR * 100) / 100,
+      tier,
+      velocity: Math.round(velocityPerATR * 100) / 100,
+      estimatedCandles: estCandles,
+    };
+    if (fibLabel) entry.fibLevel = fibLabel;
+    approachingLevels.push(entry);
+  };
+
+  for (const s of supports) classifyLevel(s, "support");
+  for (const r of resistances) classifyLevel(r, "resistance");
+  for (const f of fibLevels) classifyLevel(f.price, "fib", f.level);
+  for (const ob of orderBlocks) classifyLevel(ob, "order_block");
+
+  approachingLevels.sort((a, b) => a.distance - b.distance);
+
+  // ── Module 2: Retest Anticipation Engine ──────────────────────────────────
+
+  let retestSetup: {
+    active: boolean;
+    level: number | null;
+    state: "BREAKOUT_DETECTED" | "PULLBACK_IN_PROGRESS" | "RETEST_ZONE" | null;
+    direction: "long" | "short" | null;
+    volumeConfirms: boolean;
+    rsiResetting: boolean;
+  } = { active: false, level: null, state: null, direction: null, volumeConfirms: false, rsiResetting: false };
+
+  const nearestRes = resistances[0] ?? null;
+  const nearestSup = supports[0] ?? null;
+
+  if (nearestRes !== null && atr > 0 && currentPrice > nearestRes + atr) {
+    const pullbackDist = atr > 0 ? (currentPrice - nearestRes) / atr : Infinity;
+    let state: "BREAKOUT_DETECTED" | "PULLBACK_IN_PROGRESS" | "RETEST_ZONE" = "BREAKOUT_DETECTED";
+    if (pullbackDist < 0.5) state = "RETEST_ZONE";
+    else if (priceVelocity < 0) state = "PULLBACK_IN_PROGRESS";
+    retestSetup = {
+      active: true,
+      level: round(nearestRes, dec),
+      state,
+      direction: "long",
+      volumeConfirms: volData.trend === "decreasing",
+      rsiResetting: rsi >= 40 && rsi <= 60,
+    };
+  } else if (nearestSup !== null && atr > 0 && currentPrice < nearestSup - atr) {
+    const pullbackDist = atr > 0 ? (nearestSup - currentPrice) / atr : Infinity;
+    let state: "BREAKOUT_DETECTED" | "PULLBACK_IN_PROGRESS" | "RETEST_ZONE" = "BREAKOUT_DETECTED";
+    if (pullbackDist < 0.5) state = "RETEST_ZONE";
+    else if (priceVelocity > 0) state = "PULLBACK_IN_PROGRESS";
+    retestSetup = {
+      active: true,
+      level: round(nearestSup, dec),
+      state,
+      direction: "short",
+      volumeConfirms: volData.trend === "decreasing",
+      rsiResetting: rsi >= 40 && rsi <= 60,
+    };
+  }
+
+  // ── Module 3: Structure Formation Scanner (BOS/CHoCH) ─────────────────────
+
+  const structureSignals: {
+    type: "BOS_FORMING" | "CHOCH_FORMING" | "LIQUIDITY_SWEEP";
+    direction: "bullish" | "bearish";
+    referenceLevel: number;
+    distanceToTrigger: number;
+  }[] = [];
+
+  const swings = findSwingLevelsFromCandles(candles15m, 2, 50);
+  const swingHighs = swings.rawResistances;
+  const swingLows = swings.rawSupports;
+
+  if (swingHighs.length >= 2 && swingLows.length >= 2) {
+    const lastSH = swingHighs[swingHighs.length - 1];
+    const prevSH = swingHighs[swingHighs.length - 2];
+    const lastSL = swingLows[swingLows.length - 1];
+    const prevSL = swingLows[swingLows.length - 2];
+
+    const isUptrend = lastSH > prevSH && lastSL > prevSL;
+    const isDowntrend = lastSH < prevSH && lastSL < prevSL;
+
+    if (isUptrend && atr > 0) {
+      const distToSH = (lastSH - currentPrice) / atr;
+      if (distToSH > 0 && distToSH < 0.3) {
+        structureSignals.push({
+          type: "BOS_FORMING",
+          direction: "bullish",
+          referenceLevel: round(lastSH, dec),
+          distanceToTrigger: Math.round(distToSH * 100) / 100,
+        });
+      }
+      if (currentPrice < lastSL) {
+        structureSignals.push({
+          type: "CHOCH_FORMING",
+          direction: "bearish",
+          referenceLevel: round(lastSL, dec),
+          distanceToTrigger: 0,
+        });
+      }
+    }
+
+    if (isDowntrend && atr > 0) {
+      const distToSL = (currentPrice - lastSL) / atr;
+      if (distToSL > 0 && distToSL < 0.3) {
+        structureSignals.push({
+          type: "BOS_FORMING",
+          direction: "bearish",
+          referenceLevel: round(lastSL, dec),
+          distanceToTrigger: Math.round(distToSL * 100) / 100,
+        });
+      }
+      if (currentPrice > lastSH) {
+        structureSignals.push({
+          type: "CHOCH_FORMING",
+          direction: "bullish",
+          referenceLevel: round(lastSH, dec),
+          distanceToTrigger: 0,
+        });
+      }
+    }
+
+    const lastCandle = candles15m[candles15m.length - 1];
+    if (lastCandle) {
+      if (lastCandle.low < lastSL && lastCandle.close > lastSL) {
+        structureSignals.push({
+          type: "LIQUIDITY_SWEEP",
+          direction: "bullish",
+          referenceLevel: round(lastSL, dec),
+          distanceToTrigger: 0,
+        });
+      }
+      if (lastCandle.high > lastSH && lastCandle.close < lastSH) {
+        structureSignals.push({
+          type: "LIQUIDITY_SWEEP",
+          direction: "bearish",
+          referenceLevel: round(lastSH, dec),
+          distanceToTrigger: 0,
+        });
+      }
+    }
+  }
+
+  // ── Module 4: Confluence Convergence Detector ─────────────────────────────
+
+  const convergingIndicators: { name: string; detail: string; weight: number }[] = [];
+  let confluenceScore = 0;
+
+  const ema9Now = ema9Arr.length > 0 ? ema9Arr[ema9Arr.length - 1] : 0;
+  const ema21Now = ema21Arr.length > 0 ? ema21Arr[ema21Arr.length - 1] : 0;
+  const emaGap = Math.abs(ema9Now - ema21Now);
+  const ema9Prev = ema9Arr.length > 5 ? ema9Arr[ema9Arr.length - 6] : ema9Now;
+  const ema21Prev = ema21Arr.length > 5 ? ema21Arr[ema21Arr.length - 6] : ema21Now;
+  const prevEmaGap = Math.abs(ema9Prev - ema21Prev);
+
+  if (atr > 0 && emaGap < 0.15 * atr && emaGap < prevEmaGap) {
+    confluenceScore += 20;
+    convergingIndicators.push({
+      name: "EMA 9/21 cross",
+      detail: `Gap ${round(emaGap, dec)} and narrowing`,
+      weight: 20,
+    });
+  }
+
+  if ((rsi >= 32 && rsi <= 38) || (rsi >= 62 && rsi <= 68)) {
+    confluenceScore += 15;
+    convergingIndicators.push({
+      name: "RSI approaching zone",
+      detail: rsi < 50 ? `RSI ${round(rsi, 1)} near oversold` : `RSI ${round(rsi, 1)} near overbought`,
+      weight: 15,
+    });
+  }
+
+  const histNow = macdHistArr.length > 0 ? macdHistArr[macdHistArr.length - 1] : 0;
+  const histPrev = macdHistArr.length > 1 ? macdHistArr[macdHistArr.length - 2] : histNow;
+  if (atr > 0 && Math.abs(histNow) < 0.1 * atr && Math.sign(histNow) !== Math.sign(histPrev)) {
+    confluenceScore += 15;
+    convergingIndicators.push({
+      name: "MACD histogram",
+      detail: "Near zero and changing direction",
+      weight: 15,
+    });
+  }
+
+  if (Math.abs(stochRsi.k - stochRsi.d) < 5) {
+    const stochConverging = macdHistArr.length > 1; // proxy: if we have data
+    if (stochConverging) {
+      confluenceScore += 10;
+      convergingIndicators.push({
+        name: "Stoch RSI K/D",
+        detail: `Gap ${round(Math.abs(stochRsi.k - stochRsi.d), 1)} converging`,
+        weight: 10,
+      });
+    }
+  }
+
+  for (const f of fibLevels) {
+    if (f.level === "0.618" || f.level === "0.382") {
+      const fibDist = atr > 0 ? Math.abs(currentPrice - f.price) / atr : Infinity;
+      if (fibDist < 0.3) {
+        confluenceScore += 15;
+        convergingIndicators.push({
+          name: "Fib level",
+          detail: `Price at ${f.level} (${round(f.price, dec)})`,
+          weight: 15,
+        });
+        break;
+      }
+    }
+  }
+
+  if (bbWidths.length >= 20) {
+    const sortedWidths = [...bbWidths].sort((a, b) => a - b);
+    const p20 = sortedWidths[Math.floor(sortedWidths.length * 0.2)];
+    const prevBBW = bbWidths.length > 1 ? bbWidths[bbWidths.length - 2] : bbWidth;
+    if (bbWidth <= p20 && bbWidth < prevBBW) {
+      confluenceScore += 10;
+      convergingIndicators.push({
+        name: "BB squeeze",
+        detail: "Width in bottom 20th percentile and narrowing",
+        weight: 10,
+      });
+    }
+  }
+
+  if (volData.ratio < 0.5) {
+    confluenceScore += 10;
+    convergingIndicators.push({
+      name: "Volume drying up",
+      detail: `Ratio ${round(volData.ratio, 2)}`,
+      weight: 10,
+    });
+  }
+
+  const confluenceStatus: "SETUP_IMMINENT" | "SETUP_FORMING" | "NO_SETUP" =
+    confluenceScore >= 60 ? "SETUP_IMMINENT" : confluenceScore >= 40 ? "SETUP_FORMING" : "NO_SETUP";
+
+  // ── Module 5: Order Flow Early Warning ────────────────────────────────────
+
+  let cvdDivDirection: "bullish" | "bearish" | null = null;
+  let cvdDivDetected = false;
+
+  if (candles15m.length >= 10) {
+    const last10 = candles15m.slice(-10);
+    const highestPriceCandle = last10.reduce((max, c) => c.high > max.high ? c : max, last10[0]);
+    const lowestPriceCandle = last10.reduce((min, c) => c.low < min.low ? c : min, last10[0]);
+
+    let runCvd = 0;
+    const cvdAtCandles: number[] = [];
+    for (const c of last10) {
+      runCvd += c.close >= c.open ? c.volume : -c.volume;
+      cvdAtCandles.push(runCvd);
+    }
+
+    const highIdx = last10.indexOf(highestPriceCandle);
+    const lowestIdx = last10.indexOf(lowestPriceCandle);
+
+    if (highIdx >= 0 && highIdx < cvdAtCandles.length) {
+      const cvdAtHigh = cvdAtCandles[highIdx];
+      const cvdNow = cvdAtCandles[cvdAtCandles.length - 1];
+      if (currentPrice >= highestPriceCandle.high * 0.998 && cvdNow < cvdAtHigh) {
+        cvdDivDetected = true;
+        cvdDivDirection = "bearish";
+      }
+    }
+    if (!cvdDivDetected && lowestIdx >= 0 && lowestIdx < cvdAtCandles.length) {
+      const cvdAtLow = cvdAtCandles[lowestIdx];
+      const cvdNow = cvdAtCandles[cvdAtCandles.length - 1];
+      if (currentPrice <= lowestPriceCandle.low * 1.002 && cvdNow > cvdAtLow) {
+        cvdDivDetected = true;
+        cvdDivDirection = "bullish";
+      }
+    }
+  }
+
+  let fundingInflection = false;
+  if (fundingRate !== null) {
+    fundingInflection = (fundingRate > 0 && fundingRate < 0.0001) || (fundingRate < 0 && fundingRate > -0.0001);
+  }
+
+  let absorptionSequence = 0;
+  if (candles15m.length >= 5) {
+    const last5 = candles15m.slice(-5);
+    const volEmaArr = ema(candles15m.map(c => c.volume), 20);
+    for (let i = 0; i < last5.length; i++) {
+      const c = last5[i];
+      const range = c.high - c.low;
+      const idx = candles15m.length - 5 + i;
+      const ve = idx < volEmaArr.length ? volEmaArr[idx] : 0;
+      if (range > 0 && Math.abs(c.close - c.open) < 0.3 * range && ve > 0 && c.volume > 1.8 * ve) {
+        absorptionSequence++;
+      }
+    }
+  }
+
+  let oiPriceDivergence: string | null = null;
+  if (oiChange !== null && candles15m.length >= 2) {
+    const priceChange = Math.abs(
+      ((currentPrice - candles15m[candles15m.length - 2].close) / candles15m[candles15m.length - 2].close) * 100
+    );
+    if (Math.abs(oiChange) > 5 && priceChange < 1) {
+      oiPriceDivergence = oiChange > 0
+        ? "OI rising but price flat — positions building"
+        : "OI falling but price flat — positions unwinding";
+    }
+  }
+
+  // ── Module 6: Projected Trigger Times ─────────────────────────────────────
+
+  const projections: {
+    indicator: string;
+    trigger: string;
+    estimatedCandles: number;
+    direction: "bullish" | "bearish";
+  }[] = [];
+
+  if (ema9Arr.length >= 6 && ema21Arr.length >= 6) {
+    const gapNow = ema9Now - ema21Now;
+    const gapBefore = ema9Prev - ema21Prev;
+    const rateOfClosure = (Math.abs(gapBefore) - Math.abs(gapNow)) / 5;
+    if (rateOfClosure > 0 && Math.abs(gapNow) > 0) {
+      const est = Math.abs(gapNow) / rateOfClosure;
+      if (est > 0 && est < 50) {
+        projections.push({
+          indicator: "EMA 9/21",
+          trigger: gapNow > 0 ? "Bearish cross" : "Bullish cross",
+          estimatedCandles: Math.round(est),
+          direction: gapNow > 0 ? "bearish" : "bullish",
+        });
+      }
+    }
+  }
+
+  if (rsiArr.length >= 6) {
+    const rsiVelocity = (rsiArr[rsiArr.length - 1] - rsiArr[rsiArr.length - 6]) / 5;
+    if (rsiVelocity < 0 && rsi > 30) {
+      const est = (rsi - 30) / Math.abs(rsiVelocity);
+      if (est > 0 && est < 50) {
+        projections.push({
+          indicator: "RSI",
+          trigger: "Reaching oversold (30)",
+          estimatedCandles: Math.round(est),
+          direction: "bearish",
+        });
+      }
+    }
+    if (rsiVelocity > 0 && rsi < 70) {
+      const est = (70 - rsi) / rsiVelocity;
+      if (est > 0 && est < 50) {
+        projections.push({
+          indicator: "RSI",
+          trigger: "Reaching overbought (70)",
+          estimatedCandles: Math.round(est),
+          direction: "bullish",
+        });
+      }
+    }
+  }
+
+  const allLevels = [
+    ...supports.map(s => ({ price: s, label: "support" })),
+    ...resistances.map(r => ({ price: r, label: "resistance" })),
+  ];
+  if (Math.abs(priceVelocity) > 0) {
+    for (const lvl of allLevels) {
+      const dist = lvl.price - currentPrice;
+      if ((dist > 0 && priceVelocity > 0) || (dist < 0 && priceVelocity < 0)) {
+        const est = Math.abs(dist) / Math.abs(priceVelocity);
+        if (est > 0 && est < 50) {
+          projections.push({
+            indicator: "Price",
+            trigger: `Reaching ${lvl.label} at ${round(lvl.price, dec)}`,
+            estimatedCandles: Math.round(est),
+            direction: lvl.label === "resistance" ? "bullish" : "bearish",
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  // ── Overall Readiness ─────────────────────────────────────────────────────
+
+  const hasImminent = approachingLevels.some(l => l.tier === "IMMINENT");
+  const hasStructure = structureSignals.length > 0;
+
+  let overallReadiness: "SETUP_READY" | "SETUP_FORMING" | "NO_SETUP";
+  if ((confluenceStatus === "SETUP_IMMINENT" && (hasImminent || hasStructure)) || (confluenceScore >= 50 && hasImminent && hasStructure)) {
+    overallReadiness = "SETUP_READY";
+  } else if (confluenceStatus !== "NO_SETUP" || hasImminent || hasStructure || retestSetup.active) {
+    overallReadiness = "SETUP_FORMING";
+  } else {
+    overallReadiness = "NO_SETUP";
+  }
+
+  const minCandles = projections.length > 0
+    ? Math.min(...projections.map(p => p.estimatedCandles))
+    : null;
+  const actionableIn = minCandles !== null
+    ? minCandles <= 3 ? "NOW" : `~${minCandles} candles`
+    : hasImminent ? "NOW" : "Not imminent";
+
+  return {
+    approachingLevels: approachingLevels.slice(0, 10),
+    retestSetup,
+    structureSignals,
+    confluence: {
+      score: confluenceScore,
+      status: confluenceStatus,
+      convergingIndicators,
+    },
+    orderFlow: {
+      cvdDivergenceForming: { detected: cvdDivDetected, direction: cvdDivDirection },
+      fundingInflection,
+      absorptionSequence,
+      oiPriceDivergence,
+    },
+    projections,
+    overallReadiness,
+    actionableIn,
+  };
+}
+
+// ── Multi-Timeframe Outlook ─────────────────────────────────────────────────
+
+type TFBias = "LONG" | "SHORT" | "NEUTRAL";
+
+interface TimeframeBias {
+  timeframe: string;
+  bias: TFBias;
+  confidence: number;
+  trend: string;
+  rsi: number;
+  emaAlignment: string;
+  momentum: string;
+  keyLevel: string | null;
+  entry: number | null;
+  stopLoss: number | null;
+  tp1: number | null;
+  tp2: number | null;
+  riskReward: number | null;
+}
+
+interface TimeframeOutlook {
+  short: { label: string; timeframes: string[]; biases: TimeframeBias[]; consensus: TFBias; strength: number };
+  medium: { label: string; timeframes: string[]; biases: TimeframeBias[]; consensus: TFBias; strength: number };
+  long: { label: string; timeframes: string[]; biases: TimeframeBias[]; consensus: TFBias; strength: number };
+  alignment: {
+    allAligned: boolean;
+    direction: TFBias;
+    alignedCount: number;
+    totalCount: number;
+    tradeType: "ULTIMATE" | "POSITION" | "SWING" | "SCALP" | "CONFLICTED";
+    description: string;
+  };
+}
+
+function analyzeSingleTimeframe(
+  closes: number[],
+  candles: Candle[],
+  timeframe: string,
+  dec: number
+): TimeframeBias | null {
+  if (closes.length < 21) return null;
+
+  const rsiArr = computeRSI(closes);
+  const rsiVal = tip(rsiArr);
+  const e9 = ema(closes, 9);
+  const e21 = ema(closes, 21);
+  const e50 = closes.length >= 50 ? ema(closes, 50) : null;
+  const last9 = tip(e9);
+  const last21 = tip(e21);
+  const last50 = e50 ? tip(e50) : null;
+  const macd = computeMACD(closes);
+  const hist = tip(macd.histogram);
+  const price = closes[closes.length - 1];
+
+  let trend: string;
+  if (last50 !== null) {
+    trend = last9 > last21 && last21 > last50 ? "bull" : last9 < last21 && last21 < last50 ? "bear" : "mixed";
+  } else {
+    trend = last9 > last21 ? "bull" : last9 < last21 ? "bear" : "mixed";
+  }
+
+  let emaAlignment: string;
+  if (last50 !== null) {
+    if (price > last9 && last9 > last21 && last21 > last50) emaAlignment = "Perfect Bull Stack";
+    else if (price < last9 && last9 < last21 && last21 < last50) emaAlignment = "Perfect Bear Stack";
+    else if (price > last21) emaAlignment = "Above Key EMAs";
+    else emaAlignment = "Below Key EMAs";
+  } else {
+    emaAlignment = price > last9 && last9 > last21 ? "Bull" : price < last9 && last9 < last21 ? "Bear" : "Mixed";
+  }
+
+  let momentum: string;
+  if (hist > 0 && rsiVal > 50) momentum = "Bullish";
+  else if (hist < 0 && rsiVal < 50) momentum = "Bearish";
+  else momentum = "Mixed";
+
+  const swings = findSwingLevelsFromCandles(candles, 2, Math.min(40, candles.length - 4));
+  let keyLevel: string | null = null;
+  if (swings.rawSupports.length > 0 || swings.rawResistances.length > 0) {
+    const nearestSup = swings.rawSupports.length > 0
+      ? swings.rawSupports.reduce((closest, s) => s < price && price - s < price - closest ? s : closest, swings.rawSupports[0])
+      : null;
+    const nearestRes = swings.rawResistances.length > 0
+      ? swings.rawResistances.reduce((closest, r) => r > price && r - price < closest - price ? r : closest, swings.rawResistances[0])
+      : null;
+    if (nearestSup !== null && nearestRes !== null) {
+      const supDist = price - nearestSup;
+      const resDist = nearestRes - price;
+      keyLevel = supDist < resDist
+        ? `Near support ${round(nearestSup, dec)}`
+        : `Near resistance ${round(nearestRes, dec)}`;
+    }
+  }
+
+  let score = 0;
+  if (trend === "bull") score += 30;
+  else if (trend === "bear") score -= 30;
+  if (rsiVal > 55) score += 15;
+  else if (rsiVal < 45) score -= 15;
+  if (hist > 0) score += 20;
+  else if (hist < 0) score -= 20;
+  if (price > last21) score += 15;
+  else score -= 15;
+  if (last50 !== null) {
+    if (price > last50) score += 10;
+    else score -= 10;
+  }
+
+  let bias: TFBias;
+  if (score > 15) bias = "LONG";
+  else if (score < -15) bias = "SHORT";
+  else bias = "NEUTRAL";
+
+  const confidence = Math.min(100, Math.abs(score));
+
+  const atrArr = computeATR(candles);
+  const tfATR = tip(atrArr);
+
+  let entry: number | null = null;
+  let stopLoss: number | null = null;
+  let tp1: number | null = null;
+  let tp2: number | null = null;
+  let riskReward: number | null = null;
+
+  if (bias !== "NEUTRAL" && tfATR > 0) {
+    const sups = swings.rawSupports.filter(s => s < price).sort((a, b) => b - a);
+    const ress = swings.rawResistances.filter(r => r > price).sort((a, b) => a - b);
+
+    if (bias === "LONG") {
+      entry = sups[0] && Math.abs(price - sups[0]) / tfATR < 2 ? round(sups[0], dec) : round(price, dec);
+      stopLoss = round((sups[0] ?? price) - 0.5 * tfATR, dec);
+      tp1 = round(ress[0] ?? price + 1.5 * tfATR, dec);
+      tp2 = round(ress[1] ?? (tp1 + tfATR), dec);
+    } else {
+      entry = ress[0] && Math.abs(ress[0] - price) / tfATR < 2 ? round(ress[0], dec) : round(price, dec);
+      stopLoss = round((ress[0] ?? price) + 0.5 * tfATR, dec);
+      tp1 = round(sups[0] ?? price - 1.5 * tfATR, dec);
+      tp2 = round(sups[1] ?? (tp1 - tfATR), dec);
+    }
+
+    const risk = Math.abs(entry - stopLoss);
+    const reward = Math.abs(tp2 - entry);
+    riskReward = risk > 0 ? Math.round((reward / risk) * 100) / 100 : null;
+  }
+
+  return { timeframe, bias, confidence, trend, rsi: Math.round(rsiVal * 100) / 100, emaAlignment, momentum, keyLevel, entry, stopLoss, tp1, tp2, riskReward };
+}
+
+function computeTimeframeOutlook(params: {
+  candles5m: Candle[];
+  candles15m: Candle[];
+  candles1h: Candle[];
+  candles4h: Candle[];
+  candlesDaily: Candle[];
+  dec: number;
+}): TimeframeOutlook {
+  const { candles5m, candles15m, candles1h, candles4h, candlesDaily, dec } = params;
+
+  const tf5m = analyzeSingleTimeframe(candles5m.map(c => c.close), candles5m, "5m", dec);
+  const tf15m = analyzeSingleTimeframe(candles15m.map(c => c.close), candles15m, "15m", dec);
+  const tf1h = analyzeSingleTimeframe(candles1h.map(c => c.close), candles1h, "1h", dec);
+  const tf4h = analyzeSingleTimeframe(candles4h.map(c => c.close), candles4h, "4h", dec);
+  const tfDaily = analyzeSingleTimeframe(candlesDaily.map(c => c.close), candlesDaily, "1D", dec);
+
+  const neutral: TimeframeBias = { timeframe: "", bias: "NEUTRAL", confidence: 0, trend: "mixed", rsi: 50, emaAlignment: "Mixed", momentum: "Mixed", keyLevel: null, entry: null, stopLoss: null, tp1: null, tp2: null, riskReward: null };
+
+  const shortBiases = [tf5m ?? { ...neutral, timeframe: "5m" }, tf15m ?? { ...neutral, timeframe: "15m" }];
+  const mediumBiases = [tf15m ?? { ...neutral, timeframe: "15m" }, tf1h ?? { ...neutral, timeframe: "1h" }, tf4h ?? { ...neutral, timeframe: "4h" }];
+  const longBiases = [tfDaily ?? { ...neutral, timeframe: "1D" }, tf4h ?? { ...neutral, timeframe: "4h" }];
+
+  const getConsensus = (biases: TimeframeBias[]): { consensus: TFBias; strength: number } => {
+    const longCount = biases.filter(b => b.bias === "LONG").length;
+    const shortCount = biases.filter(b => b.bias === "SHORT").length;
+    const total = biases.length;
+    if (longCount > total / 2) return { consensus: "LONG", strength: Math.round((longCount / total) * 100) };
+    if (shortCount > total / 2) return { consensus: "SHORT", strength: Math.round((shortCount / total) * 100) };
+    return { consensus: "NEUTRAL", strength: 0 };
+  };
+
+  const shortResult = getConsensus(shortBiases);
+  const mediumResult = getConsensus(mediumBiases);
+  const longResult = getConsensus(longBiases);
+
+  const allBiases = [tf5m, tf15m, tf1h, tf4h, tfDaily].filter((b): b is TimeframeBias => b !== null);
+  const longCount = allBiases.filter(b => b.bias === "LONG").length;
+  const shortCount = allBiases.filter(b => b.bias === "SHORT").length;
+  const allAligned = longCount === allBiases.length || shortCount === allBiases.length;
+  const dominantDir: TFBias = longCount > shortCount ? "LONG" : shortCount > longCount ? "SHORT" : "NEUTRAL";
+  const alignedCount = Math.max(longCount, shortCount);
+
+  let tradeType: "ULTIMATE" | "POSITION" | "SWING" | "SCALP" | "CONFLICTED";
+  let description: string;
+
+  if (allAligned && allBiases.length >= 4) {
+    tradeType = "ULTIMATE";
+    description = `All ${allBiases.length} timeframes align ${dominantDir} — maximum conviction position trade`;
+  } else if (longResult.consensus !== "NEUTRAL" && mediumResult.consensus === longResult.consensus) {
+    tradeType = "POSITION";
+    description = `Long + medium timeframes align ${longResult.consensus} — position/swing trade`;
+  } else if (mediumResult.consensus !== "NEUTRAL" && shortResult.consensus === mediumResult.consensus) {
+    tradeType = "SWING";
+    description = `Short + medium timeframes align ${mediumResult.consensus} — swing trade`;
+  } else if (shortResult.consensus !== "NEUTRAL" && shortResult.strength >= 80) {
+    tradeType = "SCALP";
+    description = `Short timeframes ${shortResult.consensus} but higher TFs diverge — scalp only`;
+  } else {
+    tradeType = "CONFLICTED";
+    description = "Timeframes in conflict — no clear edge, wait for alignment";
+  }
+
+  return {
+    short: { label: "Short-Term", timeframes: ["5m", "15m"], biases: shortBiases, ...shortResult },
+    medium: { label: "Medium-Term", timeframes: ["15m", "1h", "4h"], biases: mediumBiases, ...mediumResult },
+    long: { label: "Long-Term", timeframes: ["4h", "1D"], biases: longBiases, ...longResult },
+    alignment: { allAligned, direction: dominantDir, alignedCount, totalCount: allBiases.length, tradeType, description },
+  };
+}
+
 // ── Main Trade Call Computation ──────────────────────────────────────────────
 
 function computeMultiFactorCall(
@@ -2973,6 +3718,37 @@ export async function GET(req: NextRequest) {
     call.reasoning.unshift(`EVENT BLACKOUT: ${macroState.eventBlackout.event} — signals suppressed`);
   }
 
+  // ── Anticipatory signals ─────────────────────────────────────────────────────
+  const anticipatory = computeAnticipatorySignals({
+    candles15m,
+    currentPrice,
+    atr: tradeATR,
+    supports: levels.supports,
+    resistances: levels.resistances,
+    fibLevels,
+    rsi,
+    rsiArr,
+    stochRsi,
+    macdHistArr: macdData.histogram,
+    ema9Arr,
+    ema21Arr,
+    bbWidths,
+    bbWidth,
+    volData,
+    fundingRate: strikeFunding,
+    oiChange: okxOIChange,
+    dec,
+  });
+
+  const timeframeOutlook = computeTimeframeOutlook({
+    candles5m,
+    candles15m,
+    candles1h,
+    candles4h,
+    candlesDaily,
+    dec,
+  });
+
   // ── Log signal for accuracy tracking ────────────────────────────────────────
   if (call.bias !== "WAIT" && call.confidence >= 55) {
     appendSignal({
@@ -3092,6 +3868,8 @@ export async function GET(req: NextRequest) {
       squeeze,
     },
     call,
+    anticipatory,
+    timeframeOutlook,
     macro: macroState
       ? {
           bias: macroState.bias,

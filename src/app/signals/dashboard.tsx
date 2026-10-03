@@ -33,6 +33,8 @@ import {
   Newspaper,
   HelpCircle,
   X,
+  Crosshair,
+  Clock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -178,6 +180,67 @@ interface SignalsResponse {
     catalystRisk: string | null
     signalFactors: { category: string; assessment: string; weight: number }[]
   }
+  anticipatory: {
+    approachingLevels: Array<{
+      level: number
+      type: "support" | "resistance" | "fib" | "order_block"
+      distance: number
+      tier: "IMMINENT" | "APPROACHING" | "WATCHLIST"
+      velocity: number
+      estimatedCandles: number | null
+      fibLevel?: string
+    }>
+    retestSetup: {
+      active: boolean
+      level: number | null
+      state: "BREAKOUT_DETECTED" | "PULLBACK_IN_PROGRESS" | "RETEST_ZONE" | null
+      direction: "long" | "short" | null
+      volumeConfirms: boolean
+      rsiResetting: boolean
+    }
+    structureSignals: Array<{
+      type: "BOS_FORMING" | "CHOCH_FORMING" | "LIQUIDITY_SWEEP"
+      direction: "bullish" | "bearish"
+      referenceLevel: number
+      distanceToTrigger: number
+    }>
+    confluence: {
+      score: number
+      status: "SETUP_IMMINENT" | "SETUP_FORMING" | "NO_SETUP"
+      convergingIndicators: Array<{
+        name: string
+        detail: string
+        weight: number
+      }>
+    }
+    orderFlow: {
+      cvdDivergenceForming: { detected: boolean; direction: "bullish" | "bearish" | null }
+      fundingInflection: boolean
+      absorptionSequence: number
+      oiPriceDivergence: string | null
+    }
+    projections: Array<{
+      indicator: string
+      trigger: string
+      estimatedCandles: number
+      direction: "bullish" | "bearish"
+    }>
+    overallReadiness: "SETUP_READY" | "SETUP_FORMING" | "NO_SETUP"
+    actionableIn: string
+  } | null
+  timeframeOutlook: {
+    short: { label: string; timeframes: string[]; biases: Array<{ timeframe: string; bias: "LONG" | "SHORT" | "NEUTRAL"; confidence: number; trend: string; rsi: number; emaAlignment: string; momentum: string; keyLevel: string | null; entry: number | null; stopLoss: number | null; tp1: number | null; tp2: number | null; riskReward: number | null }>; consensus: "LONG" | "SHORT" | "NEUTRAL"; strength: number }
+    medium: { label: string; timeframes: string[]; biases: Array<{ timeframe: string; bias: "LONG" | "SHORT" | "NEUTRAL"; confidence: number; trend: string; rsi: number; emaAlignment: string; momentum: string; keyLevel: string | null; entry: number | null; stopLoss: number | null; tp1: number | null; tp2: number | null; riskReward: number | null }>; consensus: "LONG" | "SHORT" | "NEUTRAL"; strength: number }
+    long: { label: string; timeframes: string[]; biases: Array<{ timeframe: string; bias: "LONG" | "SHORT" | "NEUTRAL"; confidence: number; trend: string; rsi: number; emaAlignment: string; momentum: string; keyLevel: string | null; entry: number | null; stopLoss: number | null; tp1: number | null; tp2: number | null; riskReward: number | null }>; consensus: "LONG" | "SHORT" | "NEUTRAL"; strength: number }
+    alignment: {
+      allAligned: boolean
+      direction: "LONG" | "SHORT" | "NEUTRAL"
+      alignedCount: number
+      totalCount: number
+      tradeType: "ULTIMATE" | "POSITION" | "SWING" | "SCALP" | "CONFLICTED"
+      description: string
+    }
+  } | null
   newsSentiment?: {
     score: number
     label: string
@@ -817,6 +880,8 @@ export default function SignalsDashboard() {
   const vol = d?.volume
   const divs = d?.divergences
   const pats = d?.patterns
+  const anticipatory = d?.anticipatory ?? null
+  const timeframeOutlook = d?.timeframeOutlook ?? null
 
   const callDir = call?.bias ?? "WAIT"
   const callColor = dirColor(callDir)
@@ -1313,6 +1378,580 @@ export default function SignalsDashboard() {
                       )}
                     </div>
                   )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── 4b. Setup Scanner ──────────────────────────────────── */}
+            {anticipatory && (
+              <motion.div {...fadeUp} className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Eye className="size-4 text-white/50" />
+                  <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
+                    Setup Scanner
+                  </h2>
+                </div>
+
+                {/* Overall Readiness Banner */}
+                <div
+                  className={cn(
+                    "relative rounded-xl border p-4 flex items-center gap-4 overflow-hidden",
+                    anticipatory.overallReadiness === "SETUP_READY"
+                      ? "border-[#00FF88]/30 bg-[#00FF88]/[0.04]"
+                      : anticipatory.overallReadiness === "SETUP_FORMING"
+                        ? "border-[#F59E0B]/30 bg-[#F59E0B]/[0.04]"
+                        : "border-white/[0.06] bg-white/[0.02]"
+                  )}
+                >
+                  {anticipatory.overallReadiness === "SETUP_READY" && (
+                    <div className="absolute inset-0 bg-[#00FF88]/[0.03] animate-pulse pointer-events-none" />
+                  )}
+                  <div className="relative flex items-center gap-3">
+                    <span
+                      className={cn(
+                        "size-3 rounded-full shrink-0",
+                        anticipatory.overallReadiness === "SETUP_READY"
+                          ? "bg-[#00FF88] animate-pulse"
+                          : anticipatory.overallReadiness === "SETUP_FORMING"
+                            ? "bg-[#F59E0B]"
+                            : "bg-white/20"
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        "text-sm font-bold uppercase tracking-wider",
+                        anticipatory.overallReadiness === "SETUP_READY"
+                          ? "text-[#00FF88]"
+                          : anticipatory.overallReadiness === "SETUP_FORMING"
+                            ? "text-[#F59E0B]"
+                            : "text-white/40"
+                      )}
+                    >
+                      {anticipatory.overallReadiness === "SETUP_READY"
+                        ? "SETUP READY"
+                        : anticipatory.overallReadiness === "SETUP_FORMING"
+                          ? "SETUP FORMING"
+                          : "NO ACTIVE SETUP"}
+                    </span>
+                    {anticipatory.overallReadiness !== "NO_SETUP" && (
+                      <span className="font-mono text-xs text-white/40">
+                        {anticipatory.actionableIn}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Approaching Levels */}
+                {anticipatory.approachingLevels.length > 0 && (
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.04]">
+                      <Crosshair className="size-4 text-white/40" />
+                      <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                        Approaching Levels
+                      </span>
+                    </div>
+                    <div className="divide-y divide-white/[0.04]">
+                      {[...anticipatory.approachingLevels]
+                        .sort((a, b) => {
+                          const tierOrder = { IMMINENT: 0, APPROACHING: 1, WATCHLIST: 2 }
+                          return (tierOrder[a.tier] ?? 3) - (tierOrder[b.tier] ?? 3) || a.distance - b.distance
+                        })
+                        .map((lvl, i) => (
+                          <div key={i} className="flex items-center justify-between px-4 py-2.5 gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span
+                                className={cn(
+                                  "shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase",
+                                  lvl.tier === "IMMINENT"
+                                    ? "bg-[#FF3B5C]/15 text-[#FF3B5C] animate-pulse"
+                                    : lvl.tier === "APPROACHING"
+                                      ? "bg-[#F59E0B]/15 text-[#F59E0B]"
+                                      : "bg-[#3B82F6]/10 text-[#3B82F6]/60"
+                                )}
+                              >
+                                {lvl.tier}
+                              </span>
+                              <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase bg-white/[0.06] text-white/40">
+                                {lvl.type.replace("_", " ")}
+                                {lvl.fibLevel ? ` ${lvl.fibLevel}` : ""}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-sm font-semibold text-white/80">
+                                  {lvl.level.toFixed(dp)}
+                                </span>
+                                <CopyBtn value={lvl.level.toFixed(dp)} />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="font-mono text-xs text-white/40">
+                                {lvl.distance.toFixed(2)} ATR
+                              </span>
+                              <span className={cn(
+                                "text-xs",
+                                Math.abs(lvl.velocity) > 0.5 ? "text-[#FF3B5C]" : "text-white/30"
+                              )}>
+                                {lvl.velocity > 0 ? <ArrowUp className="size-3 inline" /> : <ArrowDown className="size-3 inline" />}
+                              </span>
+                              {lvl.estimatedCandles != null && (
+                                <span className="font-mono text-[10px] text-white/30">
+                                  ~{lvl.estimatedCandles}c
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Retest Tracker */}
+                {anticipatory.retestSetup.active && anticipatory.retestSetup.state && (
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <GitBranch className="size-4 text-white/40" />
+                      <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                        Retest Tracker
+                      </span>
+                      {anticipatory.retestSetup.direction && (
+                        <span
+                          className={cn(
+                            "rounded px-1.5 py-0.5 text-[9px] font-bold uppercase",
+                            anticipatory.retestSetup.direction === "long"
+                              ? "bg-[#00FF88]/15 text-[#00FF88]"
+                              : "bg-[#FF3B5C]/15 text-[#FF3B5C]"
+                          )}
+                        >
+                          {anticipatory.retestSetup.direction}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* State Machine */}
+                    <div className="flex items-center gap-2 mb-4">
+                      {(["BREAKOUT_DETECTED", "PULLBACK_IN_PROGRESS", "RETEST_ZONE"] as const).map((step, i) => {
+                        const isActive = anticipatory.retestSetup.state === step
+                        const stepLabels = { BREAKOUT_DETECTED: "Breakout", PULLBACK_IN_PROGRESS: "Pullback", RETEST_ZONE: "Retest Zone" }
+                        const stepOrder = { BREAKOUT_DETECTED: 0, PULLBACK_IN_PROGRESS: 1, RETEST_ZONE: 2 }
+                        const currentOrder = anticipatory.retestSetup.state ? stepOrder[anticipatory.retestSetup.state] : -1
+                        const isPast = stepOrder[step] < currentOrder
+                        return (
+                          <React.Fragment key={step}>
+                            {i > 0 && (
+                              <div className={cn("h-px flex-1", isPast || isActive ? "bg-[#00FF88]/40" : "bg-white/10")} />
+                            )}
+                            <div className="flex flex-col items-center gap-1">
+                              <span
+                                className={cn(
+                                  "size-3 rounded-full border-2",
+                                  isActive
+                                    ? "border-[#00FF88] bg-[#00FF88] animate-pulse"
+                                    : isPast
+                                      ? "border-[#00FF88]/40 bg-[#00FF88]/20"
+                                      : "border-white/20 bg-transparent"
+                                )}
+                              />
+                              <span className={cn(
+                                "text-[9px] uppercase tracking-wider whitespace-nowrap",
+                                isActive ? "text-[#00FF88] font-bold" : isPast ? "text-white/40" : "text-white/20"
+                              )}>
+                                {stepLabels[step]}
+                              </span>
+                            </div>
+                          </React.Fragment>
+                        )
+                      })}
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      {anticipatory.retestSetup.level != null && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-white/30 uppercase">Level</span>
+                          <span className="font-mono text-sm font-semibold text-white/80">
+                            {anticipatory.retestSetup.level.toFixed(dp)}
+                          </span>
+                          <CopyBtn value={anticipatory.retestSetup.level.toFixed(dp)} />
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 ml-auto">
+                        <span className={cn(
+                          "flex items-center gap-1 text-[10px] uppercase",
+                          anticipatory.retestSetup.volumeConfirms ? "text-[#00FF88]" : "text-white/20"
+                        )}>
+                          {anticipatory.retestSetup.volumeConfirms
+                            ? <Check className="size-3" />
+                            : <Minus className="size-3" />}
+                          Vol
+                        </span>
+                        <span className={cn(
+                          "flex items-center gap-1 text-[10px] uppercase",
+                          anticipatory.retestSetup.rsiResetting ? "text-[#00FF88]" : "text-white/20"
+                        )}>
+                          {anticipatory.retestSetup.rsiResetting
+                            ? <Check className="size-3" />
+                            : <Minus className="size-3" />}
+                          RSI
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Structure Signals */}
+                {anticipatory.structureSignals.length > 0 && (
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <GitBranch className="size-4 text-white/40" />
+                      <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                        Structure Signals
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {anticipatory.structureSignals.map((sig, i) => {
+                        const typeColor =
+                          sig.type === "BOS_FORMING" ? "#22D3EE"
+                            : sig.type === "CHOCH_FORMING" ? "#A855F7"
+                              : "#F59E0B"
+                        return (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase"
+                                style={{ backgroundColor: `${typeColor}15`, color: typeColor }}
+                              >
+                                {sig.type.replace("_", " ")}
+                              </span>
+                              {sig.direction === "bullish"
+                                ? <ArrowUp className="size-3 text-[#00FF88]" />
+                                : <ArrowDown className="size-3 text-[#FF3B5C]" />}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs text-white/60">
+                                {sig.referenceLevel.toFixed(dp)}
+                              </span>
+                              <span className="font-mono text-[10px] text-white/30">
+                                {sig.distanceToTrigger.toFixed(2)} ATR
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Confluence Meter */}
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Gauge className="size-4 text-white/40" />
+                    <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                      Confluence
+                    </span>
+                    <span
+                      className={cn(
+                        "ml-auto rounded px-1.5 py-0.5 text-[9px] font-bold uppercase",
+                        anticipatory.confluence.status === "SETUP_IMMINENT"
+                          ? "bg-[#FF3B5C]/15 text-[#FF3B5C] animate-pulse"
+                          : anticipatory.confluence.status === "SETUP_FORMING"
+                            ? "bg-[#F59E0B]/15 text-[#F59E0B]"
+                            : "bg-white/[0.06] text-white/30"
+                      )}
+                    >
+                      {anticipatory.confluence.status.replace("_", " ")}
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] uppercase tracking-wider text-white/40">Score</span>
+                      <span className="font-mono text-sm font-bold" style={{
+                        color: anticipatory.confluence.score >= 70 ? "#00FF88"
+                          : anticipatory.confluence.score >= 40 ? "#F59E0B"
+                            : "#6B7280"
+                      }}>
+                        {anticipatory.confluence.score}/100
+                      </span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-white/[0.06] overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${anticipatory.confluence.score}%`,
+                          backgroundColor: anticipatory.confluence.score >= 70 ? "#00FF88"
+                            : anticipatory.confluence.score >= 40 ? "#F59E0B"
+                              : "#6B7280"
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Converging Indicators */}
+                  {anticipatory.confluence.convergingIndicators.length > 0 && (
+                    <div className="space-y-1.5">
+                      {anticipatory.confluence.convergingIndicators.map((ind, i) => (
+                        <div key={i} className="flex items-center gap-3">
+                          <span className="text-xs text-white/60 min-w-[100px] truncate">{ind.name}</span>
+                          <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-[#00FF88]/60"
+                              style={{ width: `${Math.min(ind.weight * 100, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-white/30 min-w-[80px] truncate text-right">{ind.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Order Flow Alerts */}
+                {(anticipatory.orderFlow.cvdDivergenceForming.detected ||
+                  anticipatory.orderFlow.fundingInflection ||
+                  anticipatory.orderFlow.absorptionSequence > 0 ||
+                  anticipatory.orderFlow.oiPriceDivergence) && (
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Waves className="size-4 text-white/40" />
+                      <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                        Order Flow
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {anticipatory.orderFlow.cvdDivergenceForming.detected && (
+                        <span className={cn(
+                          "rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase",
+                          anticipatory.orderFlow.cvdDivergenceForming.direction === "bullish"
+                            ? "bg-[#00FF88]/10 text-[#00FF88]"
+                            : "bg-[#FF3B5C]/10 text-[#FF3B5C]"
+                        )}>
+                          CVD Div {anticipatory.orderFlow.cvdDivergenceForming.direction}
+                        </span>
+                      )}
+                      {anticipatory.orderFlow.fundingInflection && (
+                        <span className="rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase bg-[#F59E0B]/10 text-[#F59E0B]">
+                          Funding Inflection
+                        </span>
+                      )}
+                      {anticipatory.orderFlow.absorptionSequence > 0 && (
+                        <span className="rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase bg-[#22D3EE]/10 text-[#22D3EE]">
+                          Absorption x{anticipatory.orderFlow.absorptionSequence}
+                        </span>
+                      )}
+                      {anticipatory.orderFlow.oiPriceDivergence && (
+                        <span className="rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase bg-[#A855F7]/10 text-[#A855F7]">
+                          OI: {anticipatory.orderFlow.oiPriceDivergence}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Projections Timeline */}
+                {anticipatory.projections.length > 0 && (
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Clock className="size-4 text-white/40" />
+                      <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                        Projections
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[...anticipatory.projections]
+                        .sort((a, b) => a.estimatedCandles - b.estimatedCandles)
+                        .map((proj, i) => (
+                          <div
+                            key={i}
+                            className={cn(
+                              "flex items-center gap-2 rounded-lg border px-3 py-2",
+                              proj.direction === "bullish"
+                                ? "border-[#00FF88]/20 bg-[#00FF88]/[0.03]"
+                                : "border-[#FF3B5C]/20 bg-[#FF3B5C]/[0.03]"
+                            )}
+                          >
+                            <span className={cn(
+                              "text-xs font-semibold",
+                              proj.direction === "bullish" ? "text-[#00FF88]" : "text-[#FF3B5C]"
+                            )}>
+                              {proj.trigger}
+                            </span>
+                            <span className="font-mono text-[10px] text-white/30">
+                              ~{proj.estimatedCandles}c
+                            </span>
+                            {proj.direction === "bullish"
+                              ? <ArrowUp className="size-3 text-[#00FF88]" />
+                              : <ArrowDown className="size-3 text-[#FF3B5C]" />}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* ── 4c. Timeframe Alignment ────────────────────────────────── */}
+            {timeframeOutlook && (
+              <motion.div {...fadeUp}>
+                <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Layers className="size-4" />
+                  Timeframe Alignment
+                </h2>
+
+                <div
+                  className="rounded-xl overflow-hidden mb-4"
+                  style={{
+                    border: `1px solid ${
+                      timeframeOutlook.alignment.tradeType === "ULTIMATE" ? "#00FF88" :
+                      timeframeOutlook.alignment.tradeType === "POSITION" ? "#00CC6A" :
+                      timeframeOutlook.alignment.tradeType === "SWING" ? "#F59E0B" :
+                      timeframeOutlook.alignment.tradeType === "SCALP" ? "#F59E0B" :
+                      "rgba(255,255,255,0.06)"
+                    }40`,
+                    background: `linear-gradient(135deg, ${
+                      timeframeOutlook.alignment.tradeType === "ULTIMATE" ? "#00FF88" :
+                      timeframeOutlook.alignment.tradeType === "POSITION" ? "#00CC6A" :
+                      timeframeOutlook.alignment.tradeType === "SWING" ? "#F59E0B" :
+                      timeframeOutlook.alignment.tradeType === "SCALP" ? "#F59E0B" :
+                      "rgba(255,255,255,0.06)"
+                    }08 0%, transparent 60%)`,
+                  }}
+                >
+                  <div className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      {timeframeOutlook.alignment.tradeType === "ULTIMATE" && (
+                        <div className="relative flex size-3">
+                          <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#00FF88] opacity-75" />
+                          <span className="relative inline-flex size-3 rounded-full bg-[#00FF88]" />
+                        </div>
+                      )}
+                      <span
+                        className="rounded-lg px-3 py-1.5 text-sm font-black uppercase"
+                        style={{
+                          backgroundColor: `${
+                            timeframeOutlook.alignment.tradeType === "ULTIMATE" ? "#00FF88" :
+                            timeframeOutlook.alignment.tradeType === "POSITION" ? "#00CC6A" :
+                            timeframeOutlook.alignment.tradeType === "SWING" ? "#F59E0B" :
+                            timeframeOutlook.alignment.tradeType === "SCALP" ? "#F59E0B" :
+                            "#FF3B5C"
+                          }15`,
+                          color:
+                            timeframeOutlook.alignment.tradeType === "ULTIMATE" ? "#00FF88" :
+                            timeframeOutlook.alignment.tradeType === "POSITION" ? "#00CC6A" :
+                            timeframeOutlook.alignment.tradeType === "SWING" ? "#F59E0B" :
+                            timeframeOutlook.alignment.tradeType === "SCALP" ? "#F59E0B" :
+                            "#FF3B5C",
+                        }}
+                      >
+                        {timeframeOutlook.alignment.tradeType}
+                      </span>
+                      {timeframeOutlook.alignment.direction !== "NEUTRAL" && (
+                        <span
+                          className="rounded-lg px-2 py-1 text-xs font-bold uppercase"
+                          style={{
+                            backgroundColor: `${timeframeOutlook.alignment.direction === "LONG" ? "#00FF88" : "#FF3B5C"}15`,
+                            color: timeframeOutlook.alignment.direction === "LONG" ? "#00FF88" : "#FF3B5C",
+                          }}
+                        >
+                          {timeframeOutlook.alignment.direction}
+                        </span>
+                      )}
+                      <span className="text-xs text-white/40 font-mono">
+                        {timeframeOutlook.alignment.alignedCount}/{timeframeOutlook.alignment.totalCount} aligned
+                      </span>
+                    </div>
+                    <p className="text-sm text-white/60">{timeframeOutlook.alignment.description}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {([timeframeOutlook.short, timeframeOutlook.medium, timeframeOutlook.long] as const).map((horizon) => (
+                    <div
+                      key={horizon.label}
+                      className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                          {horizon.label}
+                        </span>
+                        <span
+                          className="rounded px-2 py-0.5 text-xs font-bold uppercase"
+                          style={{
+                            backgroundColor: `${horizon.consensus === "LONG" ? "#00FF88" : horizon.consensus === "SHORT" ? "#FF3B5C" : "#F59E0B"}15`,
+                            color: horizon.consensus === "LONG" ? "#00FF88" : horizon.consensus === "SHORT" ? "#FF3B5C" : "#F59E0B",
+                          }}
+                        >
+                          {horizon.consensus}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {horizon.biases.map((tf) => (
+                          <div key={`${horizon.label}-${tf.timeframe}`} className="flex items-center gap-2">
+                            <span className="text-xs font-mono text-white/40 w-8">{tf.timeframe}</span>
+                            <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{
+                                  width: `${tf.confidence}%`,
+                                  backgroundColor: tf.bias === "LONG" ? "#00FF88" : tf.bias === "SHORT" ? "#FF3B5C" : "#F59E0B",
+                                }}
+                              />
+                            </div>
+                            <span
+                              className="text-[10px] font-bold uppercase w-12 text-right"
+                              style={{ color: tf.bias === "LONG" ? "#00FF88" : tf.bias === "SHORT" ? "#FF3B5C" : "#F59E0B" }}
+                            >
+                              {tf.bias}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-white/[0.04] space-y-2">
+                        {horizon.biases.map((tf) => (
+                          <div key={`${horizon.label}-${tf.timeframe}-detail`}>
+                            <div className="flex items-center justify-between text-[10px] mb-1">
+                              <span className="text-white/30 font-mono">{tf.timeframe}</span>
+                              <span className="text-white/40">{tf.emaAlignment}</span>
+                              <span className="text-white/40">{tf.momentum}</span>
+                              <span className="font-mono text-white/50">RSI {tf.rsi}</span>
+                            </div>
+                            {tf.bias !== "NEUTRAL" && tf.entry != null && (
+                              <div className="grid grid-cols-4 gap-1 mt-1">
+                                <div className="rounded bg-white/[0.04] px-1.5 py-1 text-center">
+                                  <span className="block text-[8px] text-white/30 uppercase">Entry</span>
+                                  <span className="block font-mono text-[10px] text-white/70">{tf.entry.toFixed(dp)}</span>
+                                </div>
+                                {tf.stopLoss != null && (
+                                  <div className="rounded bg-[#FF3B5C]/[0.06] px-1.5 py-1 text-center">
+                                    <span className="block text-[8px] text-[#FF3B5C]/50 uppercase">SL</span>
+                                    <span className="block font-mono text-[10px] text-[#FF3B5C]/80">{tf.stopLoss.toFixed(dp)}</span>
+                                  </div>
+                                )}
+                                {tf.tp1 != null && (
+                                  <div className="rounded bg-[#00FF88]/[0.06] px-1.5 py-1 text-center">
+                                    <span className="block text-[8px] text-[#00FF88]/50 uppercase">TP1</span>
+                                    <span className="block font-mono text-[10px] text-[#00FF88]/80">{tf.tp1.toFixed(dp)}</span>
+                                  </div>
+                                )}
+                                {tf.tp2 != null && (
+                                  <div className="rounded bg-[#00FF88]/[0.06] px-1.5 py-1 text-center">
+                                    <span className="block text-[8px] text-[#00FF88]/50 uppercase">TP2</span>
+                                    <span className="block font-mono text-[10px] text-[#00FF88]/80">{tf.tp2.toFixed(dp)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {tf.riskReward != null && (
+                              <div className="text-right mt-0.5">
+                                <span className="font-mono text-[9px] text-white/30">R:R 1:{tf.riskReward}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </motion.div>
             )}

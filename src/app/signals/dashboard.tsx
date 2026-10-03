@@ -241,6 +241,28 @@ interface SignalsResponse {
       description: string
     }
   } | null
+  activeSetups: Array<{
+    horizon: string
+    horizonLabel: string
+    timeframes: string
+    bias: "LONG" | "SHORT" | "NEUTRAL"
+    entry: number
+    stopLoss: number
+    tp1: number
+    tp2: number
+    tp3: number
+    riskReward: number
+    basedOn: string
+    confidence: number
+  }>
+  setupAlignment: {
+    allAligned: boolean
+    direction: "LONG" | "SHORT" | "NEUTRAL"
+    alignedCount: number
+    totalCount: number
+    tradeType: "ULTIMATE" | "POSITION" | "SWING" | "SCALP" | "CONFLICTED"
+    description: string
+  } | null
   newsSentiment?: {
     score: number
     label: string
@@ -882,6 +904,8 @@ export default function SignalsDashboard() {
   const pats = d?.patterns
   const anticipatory = d?.anticipatory ?? null
   const timeframeOutlook = d?.timeframeOutlook ?? null
+  const activeSetups = d?.activeSetups ?? []
+  const setupAlignment = d?.setupAlignment ?? null
 
   const callDir = call?.bias ?? "WAIT"
   const callColor = dirColor(callDir)
@@ -1037,6 +1061,128 @@ export default function SignalsDashboard() {
           <SkeletonContent />
         ) : (
           <>
+            {/* ── 0. Active Setups ────────────────────────────────────── */}
+            <motion.div {...fadeUp} className="space-y-4">
+              {setupAlignment && setupAlignment.tradeType === "ULTIMATE" && (
+                <div className="relative rounded-xl overflow-hidden p-4">
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#00FF88]/10 via-[#00FF88]/[0.04] to-transparent animate-pulse pointer-events-none" />
+                  <div className="relative flex items-center gap-3">
+                    <span className="relative flex size-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00FF88] opacity-75" />
+                      <span className="relative inline-flex rounded-full size-3 bg-[#00FF88]" />
+                    </span>
+                    <span className="text-lg font-black uppercase text-[#00FF88] tracking-wide">Ultimate Setup</span>
+                    <span
+                      className="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase"
+                      style={{ backgroundColor: `${dirColor(setupAlignment.direction)}20`, color: dirColor(setupAlignment.direction) }}
+                    >
+                      {setupAlignment.direction}
+                    </span>
+                    <span className="text-xs text-white/40 ml-auto">
+                      All {setupAlignment.totalCount} timeframes aligned {setupAlignment.direction.toLowerCase()}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {activeSetups.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {activeSetups.map((setup, i) => {
+                    const dc = dirColor(setup.bias)
+                    const horizonColors: Record<string, { bg: string; text: string }> = {
+                      SCALP: { bg: "rgba(245,158,11,0.15)", text: "#F59E0B" },
+                      SWING: { bg: "rgba(59,130,246,0.15)", text: "#3B82F6" },
+                      POSITION: { bg: "rgba(0,255,136,0.15)", text: "#00FF88" },
+                      ULTIMATE: { bg: "rgba(0,255,136,0.15)", text: "#00FF88" },
+                    }
+                    const hc = horizonColors[setup.horizonLabel.toUpperCase()] ?? { bg: "rgba(255,255,255,0.1)", text: "#6B7280" }
+                    return (
+                      <div
+                        key={i}
+                        className="rounded-xl bg-white/[0.02] overflow-hidden"
+                        style={{ borderLeft: `4px solid ${dc}` }}
+                      >
+                        <div className="p-4 space-y-3">
+                          {/* Direction + Horizon badge */}
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="text-lg font-black uppercase" style={{ color: dc }}>{setup.bias}</div>
+                              <div className="text-[10px] text-white/40 font-mono uppercase">{setup.timeframes}</div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                              <span
+                                className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
+                                style={{ backgroundColor: hc.bg, color: hc.text }}
+                              >
+                                {setup.horizonLabel}
+                              </span>
+                              <span className="font-mono text-sm font-bold" style={{ color: dc }}>{setup.confidence}%</span>
+                            </div>
+                          </div>
+
+                          <div className="border-t border-white/[0.06]" />
+
+                          {/* Entry */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-white/40">Entry</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-xl font-bold text-white">${setup.entry.toFixed(dp)}</span>
+                              <CopyBtn value={setup.entry.toFixed(dp)} />
+                            </div>
+                          </div>
+
+                          <div className="border-t border-white/[0.06]" />
+
+                          {/* SL + TPs */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-white/40">Stop</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-sm text-[#FF3B5C]">${setup.stopLoss.toFixed(dp)}</span>
+                                <CopyBtn value={setup.stopLoss.toFixed(dp)} />
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-white/40">TP1</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-sm text-[#00FF88]">${setup.tp1.toFixed(dp)}</span>
+                                <CopyBtn value={setup.tp1.toFixed(dp)} />
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-white/40">TP2</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-sm text-[#00FF88]">${setup.tp2.toFixed(dp)}</span>
+                                <CopyBtn value={setup.tp2.toFixed(dp)} />
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-white/40">TP3</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-sm text-[#00FF88]">${setup.tp3.toFixed(dp)}</span>
+                                <CopyBtn value={setup.tp3.toFixed(dp)} />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="border-t border-white/[0.06]" />
+
+                          {/* R:R */}
+                          <div className="font-mono text-xs text-white/40">
+                            R:R 1:{setup.riskReward.toFixed(1)}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-xl bg-white/[0.02] border border-white/[0.06] p-6 text-center">
+                  <span className="text-sm text-white/30">No active setups — watching for alignment</span>
+                </div>
+              )}
+            </motion.div>
+
             {/* ── 1. Header ───────────────────────────────────────────── */}
             <motion.div {...fadeUp} className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
               <div>
@@ -1384,13 +1530,13 @@ export default function SignalsDashboard() {
 
             {/* ── 4b. Setup Scanner ──────────────────────────────────── */}
             {anticipatory && (
-              <motion.div {...fadeUp} className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Eye className="size-4 text-white/50" />
-                  <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
-                    Setup Scanner
-                  </h2>
-                </div>
+              <details className="group">
+                <summary className="cursor-pointer list-none flex items-center gap-2 text-sm font-semibold text-white/50 uppercase tracking-wider py-2 hover:text-white/70 transition-colors">
+                  <Eye className="size-4" />
+                  Setup Scanner Details
+                  <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
+                </summary>
+              <motion.div {...fadeUp} className="space-y-4 mt-2">
 
                 {/* Overall Readiness Banner */}
                 <div
@@ -1789,15 +1935,18 @@ export default function SignalsDashboard() {
                   </div>
                 )}
               </motion.div>
+              </details>
             )}
 
             {/* ── 4c. Timeframe Alignment ────────────────────────────────── */}
             {timeframeOutlook && (
-              <motion.div {...fadeUp}>
-                <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <details className="group">
+                <summary className="cursor-pointer list-none flex items-center gap-2 text-sm font-semibold text-white/50 uppercase tracking-wider py-2 hover:text-white/70 transition-colors">
                   <Layers className="size-4" />
-                  Timeframe Alignment
-                </h2>
+                  Timeframe Details
+                  <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
+                </summary>
+              <motion.div {...fadeUp} className="mt-2">
 
                 <div
                   className="rounded-xl overflow-hidden mb-4"
@@ -1954,6 +2103,7 @@ export default function SignalsDashboard() {
                   ))}
                 </div>
               </motion.div>
+              </details>
             )}
 
             {/* ── 5. Signal Confluence ──────────────────────────────────── */}

@@ -2395,10 +2395,24 @@ interface TimeframeBias {
   riskReward: number | null;
 }
 
+interface HorizonTrade {
+  bias: TFBias;
+  entry: number;
+  stopLoss: number;
+  tp1: number;
+  tp2: number;
+  tp3: number;
+  riskReward: number;
+  basedOn: string;
+  confidence: number;
+}
+
+type HorizonData = { label: string; timeframes: string[]; biases: TimeframeBias[]; consensus: TFBias; strength: number; trade: HorizonTrade | null };
+
 interface TimeframeOutlook {
-  short: { label: string; timeframes: string[]; biases: TimeframeBias[]; consensus: TFBias; strength: number };
-  medium: { label: string; timeframes: string[]; biases: TimeframeBias[]; consensus: TFBias; strength: number };
-  long: { label: string; timeframes: string[]; biases: TimeframeBias[]; consensus: TFBias; strength: number };
+  short: HorizonData;
+  medium: HorizonData;
+  long: HorizonData;
   alignment: {
     allAligned: boolean;
     direction: TFBias;
@@ -2585,10 +2599,58 @@ function computeTimeframeOutlook(params: {
     description = "Timeframes in conflict — no clear edge, wait for alignment";
   }
 
+  const computeHorizonTrade = (biases: TimeframeBias[], consensus: TFBias): HorizonTrade | null => {
+    if (consensus === "NEUTRAL") return null;
+
+    const tfOrder = ["1D", "4h", "1h", "15m", "5m"];
+    const matching = biases.filter(b => b.bias === consensus);
+    if (matching.length === 0) return null;
+
+    matching.sort((a, b) => tfOrder.indexOf(a.timeframe) - tfOrder.indexOf(b.timeframe));
+    const primary = matching[0];
+
+    if (primary.entry == null || primary.stopLoss == null) return null;
+
+    let t1 = primary.tp1;
+    let t2 = primary.tp2;
+    if (t1 == null || t2 == null) {
+      const atrProxy = Math.abs(primary.entry - primary.stopLoss) * 2;
+      if (consensus === "LONG") {
+        t1 = round(primary.entry + 1.5 * atrProxy, dec);
+        t2 = round(primary.entry + 2.5 * atrProxy, dec);
+      } else {
+        t1 = round(primary.entry - 1.5 * atrProxy, dec);
+        t2 = round(primary.entry - 2.5 * atrProxy, dec);
+      }
+    }
+
+    const t3 = consensus === "LONG"
+      ? round(t2 + (t2 - t1), dec)
+      : round(t2 - (t1 - t2), dec);
+
+    const risk = Math.abs(primary.entry - primary.stopLoss);
+    const reward = Math.abs(t2 - primary.entry);
+    const rr = risk > 0 ? Math.round((reward / risk) * 100) / 100 : 0;
+
+    const avgConfidence = Math.round(matching.reduce((s, b) => s + b.confidence, 0) / matching.length);
+
+    return {
+      bias: consensus,
+      entry: primary.entry,
+      stopLoss: primary.stopLoss,
+      tp1: t1,
+      tp2: t2,
+      tp3: t3,
+      riskReward: rr,
+      basedOn: matching.map(b => b.timeframe).join(" + "),
+      confidence: avgConfidence,
+    };
+  };
+
   return {
-    short: { label: "Short-Term", timeframes: ["5m", "15m"], biases: shortBiases, ...shortResult },
-    medium: { label: "Medium-Term", timeframes: ["15m", "1h", "4h"], biases: mediumBiases, ...mediumResult },
-    long: { label: "Long-Term", timeframes: ["4h", "1D"], biases: longBiases, ...longResult },
+    short: { label: "Short-Term", timeframes: ["5m", "15m"], biases: shortBiases, ...shortResult, trade: computeHorizonTrade(shortBiases, shortResult.consensus) },
+    medium: { label: "Medium-Term", timeframes: ["15m", "1h", "4h"], biases: mediumBiases, ...mediumResult, trade: computeHorizonTrade(mediumBiases, mediumResult.consensus) },
+    long: { label: "Long-Term", timeframes: ["4h", "1D"], biases: longBiases, ...longResult, trade: computeHorizonTrade(longBiases, longResult.consensus) },
     alignment: { allAligned, direction: dominantDir, alignedCount, totalCount: allBiases.length, tradeType, description },
   };
 }
@@ -3869,6 +3931,12 @@ export async function GET(req: NextRequest) {
     },
     call,
     anticipatory,
+    activeSetups: [
+      timeframeOutlook.short.trade ? { horizon: "Short-Term", horizonLabel: "SCALP" as const, timeframes: timeframeOutlook.short.timeframes.join(" + "), ...timeframeOutlook.short.trade } : null,
+      timeframeOutlook.medium.trade ? { horizon: "Medium-Term", horizonLabel: "SWING" as const, timeframes: timeframeOutlook.medium.timeframes.join(" + "), ...timeframeOutlook.medium.trade } : null,
+      timeframeOutlook.long.trade ? { horizon: "Long-Term", horizonLabel: "POSITION" as const, timeframes: timeframeOutlook.long.timeframes.join(" + "), ...timeframeOutlook.long.trade } : null,
+    ].filter((s): s is NonNullable<typeof s> => s !== null),
+    setupAlignment: timeframeOutlook.alignment,
     timeframeOutlook,
     macro: macroState
       ? {

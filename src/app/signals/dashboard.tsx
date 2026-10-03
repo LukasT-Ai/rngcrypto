@@ -254,6 +254,7 @@ interface SignalsResponse {
     riskReward: number
     basedOn: string
     confidence: number
+    expectedDuration: string
   }>
   setupAlignment: {
     allAligned: boolean
@@ -1167,9 +1168,13 @@ export default function SignalsDashboard() {
 
                           <div className="border-t border-white/[0.06]" />
 
-                          {/* R:R */}
-                          <div className="font-mono text-xs text-white/40">
-                            R:R 1:{setup.riskReward.toFixed(1)}
+                          {/* R:R + Duration */}
+                          <div className="flex items-center justify-between font-mono text-xs text-white/40">
+                            <span>R:R 1:{setup.riskReward.toFixed(1)}</span>
+                            <span className="flex items-center gap-1">
+                              <Clock className="size-3" />
+                              {setup.expectedDuration}
+                            </span>
                           </div>
                         </div>
                       </div>

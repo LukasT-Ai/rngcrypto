@@ -2405,6 +2405,7 @@ interface HorizonTrade {
   riskReward: number;
   basedOn: string;
   confidence: number;
+  expectedDuration: string;
 }
 
 type HorizonData = { label: string; timeframes: string[]; biases: TimeframeBias[]; consensus: TFBias; strength: number; trade: HorizonTrade | null };
@@ -2634,6 +2635,14 @@ function computeTimeframeOutlook(params: {
 
     const avgConfidence = Math.round(matching.reduce((s, b) => s + b.confidence, 0) / matching.length);
 
+    const tfMinutes: Record<string, number> = { "5m": 5, "15m": 15, "1h": 60, "4h": 240, "1D": 1440 };
+    const primaryMinutes = tfMinutes[primary.timeframe] ?? 60;
+    const estMinutes = primaryMinutes * 10;
+    let expectedDuration: string;
+    if (estMinutes < 60) expectedDuration = `~${estMinutes} min`;
+    else if (estMinutes < 1440) expectedDuration = `~${Math.round(estMinutes / 60)} hrs`;
+    else expectedDuration = `~${Math.round(estMinutes / 1440)} days`;
+
     return {
       bias: consensus,
       entry: primary.entry,
@@ -2644,6 +2653,7 @@ function computeTimeframeOutlook(params: {
       riskReward: rr,
       basedOn: matching.map(b => b.timeframe).join(" + "),
       confidence: avgConfidence,
+      expectedDuration,
     };
   };
 

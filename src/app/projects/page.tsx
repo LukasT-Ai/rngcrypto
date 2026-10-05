@@ -4,11 +4,11 @@ import { ProjectsContent } from "./projects-content"
 export const metadata: Metadata = {
   title: "Projects & Ecosystem",
   description:
-    "Explore the RnGcrYptO Web3 portfolio across Cardano, Midnight, Ethereum, and Bitcoin. Autonomous trading bots, DeFi, NFT collections, and blockchain infrastructure.",
+    "What is live at RnGcrYptO today: plain-English trade signals across Strike and Ascend markets, a verified signal track record, and ecosystem positions across Cardano, Midnight and Ethereum.",
   openGraph: {
     title: "Projects & Ecosystem | RnGcrYptO",
     description:
-      "Autonomous trading, DeFi, NFTs, and L1 infrastructure. The full RnGcrYptO Web3 journey.",
+      "Live signals for Strike and Ascend markets, verified performance, and the Cardano, Midnight and Ethereum ecosystem.",
   },
 }
 

@@ -6,22 +6,11 @@ import Image from "next/image"
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
-import {
-  ExternalLink,
-  ArrowRight,
-  Bot,
-  Coins,
-  Shield,
-  Palette,
-  TrendingUp,
-} from "lucide-react"
+import { ExternalLink, ArrowRight, Coins, Shield, Palette, TrendingUp, Crosshair, Trophy, CalendarClock, Newspaper } from "lucide-react"
 
 const containerVariants = {
   hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.08, delayChildren: 0.1 },
-  },
+  show: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
 }
 
 const cardVariants = {
@@ -71,9 +60,7 @@ const projects: Project[] = [
       { label: "Website", url: "https://www.goodvibesclub.io" },
       { label: "OpenSea", url: "https://opensea.io/collection/good-vibes-club" },
     ],
-    images: [
-      { src: "/avatar/character.jpg", alt: "Good Vibes Club 3D PFP" },
-    ],
+    images: [{ src: "/avatar/character.jpg", alt: "Good Vibes Club 3D PFP" }],
     stats: [
       { label: "Supply", value: "6,968" },
       { label: "Volume", value: "13.5K ETH" },
@@ -95,9 +82,7 @@ const projects: Project[] = [
       { label: "Website", url: "https://liqwid.finance" },
       { label: "App", url: "https://app.liqwid.finance" },
     ],
-    images: [
-      { src: "/avatar/robot_character.jpg", alt: "Liqwid Finance NFT rewards booster" },
-    ],
+    images: [{ src: "/avatar/robot_character.jpg", alt: "Liqwid Finance NFT rewards booster" }],
     stats: [
       { label: "TVL", value: "$32M+" },
       { label: "Protocol", value: "Lending" },
@@ -119,9 +104,7 @@ const projects: Project[] = [
       { label: "Network", url: "https://midnight.network" },
       { label: "City", url: "https://midnight.city" },
     ],
-    images: [
-      { src: "/avatar/circle_dots_icon.jpg", alt: "Midnight Network logo", contain: true },
-    ],
+    images: [{ src: "/avatar/circle_dots_icon.jpg", alt: "Midnight Network logo", contain: true }],
     stats: [
       { label: "Launch", value: "Mar 2026" },
       { label: "Token", value: "NIGHT" },
@@ -139,12 +122,8 @@ const projects: Project[] = [
     chain: "cardano",
     icon: TrendingUp,
     externalHref: "https://www.wayup.io/collection/b6e45677ddc7d582efa689c29221efcba40c6230d477591d65dfd02e",
-    links: [
-      { label: "Collection", url: "https://www.wayup.io/collection/b6e45677ddc7d582efa689c29221efcba40c6230d477591d65dfd02e" },
-    ],
-    images: [
-      { src: "/avatar/cyber_character.jpg", alt: "Arbiter NFT cyber character" },
-    ],
+    links: [{ label: "Collection", url: "https://www.wayup.io/collection/b6e45677ddc7d582efa689c29221efcba40c6230d477591d65dfd02e" }],
+    images: [{ src: "/avatar/cyber_character.jpg", alt: "Arbiter NFT cyber character" }],
     stats: [
       { label: "Supply", value: "1,718" },
       { label: "Floor", value: "₳99" },
@@ -155,436 +134,180 @@ const projects: Project[] = [
 
 const filterChains = ["all", "cardano", "midnight", "ethereum"] as const
 
-type AscendOverview = {
-  stats: {
-    totalTrades: number
-    wins: number
-    losses: number
-    winRate: number
-    totalPnl: number
-    avgPnl: number
-    bestTrade: number
-    worstTrade: number
-  }
+// ── Live stats for the signals suite (what is actually running today) ───────
+
+interface PerfResp {
+  stats: { kpis: { closedN: number; openN: number; tp1Rate: number | null } }
+}
+interface HotResp {
+  hot: { symbol: string }[]
+  all: { symbol: string }[]
+}
+interface MacroResp {
+  upcoming: { title: string; time: string; importance: string }[]
 }
 
-type AscendLive = {
-  openPositions: { id: string }[]
+function useSignalsLive() {
+  const perf = useQuery<PerfResp>({
+    queryKey: ["projects-perf"],
+    queryFn: async () => {
+      const r = await fetch("/api/signals/history?view=performance&range=all&dedupe=1&limit=1")
+      if (!r.ok) throw new Error("perf")
+      return r.json()
+    },
+    refetchInterval: 60_000,
+    retry: false,
+  })
+  const hot = useQuery<HotResp>({
+    queryKey: ["signals-hot"],
+    queryFn: async () => {
+      const r = await fetch("/api/signals/hot")
+      if (!r.ok) throw new Error("hot")
+      return r.json()
+    },
+    refetchInterval: 60_000,
+    retry: false,
+  })
+  const macro = useQuery<MacroResp>({
+    queryKey: ["projects-macro"],
+    queryFn: async () => {
+      const r = await fetch("/api/macro")
+      if (!r.ok) throw new Error("macro")
+      return r.json()
+    },
+    refetchInterval: 60_000,
+    retry: false,
+  })
+  return { perf: perf.data, hot: hot.data, macro: macro.data }
 }
 
 function StatusBadge({ status, className }: { status: string; className: string }) {
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${className}`}
-    >
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${className}`}>
       <span className="size-1.5 rounded-full bg-current" />
       {status}
     </span>
   )
 }
 
-function FeaturedAscendCard() {
-  const { data: overview } = useQuery<AscendOverview>({
-    queryKey: ["ascend-overview"],
-    queryFn: async () => {
-      const res = await fetch("/api/ascend?view=overview")
-      if (!res.ok) throw new Error("Failed to fetch")
-      return res.json()
-    },
-    refetchInterval: 30_000,
-    retry: false,
-  })
+function LiveDot({ color }: { color: string }) {
+  return (
+    <span className="relative flex size-1.5">
+      <span className="absolute inline-flex size-full animate-ping rounded-full opacity-75" style={{ backgroundColor: color }} />
+      <span className="relative inline-flex size-1.5 rounded-full" style={{ backgroundColor: color }} />
+    </span>
+  )
+}
 
-  const { data: live } = useQuery<AscendLive>({
-    queryKey: ["ascend-live"],
-    queryFn: async () => {
-      const res = await fetch("/api/ascend?view=live")
-      if (!res.ok) throw new Error("Failed to fetch")
-      return res.json()
-    },
-    refetchInterval: 15_000,
-    retry: false,
-  })
+function Stat({ value, label, color }: { value: string; label: string; color?: string }) {
+  return (
+    <div className="text-center">
+      <div className="font-mono text-lg font-bold" style={{ color: color ?? "rgba(255,255,255,0.9)" }}>{value}</div>
+      <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">{label}</div>
+    </div>
+  )
+}
 
-  const stats = overview?.stats
-  const openCount = live?.openPositions?.length ?? 0
+const GREEN = "#00FF88"
+const STRIKE = "#4EFAB0"
+const ASCEND = "#F35233"
+
+function FeaturedSignalsCard() {
+  const { perf, hot, macro } = useSignalsLive()
+  const closedN = perf?.stats.kpis.closedN
+  const tp1 = perf?.stats.kpis.tp1Rate
+  const hotN = hot?.hot?.length
+  const next = macro?.upcoming?.[0]
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="relative mb-10 overflow-hidden rounded-2xl border border-[#E8622C]/20 bg-gradient-to-br from-[#E8622C]/[0.06] via-[#06080F] to-[#06080F] p-8"
+      className="relative mb-6 overflow-hidden rounded-2xl border p-8 backdrop-blur-xl"
+      style={{ borderColor: `${GREEN}33`, background: `linear-gradient(135deg, ${GREEN}10 0%, rgba(10,14,23,0.6) 60%)` }}
     >
       <div className="flex flex-col gap-8 lg:flex-row lg:items-center">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
-            <div className="relative size-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-[#E8622C]/30">
-              <Image src="/avatar/ascend_logo_coin.jpg" alt="Ascend Market" fill className="object-cover" />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: `${GREEN}1A`, boxShadow: `inset 0 0 0 1px ${GREEN}40` }}>
+              <Crosshair className="size-5" style={{ color: GREEN }} />
             </div>
-            <h2 className="font-display text-xl font-bold tracking-tight lg:text-2xl">
-              Ascend Market
-            </h2>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#E8622C]/30 bg-[#E8622C]/20 px-2.5 py-0.5 text-xs font-medium text-[#E8622C]">
-              <span className="relative flex size-1.5">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#E8622C] opacity-75" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-[#E8622C]" />
-              </span>
-              LIVE
+            <h2 className="font-display text-xl font-bold tracking-tight lg:text-2xl">Signals</h2>
+            <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium" style={{ borderColor: `${GREEN}4D`, backgroundColor: `${GREEN}26`, color: GREEN }}>
+              <LiveDot color={GREEN} /> LIVE
             </span>
           </div>
-          <p className="mt-1 text-sm text-white/40">Leveraged Event Perpetuals on Midnight</p>
-          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-white/60">
-            Fully verifiable events perpetuals platform for leveraged trading on probability outcomes. Trade world events, metals, commodities, stocks, and crypto with ZK-verified multi-chain settlement across Cardano, EVM, and Solana.
+          <p className="mt-1 text-sm text-white/40">Plain-English trade calls, refreshed every 30 seconds</p>
+          <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-white/60">
+            One recommendation per market across 31 crypto, commodity, stock and index tickers: action, conviction, entry, stop and targets, with every reason deep-linked to the chart or statistic behind it. Catalyst headline engines for WTI, Bitcoin, Gold and Cardano, a macro event calendar with verified post-release surprise analysis, and a track record checked against 5-minute candles.
           </p>
 
           <div className="mt-6 flex flex-wrap gap-6">
-            <div className="text-center">
-              <div className="font-mono text-lg font-bold text-white/90">
-                {stats?.totalTrades?.toLocaleString() ?? "---"}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total Trades</div>
-            </div>
-            <div className="text-center">
-              <div className="font-mono text-lg font-bold text-[#E8622C]">
-                {stats?.winRate != null ? `${stats.winRate}%` : "---"}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Win Rate</div>
-            </div>
-            <div className="text-center">
-              <div className="font-mono text-lg font-bold text-white/90">
-                {openCount}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Open Positions</div>
-            </div>
-            <div className="text-center">
-              <div className={`font-mono text-lg font-bold ${stats?.totalPnl != null && stats.totalPnl >= 0 ? "text-gain" : "text-loss"}`}>
-                {stats?.totalPnl != null
-                  ? `${stats.totalPnl >= 0 ? "+" : ""}${stats.totalPnl.toLocaleString()} USDT`
-                  : "---"}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total PnL</div>
-            </div>
+            <Stat value="31" label="Markets" />
+            <Stat value={hotN == null ? "---" : String(hotN)} label="Hot plays now" color={GREEN} />
+            <Stat value={closedN == null ? "---" : String(closedN)} label="Closed signals" />
+            <Stat value={tp1 == null ? "---" : `${tp1.toFixed(0)}%`} label="TP1 hit rate" color={tp1 == null ? undefined : tp1 >= 50 ? GREEN : "#FF3B5C"} />
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              href="/ascend"
-              className="inline-flex items-center gap-2 rounded-full bg-[#E8622C] px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            >
-              Live Dashboard
-              <ArrowRight className="size-4" />
+            <Link href="/signals" className="inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-[#06080F] transition-opacity hover:opacity-90" style={{ backgroundColor: GREEN }}>
+              Open Signals <ArrowRight className="size-4" />
             </Link>
-            <a
-              href="https://x.com/ascendperps"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80"
-            >
-              <ExternalLink className="size-3.5" />
-              View on X
-            </a>
+            <Link href="/signals/performance" className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80">
+              <Trophy className="size-3.5" /> Performance
+            </Link>
           </div>
         </div>
 
-        <div className="hidden w-[300px] shrink-0 lg:block">
-          <div className="relative h-[200px] w-full overflow-hidden rounded-xl">
-            <Image
-              src="/avatar/Project_Ascend3.png"
-              alt="Ascend Market event perpetuals"
-              fill
-              className="object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#06080F]/60 to-transparent" />
+        <div className="hidden w-[300px] shrink-0 space-y-3 lg:block">
+          <div className="rounded-xl border border-white/[0.08] bg-black/30 p-4">
+            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-white/40"><Newspaper className="size-3.5" /> Catalyst engines</div>
+            <div className="mt-1.5 text-sm text-white/75">WTI · Bitcoin · Gold · Cardano</div>
+            <div className="text-[11px] text-white/40">Headlines scored, price reaction per story, two-force verdict</div>
+          </div>
+          <div className="rounded-xl border border-white/[0.08] bg-black/30 p-4">
+            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-white/40"><CalendarClock className="size-3.5" /> Next macro event</div>
+            <div className="mt-1.5 text-sm text-white/75">{next ? next.title : "---"}</div>
+            <div className="text-[11px] text-white/40">{next ? new Date(next.time).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }) : "loading"}</div>
           </div>
         </div>
       </div>
-
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-[#E8622C]/40 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${GREEN}66, transparent)` }} />
     </motion.div>
   )
 }
 
-type StrikeOverview = {
-  stats: {
-    totalTrades: number
-    wins: number
-    losses: number
-    winRate: number
-    totalPnl: number
-    avgPnl: number
-    bestTrade: number
-    worstTrade: number
-  }
-}
-
-type StrikeLive = {
-  openPositions: { id: string }[]
-}
-
-function FeaturedStrikeCard() {
-  const { data: overview } = useQuery<StrikeOverview>({
-    queryKey: ["strike-overview"],
-    queryFn: async () => {
-      const res = await fetch("/api/strike?view=overview")
-      if (!res.ok) throw new Error("Failed to fetch")
-      return res.json()
-    },
-    refetchInterval: 30_000,
-    retry: false,
-  })
-
-  const { data: live } = useQuery<StrikeLive>({
-    queryKey: ["strike-live"],
-    queryFn: async () => {
-      const res = await fetch("/api/strike?view=live")
-      if (!res.ok) throw new Error("Failed to fetch")
-      return res.json()
-    },
-    refetchInterval: 15_000,
-    retry: false,
-  })
-
-  const stats = overview?.stats
-  const openCount = live?.openPositions?.length ?? 0
-  const hasTrades = stats && stats.totalTrades > 0
-
+function VenueSignalsCard({ name, color, logo, tagline, description, href, venue, markets }: { name: string; color: string; logo: string; tagline: string; description: string; href: string; venue: { label: string; url: string }; markets: string }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="relative mb-10 overflow-hidden rounded-2xl border border-[#22D3EE]/20 bg-gradient-to-br from-[#22D3EE]/[0.06] via-[#06080F] to-[#06080F] p-8"
+      className="relative overflow-hidden rounded-2xl border p-6 backdrop-blur-xl"
+      style={{ borderColor: `${color}33`, background: `linear-gradient(135deg, ${color}12 0%, rgba(10,14,23,0.6) 60%)` }}
     >
-      <div className="flex flex-col gap-8 lg:flex-row lg:items-center">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
-            <div className="relative size-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-[#22D3EE]/30">
-              <Image src="/strike/Strike Logo.jpeg" alt="Strike Finance" fill className="object-cover" />
-            </div>
-            <h2 className="font-display text-xl font-bold tracking-tight lg:text-2xl">
-              Strike Finance
-            </h2>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22D3EE]/30 bg-[#22D3EE]/20 px-2.5 py-0.5 text-xs font-medium text-[#22D3EE]">
-              <span className="relative flex size-1.5">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#22D3EE] opacity-75" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-[#22D3EE]" />
-              </span>
-              LIVE
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-white/40">Perpetual Futures on Cardano Mainnet</p>
-          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-white/60">
-            Decentralized perpetual futures trading on Cardano via Strike Finance. Multi-timeframe TA engine with up to 50x leverage on ADA/USD and SNEK/USD pairs. Real money, real results.
-          </p>
-
-          <div className="mt-6 flex flex-wrap gap-6">
-            <div className="text-center">
-              <div className="font-mono text-lg font-bold text-white/90">
-                {hasTrades ? stats.totalTrades.toLocaleString() : "---"}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total Trades</div>
-            </div>
-            <div className="text-center">
-              <div className="font-mono text-lg font-bold text-[#22D3EE]">
-                {hasTrades ? `${stats.winRate}%` : "---"}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Win Rate</div>
-            </div>
-            <div className="text-center">
-              <div className="font-mono text-lg font-bold text-white/90">
-                {openCount}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Open Positions</div>
-            </div>
-            <div className="text-center">
-              <div className={`font-mono text-lg font-bold ${hasTrades && stats.totalPnl >= 0 ? "text-gain" : hasTrades ? "text-loss" : "text-white/90"}`}>
-                {hasTrades
-                  ? `${stats.totalPnl >= 0 ? "+" : ""}${stats.totalPnl.toLocaleString()} USDM`
-                  : "---"}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total PnL</div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              href="/strike"
-              className="inline-flex items-center gap-2 rounded-full bg-[#22D3EE] px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            >
-              Live Dashboard
-              <ArrowRight className="size-4" />
-            </Link>
-            <a
-              href="https://x.com/strikeperps"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80"
-            >
-              <ExternalLink className="size-3.5" />
-              View on X
-            </a>
-          </div>
+      <div className="flex items-center gap-3">
+        <div className="relative size-10 shrink-0 overflow-hidden rounded-xl ring-1" style={{ ["--tw-ring-color" as string]: `${color}4D` } as React.CSSProperties}>
+          <Image src={logo} alt={name} fill className="object-cover" />
         </div>
-
-        <div className="hidden w-[300px] shrink-0 lg:block">
-          <div className="relative h-[200px] w-full overflow-hidden rounded-xl">
-            <Image
-              src="/strike/Logo_full text_strikefinance.jpeg"
-              alt="Strike Finance perpetual futures"
-              fill
-              className="object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#06080F]/60 to-transparent" />
-          </div>
-        </div>
+        <h3 className="font-display text-lg font-bold tracking-tight">{name}</h3>
+        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium" style={{ borderColor: `${color}4D`, backgroundColor: `${color}26`, color }}>
+          <LiveDot color={color} /> LIVE
+        </span>
       </div>
-
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-[#22D3EE]/40 to-transparent" />
-    </motion.div>
-  )
-}
-
-type HypeOverview = {
-  stats: {
-    totalTrades: number
-    wins: number
-    losses: number
-    winRate: number
-    totalPnl: number
-    accountValue: number
-  }
-}
-
-type HypeLive = {
-  openPositions: { asset: string }[]
-  accountValue: number
-}
-
-function FeaturedHypeCard() {
-  const { data: overview } = useQuery<HypeOverview>({
-    queryKey: ["hype-overview"],
-    queryFn: async () => {
-      const res = await fetch("/api/hype?view=overview")
-      if (!res.ok) throw new Error("Failed to fetch")
-      return res.json()
-    },
-    refetchInterval: 30_000,
-    retry: false,
-  })
-
-  const { data: live } = useQuery<HypeLive>({
-    queryKey: ["hype-live"],
-    queryFn: async () => {
-      const res = await fetch("/api/hype?view=live")
-      if (!res.ok) throw new Error("Failed to fetch")
-      return res.json()
-    },
-    refetchInterval: 15_000,
-    retry: false,
-  })
-
-  const stats = overview?.stats
-  const openCount = live?.openPositions?.length ?? 0
-  const hasTrades = stats && stats.totalTrades > 0
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="relative mb-10 overflow-hidden rounded-2xl border border-[#7BEBC2]/20 bg-gradient-to-br from-[#0E2E2E]/40 via-[#06080F] to-[#06080F] p-8"
-    >
-      <div className="flex flex-col gap-8 lg:flex-row lg:items-center">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
-            <div className="relative size-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-[#7BEBC2]/20">
-              <Image
-                src="/hype/HYPE_LOGO_400x400.jpg"
-                alt="Hyperliquid"
-                fill
-                className="object-cover"
-              />
-            </div>
-            <h2 className="font-display text-xl font-bold tracking-tight lg:text-2xl">
-              Hype Agent
-            </h2>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#7BEBC2]/30 bg-[#7BEBC2]/20 px-2.5 py-0.5 text-xs font-medium text-[#7BEBC2]">
-              <span className="relative flex size-1.5">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#7BEBC2] opacity-75" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-[#7BEBC2]" />
-              </span>
-              LIVE
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-white/40">Perpetual Futures on Hyperliquid</p>
-          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-white/60">
-            Multi-timeframe technical analysis engine trading perpetual futures on Hyperliquid. EMA+RSI+ATR strategy with dynamic position sizing and strict risk management. Full transparency, every trade tracked.
-          </p>
-
-          <div className="mt-6 flex flex-wrap gap-6">
-            <div className="text-center">
-              <div className="font-mono text-lg font-bold text-white/90">
-                {hasTrades ? stats.totalTrades.toLocaleString() : "---"}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total Trades</div>
-            </div>
-            <div className="text-center">
-              <div className="font-mono text-lg font-bold text-[#7BEBC2]">
-                {hasTrades ? `${stats.winRate}%` : "---"}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Win Rate</div>
-            </div>
-            <div className="text-center">
-              <div className="font-mono text-lg font-bold text-white/90">
-                {openCount}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Open Positions</div>
-            </div>
-            <div className="text-center">
-              <div className={`font-mono text-lg font-bold ${hasTrades && stats.totalPnl >= 0 ? "text-gain" : hasTrades ? "text-loss" : "text-white/90"}`}>
-                {hasTrades
-                  ? `${stats.totalPnl >= 0 ? "+" : ""}${stats.totalPnl.toLocaleString()} USDC`
-                  : "---"}
-              </div>
-              <div className="mt-0.5 text-xs uppercase tracking-wider text-white/40">Total PnL</div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              href="/hype"
-              className="inline-flex items-center gap-2 rounded-full bg-[#7BEBC2] px-6 py-2.5 text-sm font-semibold text-[#0E2E2E] transition-opacity hover:opacity-90"
-            >
-              Live Dashboard
-              <ArrowRight className="size-4" />
-            </Link>
-            <a
-              href="https://x.com/HyperliquidX"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80"
-            >
-              <ExternalLink className="size-3.5" />
-              View on X
-            </a>
-          </div>
-        </div>
-
-        <div className="hidden w-[300px] shrink-0 lg:block">
-          <div className="relative h-[200px] w-full overflow-hidden rounded-xl">
-            <Image
-              src="/hype/Project_Hype2.png"
-              alt="Hype Agent"
-              fill
-              className="object-cover object-right"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#06080F]/40 to-transparent" />
-          </div>
-        </div>
+      <p className="mt-1 text-sm text-white/40">{tagline}</p>
+      <p className="mt-3 text-sm leading-relaxed text-white/60">{description}</p>
+      <div className="mt-4 text-[11px] uppercase tracking-wider text-white/40">Markets: <span className="font-mono text-white/70 normal-case tracking-normal">{markets}</span></div>
+      <div className="mt-5 flex flex-wrap gap-3">
+        <Link href={href} className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold text-[#06080F] transition-opacity hover:opacity-90" style={{ backgroundColor: color }}>
+          Open {name} <ArrowRight className="size-4" />
+        </Link>
+        <a href={venue.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-4 py-2 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80">
+          <ExternalLink className="size-3.5" /> {venue.label}
+        </a>
       </div>
-
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-[#7BEBC2]/40 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${color}66, transparent)` }} />
     </motion.div>
   )
 }
@@ -592,9 +315,8 @@ function FeaturedHypeCard() {
 const projectAccents: Record<string, string> = {
   "Good Vibes Club": "#A855F7",
   "Liqwid Finance": "#22D3EE",
-  "Midnight": "#818CF8",
-  "Arbiter": "#F59E0B",
-  "Bitcoin": "#F7931A",
+  Midnight: "#818CF8",
+  Arbiter: "#F59E0B",
 }
 
 function ProjectCard({ project }: { project: Project }) {
@@ -608,63 +330,30 @@ function ProjectCard({ project }: { project: Project }) {
       initial="hidden"
       animate="show"
       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-      className="group relative flex flex-col overflow-hidden rounded-2xl border transition-all duration-300"
+      className="group relative flex flex-col overflow-hidden rounded-2xl border transition-all duration-300 backdrop-blur-md"
       style={{
         borderColor: `color-mix(in srgb, ${accent} 15%, transparent)`,
-        background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 4%, #06080F) 0%, #06080F 60%)`,
+        background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 6%, rgba(10,14,23,0.6)) 0%, rgba(10,14,23,0.6) 60%)`,
       }}
     >
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-px"
-        style={{ background: `linear-gradient(90deg, transparent, ${accent}40, transparent)` }}
-      />
-
-      <div
-        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-        style={{ background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 10%, transparent) 0%, transparent 50%)` }}
-      />
-
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${accent}40, transparent)` }} />
       {project.images && project.images.length > 0 && (
-        <div className="relative">
-          <div
-            className={`relative h-48 w-full overflow-hidden ${
-              project.images[0].contain ? "bg-[#0A0E17]" : ""
-            }`}
-          >
-            <Image
-              src={project.images[0].src}
-              alt={project.images[0].alt}
-              fill
-              className={`transition-transform duration-500 group-hover:scale-105 ${project.images[0].contain ? "object-contain p-8" : "object-cover"}`}
-              sizes="(max-width: 768px) 100vw, 33vw"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#06080F] via-[#06080F]/40 to-transparent" />
-          </div>
+        <div className={`relative h-48 w-full overflow-hidden ${project.images[0].contain ? "bg-[#0A0E17]" : ""}`}>
+          <Image src={project.images[0].src} alt={project.images[0].alt} fill className={`transition-transform duration-500 group-hover:scale-105 ${project.images[0].contain ? "object-contain p-8" : "object-cover"}`} sizes="(max-width: 768px) 100vw, 33vw" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#06080F] via-[#06080F]/40 to-transparent" />
         </div>
       )}
-
       <div className="relative flex flex-1 flex-col p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div
-              className="flex size-10 shrink-0 items-center justify-center rounded-xl"
-              style={{
-                backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)`,
-                boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${accent} 25%, transparent)`,
-              }}
-            >
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)`, boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${accent} 25%, transparent)` }}>
               <project.icon className="size-5" style={{ color: accent }} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-display text-lg font-bold tracking-tight">
-                  {project.name}
-                </h3>
+                <h3 className="font-display text-lg font-bold tracking-tight">{project.name}</h3>
                 <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-white/40">
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: chainColor }}
-                  />
+                  <span className="size-2 rounded-full" style={{ backgroundColor: chainColor }} />
                   {project.chain}
                 </span>
               </div>
@@ -673,16 +362,9 @@ function ProjectCard({ project }: { project: Project }) {
           </div>
           <StatusBadge status={project.status} className={project.statusColor} />
         </div>
-
-        <p className="mt-4 text-sm leading-relaxed text-white/60">
-          {project.description}
-        </p>
-
+        <p className="mt-4 text-sm leading-relaxed text-white/60">{project.description}</p>
         {project.stats && project.stats.length > 0 && (
-          <div
-            className="mt-5 flex gap-6 rounded-xl px-5 py-3.5"
-            style={{ backgroundColor: `color-mix(in srgb, ${accent} 5%, transparent)` }}
-          >
+          <div className="mt-5 flex gap-6 rounded-xl px-5 py-3.5" style={{ backgroundColor: `color-mix(in srgb, ${accent} 5%, transparent)` }}>
             {project.stats.map((stat) => (
               <div key={stat.label}>
                 <div className="text-[10px] uppercase tracking-wider text-white/30">{stat.label}</div>
@@ -691,54 +373,24 @@ function ProjectCard({ project }: { project: Project }) {
             ))}
           </div>
         )}
-
         <div className="mt-auto pt-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-1.5">
             {project.categories.map((cat) => (
-              <Badge
-                key={cat}
-                variant="secondary"
-                className="border-white/[0.06] bg-white/[0.04] text-[11px] text-white/50"
-              >
-                {cat}
-              </Badge>
+              <Badge key={cat} variant="secondary" className="border-white/[0.06] bg-white/[0.04] text-[11px] text-white/50">{cat}</Badge>
             ))}
           </div>
-
           <div className="flex items-center gap-2">
             {project.links ? (
               project.links.map((link) => (
-                <a
-                  key={link.url}
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70"
-                >
-                  <ExternalLink className="size-3.5" />
-                  {link.label}
+                <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70">
+                  <ExternalLink className="size-3.5" /> {link.label}
                 </a>
               ))
             ) : project.externalHref ? (
-              <a
-                href={project.externalHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70"
-              >
-                <ExternalLink className="size-3.5" />
-                Visit
+              <a href={project.externalHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70">
+                <ExternalLink className="size-3.5" /> Visit
               </a>
             ) : null}
-            {project.href && (
-              <Link
-                href={project.href}
-                className="flex items-center gap-1.5 rounded-lg bg-[#00FF88]/10 px-3 py-1.5 text-xs font-semibold text-[#00FF88] transition-all hover:bg-[#00FF88]/20"
-              >
-                View
-                <ArrowRight className="size-3.5" />
-              </Link>
-            )}
           </div>
         </div>
       </div>
@@ -748,67 +400,51 @@ function ProjectCard({ project }: { project: Project }) {
 
 export function ProjectsContent() {
   const [activeFilter, setActiveFilter] = useState<string>("all")
-
-  const filteredProjects =
-    activeFilter === "all"
-      ? projects
-      : projects.filter((p) => p.chain === activeFilter)
+  const filteredProjects = activeFilter === "all" ? projects : projects.filter((p) => p.chain === activeFilter)
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-24 lg:px-8">
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="mb-16 text-center"
-      >
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="mb-12 text-center">
         <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-          Projects{" "}
-          <span className="bg-gradient-to-r from-[#00FF88] to-[#00FF88]/60 bg-clip-text text-transparent">
-            &amp; Ecosystem
-          </span>
+          Projects <span className="bg-gradient-to-r from-[#00FF88] to-[#00FF88]/60 bg-clip-text text-transparent">&amp; Ecosystem</span>
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-white/50">
-          The Web3 journey across Cardano, Midnight, Ethereum, and Bitcoin.
-          From autonomous trading agents to NFT communities, DeFi protocols
-          to Layer 1 infrastructure.
+          What is live today: the signals suite across Strike and Ascend markets, its verified track record, and the Cardano, Midnight and Ethereum ecosystem positions behind it.
         </p>
-
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          {["Cardano", "Midnight", "Ethereum"].map((chain) => (
-            <span
-              key={chain}
-              className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-xs font-medium text-white/40"
-            >
-              {chain}
-            </span>
-          ))}
-        </div>
-
-        <div className="flex flex-wrap justify-center gap-6 mt-8">
-          {[
-            { value: "7", label: "Active Projects" },
-            { value: "3", label: "Blockchains" },
-            { value: "$32M+", label: "Ecosystem TVL" },
-            { value: "24/7", label: "Agent Uptime" },
-          ].map((stat) => (
-            <div key={stat.label} className="text-center">
-              <div className="font-mono text-2xl font-bold text-[#00FF88]">{stat.value}</div>
-              <div className="mt-1 text-xs uppercase tracking-wider text-white/40">{stat.label}</div>
-            </div>
-          ))}
-        </div>
       </motion.div>
 
-      <div className="flex flex-wrap gap-2 justify-center mb-10">
+      <FeaturedSignalsCard />
+
+      <div className="mb-12 grid gap-6 md:grid-cols-2">
+        <VenueSignalsCard
+          name="Strike Signals"
+          color={STRIKE}
+          logo="/strike/Strike Logo.jpeg"
+          tagline="Every market on Strike Finance perpetuals"
+          description="The full signal engine pointed at Strike Finance, the Cardano perpetuals DEX: crypto majors, gold, silver, WTI, US stocks and indices, each with a plain-English recommendation and deep-linked evidence."
+          href="/signals/strike"
+          venue={{ label: "strikefinance.org", url: "https://app.strikefinance.org" }}
+          markets="31 tickers"
+        />
+        <VenueSignalsCard
+          name="Ascend Signals"
+          color={ASCEND}
+          logo="/avatar/ascend_logo_coin.jpg"
+          tagline="The markets behind Ascend event perpetuals"
+          description="Bitcoin, Gold, Cardano and WTI — the underlying markets for Ascend's event perpetuals (ZK-settled on Midnight) — with catalyst headline engines and macro event intelligence for each."
+          href="/signals/ascend"
+          venue={{ label: "ascend.market", url: "https://ascend.market" }}
+          markets="BTC · GOLD · ADA · WTI"
+        />
+      </div>
+
+      <div className="mb-10 flex flex-wrap justify-center gap-2">
         {filterChains.map((chain) => (
           <button
             key={chain}
             onClick={() => setActiveFilter(chain)}
             className={`rounded-full border px-4 py-1.5 text-xs font-medium capitalize transition-all ${
-              activeFilter === chain
-                ? "bg-[#00FF88]/15 text-[#00FF88] border-[#00FF88]/30"
-                : "bg-white/[0.03] text-white/40 border-white/[0.06] hover:border-white/[0.12] hover:text-white/60"
+              activeFilter === chain ? "bg-[#00FF88]/15 text-[#00FF88] border-[#00FF88]/30" : "bg-white/[0.03] text-white/40 border-white/[0.06] hover:border-white/[0.12] hover:text-white/60"
             }`}
           >
             {chain === "all" ? "All" : chain}
@@ -816,39 +452,18 @@ export function ProjectsContent() {
         ))}
       </div>
 
-      <FeaturedAscendCard />
-      <FeaturedStrikeCard />
-      <FeaturedHypeCard />
-
       <AnimatePresence mode="popLayout">
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="show"
-          className="grid gap-6 md:grid-cols-2"
-        >
+        <motion.div variants={containerVariants} initial="hidden" animate="show" className="grid gap-6 md:grid-cols-2">
           {filteredProjects.map((project) => (
             <ProjectCard key={project.name} project={project} />
           ))}
         </motion.div>
       </AnimatePresence>
 
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.8, duration: 0.5 }}
-        className="mt-16 text-center"
-      >
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8, duration: 0.5 }} className="mt-16 text-center">
         <p className="text-sm text-white/30">
           Building in public. Follow the journey on{" "}
-          <a
-            href="https://x.com/RnGcrYptO"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[#00FF88]/70 transition-colors hover:text-[#00FF88]"
-          >
-            @RnGcrYptO
-          </a>
+          <a href="https://x.com/RnGcrYptO" target="_blank" rel="noopener noreferrer" className="text-[#00FF88]/70 transition-colors hover:text-[#00FF88]">@RnGcrYptO</a>
         </p>
       </motion.div>
     </div>

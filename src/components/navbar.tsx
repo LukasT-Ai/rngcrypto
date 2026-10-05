@@ -25,7 +25,6 @@ const navItems = [
   { href: "/signals/strike", label: "Strike Signals", icon: TrendingUp },
   { href: "/signals/ascend", label: "Ascend Signals", icon: BarChart3 },
   { href: "/signals/performance", label: "Performance", icon: Activity },
-  { href: "/hype", label: "Hype", icon: Activity },
   { href: "/projects", label: "Projects", icon: Layers },
   { href: "/proposals", label: "Proposals", icon: Zap },
   { href: "/blog", label: "Blog", icon: PenSquare },

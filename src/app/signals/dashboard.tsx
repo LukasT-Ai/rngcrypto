@@ -119,6 +119,9 @@ interface OilGeo {
     flipCondition: string
   } | null
   sourcesUsed: string[]
+  asset: string
+  assetName: string
+  panelTitle: string
   regime: "calm" | "elevated" | "extreme" | "whipsaw"
   nextScheduled: { name: string; time: string; impact: "high" | "medium" | "low" } | null
 }
@@ -1324,7 +1327,7 @@ export default function SignalsDashboard() {
                         title={`Geopolitical headline score · regime ${d.oilGeopolitical.regime}`}
                       >
                         <Globe className="size-3" />
-                        GEO {s > 0 ? "+" : ""}{s}
+                        {d.oilGeopolitical.asset === "OIL" ? "GEO" : "NEWS"} {s > 0 ? "+" : ""}{s}
                       </span>
                     )
                   })()}
@@ -1513,7 +1516,7 @@ export default function SignalsDashboard() {
                 <motion.div {...fadeUp} id="sec-geo">
                   <div className="flex flex-wrap items-center gap-2 mb-3">
                     <Globe className="size-4" style={{ color: "#F59E0B" }} />
-                    <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">Geopolitical Catalysts</h2>
+                    <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">{g.panelTitle ?? "Catalyst Headlines"}</h2>
                     <span
                       className="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase"
                       style={{ backgroundColor: `${col(g.score)}15`, color: col(g.score) }}
@@ -1594,17 +1597,17 @@ export default function SignalsDashboard() {
                     <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3 mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                       <div className="flex items-center gap-3">
                         <div>
-                          <div className="text-[10px] text-white/30 uppercase">WTI Crude</div>
-                          <div className="font-mono text-lg font-bold text-white/90">${pc.current.toFixed(2)}</div>
+                          <div className="text-[10px] text-white/30 uppercase">{g.assetName ?? d.assetLabel}</div>
+                          <div className="font-mono text-lg font-bold text-white/90">${fmtPrice(pc.current)}</div>
                         </div>
                         <div className="font-mono text-sm font-bold" style={{ color: pc.change24h >= 0 ? "#00FF88" : "#FF3B5C" }}>
-                          {pc.change24h >= 0 ? "+" : ""}{pc.change24h.toFixed(2)}{" "}
+                          {pc.change24h >= 0 ? "+" : ""}{fmtPrice(pc.change24h)}{" "}
                           <span className="text-xs">({pc.changePct24h >= 0 ? "+" : ""}{pc.changePct24h.toFixed(2)}%)</span>
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
-                        <span><span className="text-white/30">7d H </span><span className="font-mono text-white/60">${pc.weekHigh.toFixed(2)}</span></span>
-                        <span><span className="text-white/30">7d L </span><span className="font-mono text-white/60">${pc.weekLow.toFixed(2)}</span></span>
+                        <span><span className="text-white/30">7d H </span><span className="font-mono text-white/60">${fmtPrice(pc.weekHigh)}</span></span>
+                        <span><span className="text-white/30">7d L </span><span className="font-mono text-white/60">${fmtPrice(pc.weekLow)}</span></span>
                         {g.nextScheduled && (
                           <span
                             className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium"
@@ -1927,12 +1930,12 @@ export default function SignalsDashboard() {
                           <div>
                             <div className="text-white/30">Target</div>
                             <div className="font-mono text-white/85">
-                              ${s.target.toFixed(2)} <span style={{ color: c }}>({tp >= 0 ? "+" : ""}{tp.toFixed(1)}%)</span>
+                              ${fmtPrice(s.target)} <span style={{ color: c }}>({tp >= 0 ? "+" : ""}{tp.toFixed(1)}%)</span>
                             </div>
                           </div>
                           <div>
                             <div className="text-white/30">Stop ref</div>
-                            <div className="font-mono text-white/60">${s.stopRef.toFixed(2)}</div>
+                            <div className="font-mono text-white/60">${fmtPrice(s.stopRef)}</div>
                           </div>
                           <div>
                             <div className="text-white/30">R:R</div>

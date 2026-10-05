@@ -138,13 +138,15 @@ function factorReason(d: SignalsResponse, category: string, assessment: string, 
       if (parts.length === 0) return null
       return { ...base, anchor: fg ? "sec-market-data" : "sec-news", text: parts.join(", ") }
     }
-    case "Geopolitical": {
+    case "Geopolitical":
+    case "Catalysts": {
       const g = d.oilGeopolitical
       if (!g) return null
       const v = g.verdict
+      const nice = (c: string) => c.replace(/_/g, " ")
       const text = v
-        ? `Headlines net ${g.label.toLowerCase()} (${g.score > 0 ? "+" : ""}${g.score}): ${v.bullForce ? `${v.bullForce.category} +${v.bullForce.avgScore}` : ""}${v.bullForce && v.bearForce ? " vs " : ""}${v.bearForce ? `${v.bearForce.category} ${v.bearForce.avgScore}` : ""}${v.priceFollowing ? `; price following ${v.priceFollowing}` : ""}`
-        : `Geopolitical headlines net ${g.label.toLowerCase()} (${g.score})`
+        ? `Headlines net ${g.label.toLowerCase()} (${g.score > 0 ? "+" : ""}${g.score}): ${v.bullForce ? `${nice(v.bullForce.category)} +${v.bullForce.avgScore}` : ""}${v.bullForce && v.bearForce ? " vs " : ""}${v.bearForce ? `${nice(v.bearForce.category)} ${v.bearForce.avgScore}` : ""}${v.priceFollowing ? `; price following ${nice(v.priceFollowing)}` : ""}`
+        : `Catalyst headlines net ${g.label.toLowerCase()} (${g.score})`
       return { ...base, anchor: "sec-geo", text }
     }
     case "Market Data": {

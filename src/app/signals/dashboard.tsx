@@ -35,6 +35,8 @@ import {
   X,
   Crosshair,
   Clock,
+  Globe,
+  Flame,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -268,6 +270,22 @@ interface SignalsResponse {
     score: number
     label: string
     headlines: { title: string; sentiment: string }[]
+  } | null
+  oilGeopolitical?: {
+    score: number
+    label: string
+    eventCount: number
+    lastUpdated: string
+    events: {
+      title: string
+      source: string
+      publishedAt: string
+      category: string
+      sentiment: "bullish" | "bearish" | "neutral"
+      impact: "high" | "medium" | "low"
+      url: string
+    }[]
+    categoryBreakdown: { category: string; count: number; avgScore: number }[]
   } | null
   positioning?: {
     longShortRatio: number | null
@@ -3285,6 +3303,125 @@ export default function SignalsDashboard() {
                       </div>
                     )
                   })}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── 9c. Oil Geopolitical Catalysts ────────────────────────── */}
+            {d?.oilGeopolitical && d.oilGeopolitical.events.length > 0 && (
+              <motion.div {...fadeUp}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Globe className="size-4" style={{ color: "#F59E0B" }} />
+                  <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
+                    Geopolitical Catalysts
+                  </h2>
+                  <span
+                    className="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase"
+                    style={{
+                      backgroundColor: `${d.oilGeopolitical.score >= 15 ? "#00FF88" : d.oilGeopolitical.score <= -15 ? "#FF3B5C" : "#F59E0B"}15`,
+                      color: d.oilGeopolitical.score >= 15 ? "#00FF88" : d.oilGeopolitical.score <= -15 ? "#FF3B5C" : "#F59E0B",
+                    }}
+                  >
+                    {d.oilGeopolitical.label}
+                  </span>
+                  <span
+                    className="font-mono text-xs font-bold"
+                    style={{
+                      color: d.oilGeopolitical.score >= 15 ? "#00FF88" : d.oilGeopolitical.score <= -15 ? "#FF3B5C" : "#F59E0B",
+                    }}
+                  >
+                    {d.oilGeopolitical.score > 0 ? "+" : ""}{d.oilGeopolitical.score}
+                  </span>
+                  <span className="text-[10px] text-white/30 ml-auto">
+                    {d.oilGeopolitical.eventCount} events
+                  </span>
+                </div>
+
+                {/* Category breakdown pills */}
+                {d.oilGeopolitical.categoryBreakdown.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {d.oilGeopolitical.categoryBreakdown.map((cat) => {
+                      const catColor = cat.avgScore >= 10 ? "#00FF88" : cat.avgScore <= -10 ? "#FF3B5C" : "#6B7280";
+                      return (
+                        <span
+                          key={cat.category}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium"
+                          style={{ backgroundColor: `${catColor}12`, color: catColor, border: `1px solid ${catColor}25` }}
+                        >
+                          <Flame className="size-2.5" />
+                          {cat.category.replace("_", " ")}
+                          <span className="font-mono text-[10px] opacity-70">({cat.count})</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] divide-y divide-white/[0.04]">
+                  {d.oilGeopolitical.events.slice(0, 8).map((ev, i) => {
+                    const dotColor =
+                      ev.sentiment === "bullish"
+                        ? "#00FF88"
+                        : ev.sentiment === "bearish"
+                          ? "#FF3B5C"
+                          : "#6B7280";
+                    const impactColor =
+                      ev.impact === "high"
+                        ? "#FF3B5C"
+                        : ev.impact === "medium"
+                          ? "#F59E0B"
+                          : "#6B7280";
+                    const timeDiff = Date.now() - new Date(ev.publishedAt).getTime();
+                    const timeAgo =
+                      timeDiff < 3600000
+                        ? `${Math.max(1, Math.floor(timeDiff / 60000))}m ago`
+                        : timeDiff < 86400000
+                          ? `${Math.floor(timeDiff / 3600000)}h ago`
+                          : `${Math.floor(timeDiff / 86400000)}d ago`;
+
+                    return (
+                      <a
+                        key={i}
+                        href={ev.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-start gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors group"
+                      >
+                        <span
+                          className="mt-2 size-2 rounded-full shrink-0"
+                          style={{ backgroundColor: dotColor }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm text-white/60 leading-relaxed group-hover:text-white/80 transition-colors line-clamp-2">
+                            {ev.title}
+                          </span>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] text-white/30">{ev.source}</span>
+                            <span className="text-[10px] text-white/20">·</span>
+                            <span className="text-[10px] text-white/30">{timeAgo}</span>
+                            <span className="text-[10px] text-white/20">·</span>
+                            <span
+                              className="text-[10px] font-medium uppercase"
+                              style={{ color: impactColor }}
+                            >
+                              {ev.impact}
+                            </span>
+                            <span
+                              className="text-[10px] font-medium rounded px-1 py-px"
+                              style={{ backgroundColor: `${dotColor}15`, color: dotColor }}
+                            >
+                              {ev.category.replace("_", " ")}
+                            </span>
+                          </div>
+                        </div>
+                        <ArrowUpRight className="size-3.5 text-white/20 group-hover:text-white/50 transition-colors shrink-0 mt-1" />
+                      </a>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-2 text-[10px] text-white/20 text-right">
+                  Updated {new Date(d.oilGeopolitical.lastUpdated).toLocaleTimeString()}
                 </div>
               </motion.div>
             )}

@@ -3,6 +3,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { appendSignal } from "./history/logger";
 import { computeCatalystScore } from "@/lib/economic-calendar";
 import { getNewsSentiment, type NewsSentimentResult } from "@/lib/news-sentiment";
+import { getOilGeopoliticalNews, type OilGeoResult } from "@/lib/oil-geopolitical-news";
 
 export const dynamic = "force-dynamic";
 
@@ -1617,12 +1618,25 @@ function scoreDivergences(
 function scoreSentiment(
   fearGreed: number | null,
   newsSentimentScore: number | null,
-  isCrypto: boolean
+  isCrypto: boolean,
+  oilGeoScore?: number | null
 ): { score: number; notes: string[] } {
   let score = 0;
   const notes: string[] = [];
 
-  if (!isCrypto) return { score: 0, notes: [] };
+  if (!isCrypto && oilGeoScore == null) return { score: 0, notes: [] };
+
+  if (oilGeoScore != null) {
+    const geoImpact = clamp(Math.round(oilGeoScore * 0.7), -70, 70);
+    const label =
+      oilGeoScore >= 15
+        ? "bullish"
+        : oilGeoScore <= -15
+          ? "bearish"
+          : "mixed";
+    notes.push(`Geopolitical sentiment ${label} (${oilGeoScore})`);
+    return { score: clamp(geoImpact, -100, 100), notes };
+  }
 
   let fgScore = 0;
   if (fearGreed != null) {
@@ -2719,6 +2733,7 @@ function computeMultiFactorCall(
     };
     isCrypto: boolean;
     newsSentimentScore: number | null;
+    oilGeoScore: number | null;
     catalystScore: number;
     catalystRiskNote: string | null;
     tradeATR: number;
@@ -2773,6 +2788,7 @@ function computeMultiFactorCall(
     volData,
     isCrypto,
     newsSentimentScore,
+    oilGeoScore,
     catalystScore: extCatalystScore,
     catalystRiskNote,
     tradeATR,
@@ -2807,19 +2823,20 @@ function computeMultiFactorCall(
   };
 
   if (!isCrypto) {
-    weights.sentiment = 0;
+    const hasOilGeo = oilGeoScore != null;
+    weights.sentiment = hasOilGeo ? 0.08 : 0;
     weights.marketData = 0;
     weights.etf = 0;
     weights.liquidation = 0;
-    weights.marketStructure = 0.2;
-    weights.momentum = 0.15;
-    weights.volume = 0.13;
-    weights.htf = 0.12;
-    weights.bollinger = 0.1;
-    weights.divergences = 0.1;
+    weights.marketStructure = hasOilGeo ? 0.18 : 0.2;
+    weights.momentum = hasOilGeo ? 0.14 : 0.15;
+    weights.volume = hasOilGeo ? 0.12 : 0.13;
+    weights.htf = hasOilGeo ? 0.11 : 0.12;
+    weights.bollinger = hasOilGeo ? 0.09 : 0.1;
+    weights.divergences = hasOilGeo ? 0.09 : 0.1;
     weights.derivatives = 0.08;
-    weights.patterns = 0.07;
-    weights.catalyst = 0.02;
+    weights.patterns = hasOilGeo ? 0.06 : 0.07;
+    weights.catalyst = hasOilGeo ? 0.03 : 0.02;
   }
 
   const ms = scoreMarketStructure(
@@ -2845,7 +2862,7 @@ function computeMultiFactorCall(
     squeeze
   );
   const divs = scoreDivergences(rsiDiv15m, rsiDiv1h, macdDiv, volDiv);
-  const sent = scoreSentiment(fearGreed, newsSentimentScore, isCrypto);
+  const sent = scoreSentiment(fearGreed, newsSentimentScore, isCrypto, oilGeoScore);
   const mktData = scoreMarketData(btcDominance, isCrypto);
   const pats = scorePatterns(pattern);
   const etfScore = scoreETFFlows(etfNet);
@@ -3388,6 +3405,10 @@ export async function GET(req: NextRequest) {
     config.okx
       ? fetchJSON(`https://www.okx.com/api/v5/rubik/stat/taker-volume-contract?instId=${config.okx}-USDT-SWAP&period=1H&limit=5`).catch(() => null)
       : Promise.resolve(null),
+    // 20: Oil geopolitical news (OIL only)
+    symbol === "OIL"
+      ? getOilGeopoliticalNews().catch(() => null)
+      : Promise.resolve(null),
   ];
 
   const results = await Promise.allSettled(fetches);
@@ -3630,6 +3651,9 @@ export async function GET(req: NextRequest) {
   // News sentiment
   const newsSentimentData = getResult(13) as NewsSentimentResult | null;
 
+  // Oil geopolitical news
+  const oilGeoData = getResult(20) as OilGeoResult | null;
+
   // Binance Open Interest
   let binanceOI: number | null = null;
   const binanceOIRaw = getResult(14);
@@ -3757,6 +3781,7 @@ export async function GET(req: NextRequest) {
       volData,
       isCrypto,
       newsSentimentScore: newsSentimentData?.score ?? null,
+      oilGeoScore: oilGeoData?.score ?? null,
       catalystScore: catalystData.score,
       catalystRiskNote: catalystData.catalystRisk,
       tradeATR,
@@ -3997,6 +4022,24 @@ export async function GET(req: NextRequest) {
           headlines: newsSentimentData.headlines
             .slice(0, 5)
             .map((h) => ({ title: h.title, sentiment: h.sentiment })),
+        }
+      : null,
+    oilGeopolitical: oilGeoData
+      ? {
+          score: oilGeoData.score,
+          label: oilGeoData.label,
+          eventCount: oilGeoData.eventCount,
+          lastUpdated: oilGeoData.lastUpdated,
+          events: oilGeoData.events.slice(0, 10).map((e) => ({
+            title: e.title,
+            source: e.source,
+            publishedAt: e.publishedAt,
+            category: e.category,
+            sentiment: e.sentiment,
+            impact: e.impact,
+            url: e.url,
+          })),
+          categoryBreakdown: oilGeoData.categoryBreakdown,
         }
       : null,
     events: catalystData.events.map((e) => ({

@@ -6,12 +6,22 @@ const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH
   : join(process.cwd(), "data");
 const FILE_PATH = join(DATA_DIR, "signal-history.json");
 const DEDUP_WINDOW_MS = 15 * 60 * 1000;
-const MAX_SIGNALS = 500;
+const MAX_SIGNALS = 5000;
 
 function ensureDir(): void {
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });
   }
+}
+
+export interface SignalContext {
+  factors: Record<string, string>;
+  catalystScore: number;
+  oilGeoScore: number | null;
+  oilRegime: "calm" | "elevated" | "extreme" | "whipsaw" | null;
+  atr: number;
+  tradeType: string | null;
+  timeframe: string | null;
 }
 
 export interface SignalLog {
@@ -32,6 +42,17 @@ export interface SignalLog {
   outcomeTimestamp: number | null;
   maxFavorable: number | null;
   maxAdverse: number | null;
+  lastCheckedAt?: number;
+  context?: SignalContext;
+}
+
+export interface CalibrationBucket {
+  n: number;
+  wins: number;
+  losses: number;
+  tp1Rate: number;
+  winRate: number;
+  avgR: number | null;
 }
 
 export interface SignalStats {
@@ -48,6 +69,8 @@ export interface SignalStats {
     string,
     { total: number; wins: number; losses: number; winRate: number }
   >;
+  byGradeSymbol: Record<string, Record<string, CalibrationBucket>>;
+  oilByRegime: Record<string, CalibrationBucket>;
 }
 
 let memoryCache: SignalLog[] | null = null;
@@ -89,6 +112,7 @@ export async function appendSignal(entry: {
   tp2: number;
   tp3: number;
   priceAtSignal: number;
+  context?: SignalContext;
 }): Promise<void> {
   const signals = loadFromDisk();
 
@@ -118,6 +142,8 @@ export async function appendSignal(entry: {
     outcomeTimestamp: null,
     maxFavorable: null,
     maxAdverse: null,
+    lastCheckedAt: entry.timestamp,
+    context: entry.context,
   };
 
   signals.unshift(log);
@@ -202,7 +228,58 @@ export function computeStats(signals: SignalLog[]): SignalStats {
     bySymbol[sym].winRate = d > 0 ? Math.round((bySymbol[sym].wins / d) * 1000) / 10 : 0;
   }
 
+  const isWin = (s: SignalLog) => s.outcome === "tp1" || s.outcome === "tp2" || s.outcome === "tp3";
+  const realizedR = (s: SignalLog): number | null => {
+    const risk = Math.abs(s.entry - s.stopLoss);
+    if (risk <= 0 || s.outcomePrice == null) return null;
+    const move = s.bias === "LONG" ? s.outcomePrice - s.entry : s.entry - s.outcomePrice;
+    return move / risk;
+  };
+  const bucketOf = (list: SignalLog[]): CalibrationBucket => {
+    const decided = list.filter((s) => isWin(s) || s.outcome === "stopped" || s.outcome === "expired");
+    const wins = decided.filter(isWin).length;
+    const losses = decided.filter((s) => s.outcome === "stopped").length;
+    const rs = decided.map(realizedR).filter((r): r is number => r != null);
+    const dl = wins + losses;
+    return {
+      n: decided.length,
+      wins,
+      losses,
+      tp1Rate: decided.length > 0 ? Math.round((wins / decided.length) * 1000) / 10 : 0,
+      winRate: dl > 0 ? Math.round((wins / dl) * 1000) / 10 : 0,
+      avgR: rs.length > 0 ? Math.round((rs.reduce((a, b) => a + b, 0) / rs.length) * 100) / 100 : null,
+    };
+  };
+
+  const byGradeSymbol: SignalStats["byGradeSymbol"] = {};
+  const groups = new Map<string, Map<string, SignalLog[]>>();
+  for (const s of signals) {
+    if (s.outcome === "pending") continue;
+    const g = groups.get(s.symbol) ?? new Map<string, SignalLog[]>();
+    const arr = g.get(s.grade) ?? [];
+    arr.push(s);
+    g.set(s.grade, arr);
+    groups.set(s.symbol, g);
+  }
+  for (const [sym, grades] of groups) {
+    byGradeSymbol[sym] = {};
+    for (const [grade, list] of grades) byGradeSymbol[sym][grade] = bucketOf(list);
+  }
+
+  const oilByRegime: SignalStats["oilByRegime"] = {};
+  const regimes = new Map<string, SignalLog[]>();
+  for (const s of signals) {
+    if (s.symbol !== "OIL" || s.outcome === "pending") continue;
+    const r = s.context?.oilRegime ?? "unknown";
+    const arr = regimes.get(r) ?? [];
+    arr.push(s);
+    regimes.set(r, arr);
+  }
+  for (const [r, list] of regimes) oilByRegime[r] = bucketOf(list);
+
   return {
+    byGradeSymbol,
+    oilByRegime,
     total: signals.length,
     wins: wins.length,
     losses: losses.length,

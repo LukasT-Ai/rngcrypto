@@ -132,6 +132,33 @@ function generateScheduledEvents(): CalendarEvent[] {
   return events;
 }
 
+// Weekly oil-specific releases (UTC). EIA Wed 10:30 ET, API Tue 16:30 ET, Baker Hughes Fri 13:00 ET.
+function generateOilEvents(): CalendarEvent[] {
+  const out: CalendarEvent[] = [];
+  const now = new Date();
+  const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  for (let d = -1; d < 60; d++) {
+    const day = new Date(start + d * 86400e3);
+    const dow = day.getUTCDay();
+    const at = (h: number, m: number) =>
+      new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), h, m, 0));
+    if (dow === 2)
+      out.push({ name: "API Weekly Crude Stocks", time: at(20, 30), impact: "medium", currency: "OIL", source: "scheduled" });
+    if (dow === 3)
+      out.push({ name: "EIA Weekly Petroleum Status Report", time: at(14, 30), impact: "high", currency: "OIL", source: "scheduled" });
+    if (dow === 5)
+      out.push({ name: "Baker Hughes Rig Count", time: at(17, 0), impact: "low", currency: "OIL", source: "scheduled" });
+  }
+  return out;
+}
+
+export async function getNextOilEvent(): Promise<CalendarEvent | null> {
+  const now = Date.now();
+  return generateOilEvents()
+    .filter((e) => e.time.getTime() > now)
+    .sort((a, b) => a.time.getTime() - b.time.getTime())[0] ?? null;
+}
+
 async function fetchLiveEvents(): Promise<CalendarEvent[]> {
   if (liveCache && Date.now() - liveCache.timestamp < LIVE_CACHE_TTL) {
     return liveCache.events;
@@ -198,22 +225,27 @@ function deduplicateEvents(events: CalendarEvent[]): CalendarEvent[] {
 }
 
 export async function getUpcomingEvents(
-  hoursAhead = 24
+  hoursAhead = 24,
+  symbol?: string
 ): Promise<CalendarEvent[]> {
   const now = Date.now();
   const cutoff = now + hoursAhead * 60 * 60 * 1000;
+  const isOil = symbol === "OIL";
 
   const scheduled = generateScheduledEvents();
-  const live = await fetchLiveEvents();
-  const all = deduplicateEvents([...scheduled, ...live]);
+  const liveRaw = await fetchLiveEvents();
+  // Fair Economy tags "Crude Oil Inventories" low; for OIL we use our own high-impact EIA entry instead
+  const live = isOil ? liveRaw.filter((e) => !/crude oil inventor/i.test(e.name)) : liveRaw;
+  const oil = isOil ? generateOilEvents() : [];
+  const all = deduplicateEvents([...scheduled, ...live, ...oil]).filter((e) => isOil || e.currency !== "OIL");
 
   return all
     .filter((e) => e.time.getTime() > now && e.time.getTime() <= cutoff)
     .sort((a, b) => a.time.getTime() - b.time.getTime());
 }
 
-export async function computeCatalystScore(): Promise<CatalystResult> {
-  const events = await getUpcomingEvents(24);
+export async function computeCatalystScore(symbol?: string): Promise<CatalystResult> {
+  const events = await getUpcomingEvents(24, symbol);
   let score = 0;
   const riskParts: string[] = [];
 

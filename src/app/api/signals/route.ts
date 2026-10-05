@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { appendSignal } from "./history/logger";
-import { computeCatalystScore } from "@/lib/economic-calendar";
+import { computeCatalystScore, getNextOilEvent } from "@/lib/economic-calendar";
 import { getNewsSentiment, type NewsSentimentResult } from "@/lib/news-sentiment";
 import { getOilGeopoliticalNews, type OilGeoResult } from "@/lib/oil-geopolitical-news";
 
@@ -1627,7 +1627,6 @@ function scoreSentiment(
   if (!isCrypto && oilGeoScore == null) return { score: 0, notes: [] };
 
   if (oilGeoScore != null) {
-    const geoImpact = clamp(Math.round(oilGeoScore * 0.7), -70, 70);
     const label =
       oilGeoScore >= 15
         ? "bullish"
@@ -1635,7 +1634,7 @@ function scoreSentiment(
           ? "bearish"
           : "mixed";
     notes.push(`Geopolitical sentiment ${label} (${oilGeoScore})`);
-    return { score: clamp(geoImpact, -100, 100), notes };
+    return { score: clamp(Math.round(oilGeoScore), -100, 100), notes };
   }
 
   let fgScore = 0;
@@ -2734,6 +2733,7 @@ function computeMultiFactorCall(
     isCrypto: boolean;
     newsSentimentScore: number | null;
     oilGeoScore: number | null;
+    oilGeoRegime: "calm" | "elevated" | "extreme" | "whipsaw" | null;
     catalystScore: number;
     catalystRiskNote: string | null;
     tradeATR: number;
@@ -2789,6 +2789,7 @@ function computeMultiFactorCall(
     isCrypto,
     newsSentimentScore,
     oilGeoScore,
+    oilGeoRegime,
     catalystScore: extCatalystScore,
     catalystRiskNote,
     tradeATR,
@@ -2824,19 +2825,33 @@ function computeMultiFactorCall(
 
   if (!isCrypto) {
     const hasOilGeo = oilGeoScore != null;
-    weights.sentiment = hasOilGeo ? 0.08 : 0;
     weights.marketData = 0;
     weights.etf = 0;
     weights.liquidation = 0;
-    weights.marketStructure = hasOilGeo ? 0.18 : 0.2;
-    weights.momentum = hasOilGeo ? 0.14 : 0.15;
-    weights.volume = hasOilGeo ? 0.12 : 0.13;
-    weights.htf = hasOilGeo ? 0.11 : 0.12;
-    weights.bollinger = hasOilGeo ? 0.09 : 0.1;
-    weights.divergences = hasOilGeo ? 0.09 : 0.1;
-    weights.derivatives = 0.08;
-    weights.patterns = hasOilGeo ? 0.06 : 0.07;
-    weights.catalyst = hasOilGeo ? 0.03 : 0.02;
+    if (hasOilGeo) {
+      // OIL: headlines are a first-class driver; derivatives data does not exist for WTI on Strike
+      weights.sentiment = 0.22;
+      weights.derivatives = 0;
+      weights.marketStructure = 0.16;
+      weights.momentum = 0.13;
+      weights.volume = 0.11;
+      weights.htf = 0.12;
+      weights.bollinger = 0.08;
+      weights.divergences = 0.08;
+      weights.patterns = 0.06;
+      weights.catalyst = 0.04;
+    } else {
+      weights.sentiment = 0;
+      weights.marketStructure = 0.2;
+      weights.momentum = 0.15;
+      weights.volume = 0.13;
+      weights.htf = 0.12;
+      weights.bollinger = 0.1;
+      weights.divergences = 0.1;
+      weights.derivatives = 0.08;
+      weights.patterns = 0.07;
+      weights.catalyst = 0.02;
+    }
   }
 
   const ms = scoreMarketStructure(
@@ -2893,7 +2908,8 @@ function computeMultiFactorCall(
     catalyst.score * weights.catalyst +
     liq.score * weights.liquidation;
 
-  const confidence = clamp(Math.round(50 + weightedScore / 2), 0, 100);
+  const whipsawPenalty = oilGeoRegime === "whipsaw" ? -8 : 0;
+  let confidence = clamp(Math.round(50 + weightedScore / 2 + whipsawPenalty), 0, 100);
 
   const regime =
     adx > 25 ? "trending" : adx < 20 ? "ranging" : "transitional";
@@ -3006,6 +3022,23 @@ function computeMultiFactorCall(
     );
   }
 
+  if (oilGeoScore != null) {
+    signalFactors.push({
+      category: "Geopolitical",
+      assessment:
+        sent.score >= 40
+          ? "Strong Bullish"
+          : sent.score > 10
+            ? "Bullish"
+            : sent.score > -10
+              ? "Neutral"
+              : sent.score > -40
+                ? "Bearish"
+                : "Strong Bearish",
+      weight: Math.round(weights.sentiment * 100),
+    });
+  }
+
   signalFactors.push(
     {
       category: "Patterns",
@@ -3046,6 +3079,45 @@ function computeMultiFactorCall(
     bias = "SHORT";
   }
 
+  // Geopolitical regime: gap risk sizing + headline override for OIL
+  let geoOverride: string | null = null;
+  let sizeMultiplier = 1;
+  let stopMult = 1;
+  if (oilGeoScore != null) {
+    if (oilGeoRegime === "whipsaw" || oilGeoRegime === "extreme") {
+      stopMult = 1.6;
+      sizeMultiplier = 0.5;
+    } else if (oilGeoRegime === "elevated") {
+      stopMult = 1.3;
+      sizeMultiplier = 0.75;
+    }
+
+    const htfOpposesLong = trend4h === "bear" && trendDaily === "bear";
+    const htfOpposesShort = trend4h === "bull" && trendDaily === "bull";
+
+    if (oilGeoRegime === "whipsaw") {
+      if (Math.abs(oilGeoScore) < 10 && bias !== "WAIT") {
+        bias = "WAIT";
+        geoOverride = "Headline whipsaw: supply-shock and reserve-release headlines offset each other — standing aside";
+      } else {
+        geoOverride = "Headline whipsaw: opposing catalysts active — half size, 1.6x ATR stops";
+      }
+    } else if (Math.abs(oilGeoScore) >= 50) {
+      if (oilGeoScore > 0 && bias !== "LONG" && !htfOpposesLong) {
+        bias = "LONG";
+        confidence = Math.max(confidence, 55);
+        geoOverride = `Geopolitical override: headlines strongly bullish (+${oilGeoScore}) — bias forced LONG`;
+      } else if (oilGeoScore < 0 && bias !== "SHORT" && !htfOpposesShort) {
+        bias = "SHORT";
+        confidence = Math.max(confidence, 55);
+        geoOverride = `Geopolitical override: headlines strongly bearish (${oilGeoScore}) — bias forced SHORT`;
+      } else if ((oilGeoScore > 0 && bias === "SHORT") || (oilGeoScore < 0 && bias === "LONG")) {
+        bias = "WAIT";
+        geoOverride = "Higher timeframes oppose strong headline flow — standing aside until they agree";
+      }
+    }
+  }
+
   let grade: string;
   if (confidence >= 85 && strongCategories >= 3) grade = "A+";
   else if (confidence >= 75) grade = "A";
@@ -3053,7 +3125,7 @@ function computeMultiFactorCall(
   else if (confidence >= 45) grade = "C";
   else grade = "NO TRADE";
 
-  const ta = tradeATR;
+  const ta = tradeATR * stopMult;
   const minDist = ta * 0.8;
 
   const nearestSupport = supports[0] ?? price - 1.5 * ta;
@@ -3191,7 +3263,11 @@ function computeMultiFactorCall(
   if (vol.score > 0) bullCase.push("Strong buying volume and positive CVD");
   if (htf.score > 0) bullCase.push("Higher timeframes confirm bullish bias");
   if (sent.score > 0)
-    bullCase.push("Contrarian opportunity — fear in market");
+    bullCase.push(
+      oilGeoScore != null
+        ? "Geopolitical supply risk bid — headlines net bullish for crude"
+        : "Contrarian opportunity — fear in market"
+    );
   if (etfScore.score > 0)
     bullCase.push("Institutional buying via ETF inflows");
   if (divs.score > 0)
@@ -3203,7 +3279,12 @@ function computeMultiFactorCall(
   if (vol.score < 0)
     bearCase.push("Selling pressure dominant — negative CVD");
   if (htf.score < 0) bearCase.push("Higher timeframes confirm bearish bias");
-  if (sent.score < 0) bearCase.push("Extreme greed — market overheated");
+  if (sent.score < 0)
+    bearCase.push(
+      oilGeoScore != null
+        ? "Supply relief headlines (reserve releases / de-escalation) weigh on crude"
+        : "Extreme greed — market overheated"
+    );
   if (etfScore.score < 0)
     bearCase.push("Institutional selling — ETF outflows");
   if (deriv.score < 0)
@@ -3224,25 +3305,35 @@ function computeMultiFactorCall(
     confirms.push(
       `Break above $${round(nearestResistance, dec).toLocaleString()} with volume above 20 EMA`
     );
-    confirms.push("Funding rate stays neutral or negative");
+    confirms.push(
+      oilGeoScore != null
+        ? "Fresh escalation headline (Hormuz, tankers, Aramco) or reserve-release delay"
+        : "Funding rate stays neutral or negative"
+    );
     if (trend1h !== "bull") confirms.push("1H trend flips bullish");
     invalidates.push(
       `Loss of $${round(nearestSupport, dec).toLocaleString()} support`
     );
     invalidates.push("MACD crossover to bearish on 1H");
     if (volData.spikeLabel === "DRY") invalidates.push("Volume dry — breakout lacks conviction");
+    else if (oilGeoScore != null) invalidates.push("Ceasefire / Hormuz reopening headline strips the risk premium");
     else invalidates.push("Sudden spike in funding rate above 0.05%");
   } else {
     confirms.push(
       `Break below $${round(nearestSupport, dec).toLocaleString()} with volume above 20 EMA`
     );
-    confirms.push("Funding rate remains elevated");
+    confirms.push(
+      oilGeoScore != null
+        ? "Reserve release volumes confirmed landing or de-escalation talks progress"
+        : "Funding rate remains elevated"
+    );
     if (trend1h !== "bear") confirms.push("1H trend flips bearish");
     invalidates.push(
       `Reclaim of $${round(nearestResistance, dec).toLocaleString()} resistance`
     );
     invalidates.push("MACD crossover to bullish on 1H");
     if (volData.spikeLabel === "DRY") invalidates.push("Volume dry — breakdown lacks conviction");
+    else if (oilGeoScore != null) invalidates.push("New strike on tankers or Gulf infrastructure re-prices supply risk");
     else invalidates.push("Fear & Greed drops below 25 (capitulation)");
   }
 
@@ -3268,6 +3359,9 @@ function computeMultiFactorCall(
     catalystRisk: catalyst.note,
     liqSqueezeRisk: liq.squeezeRisk,
     signalFactors,
+    geoOverride,
+    sizeMultiplier,
+    stopMultiplier: stopMult,
   };
 }
 
@@ -3651,8 +3745,34 @@ export async function GET(req: NextRequest) {
   // News sentiment
   const newsSentimentData = getResult(13) as NewsSentimentResult | null;
 
-  // Oil geopolitical news
+  // Oil geopolitical news + regime classification
   const oilGeoData = getResult(20) as OilGeoResult | null;
+  let oilGeoRegime: "calm" | "elevated" | "extreme" | "whipsaw" | null = null;
+  if (oilGeoData) {
+    const bd = oilGeoData.categoryBreakdown;
+    const conflict = bd.find((b) => b.category === "CONFLICT");
+    const reserves = bd.find((b) => b.category === "RESERVES");
+    const nowMs = Date.now();
+    const recentHi = oilGeoData.events.filter(
+      (e) => e.impact === "high" && e.score !== 0 && nowMs - new Date(e.publishedAt).getTime() < 12 * 3600e3
+    ).length;
+    const absScore = Math.abs(oilGeoData.score);
+    const whipsaw =
+      !!conflict &&
+      !!reserves &&
+      conflict.count >= 3 &&
+      reserves.count >= 3 &&
+      Math.abs(conflict.avgScore) >= 35 &&
+      Math.abs(reserves.avgScore) >= 35 &&
+      Math.sign(conflict.avgScore) !== Math.sign(reserves.avgScore);
+    oilGeoRegime = whipsaw
+      ? "whipsaw"
+      : absScore >= 50 || recentHi >= 6
+        ? "extreme"
+        : absScore >= 25 || recentHi >= 3
+          ? "elevated"
+          : "calm";
+  }
 
   // Binance Open Interest
   let binanceOI: number | null = null;
@@ -3737,7 +3857,8 @@ export async function GET(req: NextRequest) {
   const prevRsi15m = rsiArr.length >= 2 ? rsiArr[rsiArr.length - 2] : null;
 
   // ── Economic calendar / catalyst scoring ────────────────────────────────────
-  const catalystData = await computeCatalystScore();
+  const catalystData = await computeCatalystScore(symbol);
+  const nextOilEvent = symbol === "OIL" ? await getNextOilEvent() : null;
 
   // ── Compute trade call ─────────────────────────────────────────────────────
   const call = computeMultiFactorCall(
@@ -3782,6 +3903,7 @@ export async function GET(req: NextRequest) {
       isCrypto,
       newsSentimentScore: newsSentimentData?.score ?? null,
       oilGeoScore: oilGeoData?.score ?? null,
+      oilGeoRegime,
       catalystScore: catalystData.score,
       catalystRiskNote: catalystData.catalystRisk,
       tradeATR,
@@ -3846,6 +3968,100 @@ export async function GET(req: NextRequest) {
     dec,
   });
 
+  // ── Oil scenario forecast ───────────────────────────────────────────────────
+  type OilScenario = {
+    name: string;
+    direction: "LONG" | "SHORT";
+    trigger: string;
+    target: number;
+    stopRef: number;
+    probability: number;
+    rr: number;
+    horizonHours: number;
+  };
+  let oilForecast: {
+    horizonHours: number;
+    scenarios: OilScenario[];
+    sizeMultiplier: number;
+    stopMultiplier: number;
+    note: string;
+  } | null = null;
+
+  if (symbol === "OIL" && oilGeoData && tradeATR > 0 && currentPrice > 0) {
+    const px = currentPrice;
+    const ta = tradeATR;
+    const regime = oilGeoRegime ?? "calm";
+    const k = regime === "extreme" || regime === "whipsaw" ? 2.5 : regime === "elevated" ? 1.8 : 1.2;
+    const stopMult = call.stopMultiplier ?? 1;
+
+    const upLvl = levels.resistances.find((r) => r > px + 0.8 * ta);
+    const dnLvl = levels.supports.find((s) => s < px - 0.8 * ta);
+    const bullTarget = round(Math.min(upLvl ?? Infinity, px + k * ta), dec);
+    const bearTarget = round(Math.max(dnLvl ?? -Infinity, px - k * ta), dec);
+    const bullStop = round(px - ta * stopMult, dec);
+    const bearStop = round(px + ta * stopMult, dec);
+
+    const factor = (cat: string) => call.signalFactors.find((f) => f.category === cat)?.assessment ?? "Neutral";
+    const dirScore = (a: string) =>
+      a.includes("Strong Bullish") ? 1 : a.includes("Bullish") ? 0.5 : a.includes("Strong Bearish") ? -1 : a.includes("Bearish") ? -0.5 : 0;
+    const htfLean = dirScore(factor("HTF Alignment"));
+    const momLean = dirScore(factor("Momentum"));
+    const geo = oilGeoData.score;
+    let pBull = 0.5 + geo / 220 + htfLean * 0.1 + momLean * 0.05;
+    if (regime === "whipsaw") pBull = 0.5 + (pBull - 0.5) * 0.5;
+    pBull = Math.round(clamp(pBull, 0.15, 0.85) * 100) / 100;
+    const pBear = Math.round((1 - pBull) * 100) / 100;
+
+    const v = oilGeoData.verdict;
+    const bullCat = v?.bullForce?.category ?? null;
+    const bearCat = v?.bearForce?.category ?? null;
+    const BULL_TRIGGER: Record<string, string> = {
+      CONFLICT: "Hormuz stays disrupted / fresh strikes on tankers or Gulf infrastructure",
+      RESERVES: "Reserve release stalls, shrinks, or proves insufficient",
+      OPEC: "OPEC+ cuts hold or compliance tightens",
+      SANCTIONS: "Sanctions enforcement tightens",
+      INVENTORY: "Surprise inventory draw (EIA Wednesday)",
+    };
+    const BEAR_TRIGGER: Record<string, string> = {
+      CONFLICT: "Ceasefire / de-escalation headlines or Hormuz traffic normalizes",
+      RESERVES: "G7 / IEA / SPR barrels confirmed landing in physical markets",
+      OPEC: "OPEC+ quota hikes or members overproduce",
+      SANCTIONS: "Sanctions waivers or an Iran / Russia deal",
+      INVENTORY: "Surprise inventory build (EIA Wednesday)",
+    };
+    const short = (s: string, n = 70) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+    const hrs = (target: number) => Math.round(clamp(Math.abs(target - px) / ta, 2, 72));
+
+    const bull: OilScenario = {
+      name: bullCat ? `${bullCat.replace("_", " ")}: ${short(v?.bullForce?.topHeadline ?? "")}` : "Supply-risk escalation",
+      direction: "LONG",
+      trigger: BULL_TRIGGER[bullCat ?? ""] ?? "Supply-risk headlines persist",
+      target: bullTarget,
+      stopRef: bullStop,
+      probability: pBull,
+      rr: Math.round((Math.abs(bullTarget - px) / Math.abs(px - bullStop)) * 100) / 100,
+      horizonHours: hrs(bullTarget),
+    };
+    const bear: OilScenario = {
+      name: bearCat ? `${bearCat.replace("_", " ")}: ${short(v?.bearForce?.topHeadline ?? "")}` : "Supply-relief / de-escalation",
+      direction: "SHORT",
+      trigger: BEAR_TRIGGER[bearCat ?? ""] ?? "Supply-relief headlines persist",
+      target: bearTarget,
+      stopRef: bearStop,
+      probability: pBear,
+      rr: Math.round((Math.abs(px - bearTarget) / Math.abs(bearStop - px)) * 100) / 100,
+      horizonHours: hrs(bearTarget),
+    };
+    const scenarios = pBull >= pBear ? [bull, bear] : [bear, bull];
+    oilForecast = {
+      horizonHours: Math.max(bull.horizonHours, bear.horizonHours),
+      scenarios,
+      sizeMultiplier: call.sizeMultiplier ?? 1,
+      stopMultiplier: stopMult,
+      note: `Regime ${regime.toUpperCase()} · size ${call.sizeMultiplier ?? 1}x · stops ${stopMult}x ATR · probabilities blend headline flow (${geo >= 0 ? "+" : ""}${geo}), HTF alignment and momentum; calibrates against logged OIL outcomes as history accrues.`,
+    };
+  }
+
   // ── Log signal for accuracy tracking ────────────────────────────────────────
   if (call.bias !== "WAIT" && call.confidence >= 55) {
     appendSignal({
@@ -3860,6 +4076,15 @@ export async function GET(req: NextRequest) {
       tp2: call.tp2,
       tp3: call.tp3,
       priceAtSignal: round(currentPrice, dec),
+      context: {
+        factors: Object.fromEntries(call.signalFactors.map((f) => [f.category, f.assessment])),
+        catalystScore: catalystData.score,
+        oilGeoScore: oilGeoData?.score ?? null,
+        oilRegime: oilGeoRegime,
+        atr: round(tradeATR, dec),
+        tradeType: timeframeOutlook.alignment?.tradeType ?? null,
+        timeframe: "15m",
+      },
     }).catch(() => {});
   }
 
@@ -4030,19 +4255,28 @@ export async function GET(req: NextRequest) {
           label: oilGeoData.label,
           eventCount: oilGeoData.eventCount,
           lastUpdated: oilGeoData.lastUpdated,
-          events: oilGeoData.events.slice(0, 15).map((e) => ({
+          events: oilGeoData.events.slice(0, 20).map((e) => ({
             title: e.title,
             source: e.source,
             publishedAt: e.publishedAt,
             category: e.category,
             sentiment: e.sentiment,
             impact: e.impact,
+            score: e.score,
             url: e.url,
+            priceReaction: e.priceReaction,
           })),
           categoryBreakdown: oilGeoData.categoryBreakdown,
           priceContext: oilGeoData.priceContext,
+          verdict: oilGeoData.verdict,
+          sourcesUsed: oilGeoData.sourcesUsed,
+          regime: oilGeoRegime ?? "calm",
+          nextScheduled: nextOilEvent
+            ? { name: nextOilEvent.name, time: nextOilEvent.time.toISOString(), impact: nextOilEvent.impact }
+            : null,
         }
       : null,
+    oilForecast,
     events: catalystData.events.map((e) => ({
       name: e.name,
       time: e.time.toISOString(),

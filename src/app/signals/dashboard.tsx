@@ -82,6 +82,45 @@ const TICKERS = [
 // Types — matches /api/signals v2 response shape
 // ---------------------------------------------------------------------------
 
+interface OilGeoForce {
+  category: string
+  count: number
+  avgScore: number
+  avgReactionPct: number | null
+  topHeadline: string
+}
+
+interface OilGeo {
+  score: number
+  label: string
+  eventCount: number
+  lastUpdated: string
+  events: {
+    title: string
+    source: string
+    publishedAt: string
+    category: string
+    sentiment: "bullish" | "bearish" | "neutral"
+    impact: "high" | "medium" | "low"
+    score: number
+    url: string
+    priceReaction: { eventPrice: number; sinceEventPct: number; confirms: boolean | null } | null
+  }[]
+  categoryBreakdown: { category: string; count: number; avgScore: number; avgReactionPct: number | null }[]
+  priceContext: { current: number; change24h: number; changePct24h: number; weekHigh: number; weekLow: number } | null
+  verdict: {
+    bullForce: OilGeoForce | null
+    bearForce: OilGeoForce | null
+    netLean: "bullish" | "bearish" | "neutral"
+    priceFollowing: string | null
+    summary: string
+    flipCondition: string
+  } | null
+  sourcesUsed: string[]
+  regime: "calm" | "elevated" | "extreme" | "whipsaw"
+  nextScheduled: { name: string; time: string; impact: "high" | "medium" | "low" } | null
+}
+
 interface SignalsResponse {
   timestamp: number
   asset: string
@@ -181,6 +220,8 @@ interface SignalsResponse {
     invalidates: string[]
     catalystRisk: string | null
     signalFactors: { category: string; assessment: string; weight: number }[]
+    geoOverride?: string | null
+    sizeMultiplier?: number
   }
   anticipatory: {
     approachingLevels: Array<{
@@ -271,28 +312,21 @@ interface SignalsResponse {
     label: string
     headlines: { title: string; sentiment: string }[]
   } | null
-  oilGeopolitical?: {
-    score: number
-    label: string
-    eventCount: number
-    lastUpdated: string
-    events: {
-      title: string
-      source: string
-      publishedAt: string
-      category: string
-      sentiment: "bullish" | "bearish" | "neutral"
-      impact: "high" | "medium" | "low"
-      url: string
+  oilGeopolitical?: OilGeo | null
+  oilForecast?: {
+    horizonHours: number
+    scenarios: {
+      name: string
+      direction: "LONG" | "SHORT"
+      trigger: string
+      target: number
+      stopRef: number
+      probability: number
+      rr: number
     }[]
-    categoryBreakdown: { category: string; count: number; avgScore: number }[]
-    priceContext: {
-      current: number
-      change24h: number
-      changePct24h: number
-      weekHigh: number
-      weekLow: number
-    } | null
+    sizeMultiplier: number
+    stopMultiplier: number
+    note: string
   } | null
   positioning?: {
     longShortRatio: number | null
@@ -866,6 +900,7 @@ export default function SignalsDashboard() {
   const [symbol, setSymbol] = useState("BTC")
   const [fetchTs, setFetchTs] = useState(Date.now())
   const [guideOpen, setGuideOpen] = useState(false)
+  const [showAllGeo, setShowAllGeo] = useState(false)
 
   const accent = TICKERS.find((t) => t.symbol === symbol)?.color ?? "#F59E0B"
 
@@ -1248,6 +1283,20 @@ export default function SignalsDashboard() {
                       {call.grade}
                     </span>
                   )}
+                  {d?.oilGeopolitical && (() => {
+                    const s = d.oilGeopolitical.score
+                    const c = s >= 15 ? "#00FF88" : s <= -15 ? "#FF3B5C" : "#F59E0B"
+                    return (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide font-mono"
+                        style={{ backgroundColor: `${c}15`, color: c }}
+                        title={`Geopolitical headline score · regime ${d.oilGeopolitical.regime}`}
+                      >
+                        <Globe className="size-3" />
+                        GEO {s > 0 ? "+" : ""}{s}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <div className="flex items-baseline gap-4">
                   <span className="font-mono text-4xl font-black tabular-nums text-white">
@@ -1289,6 +1338,32 @@ export default function SignalsDashboard() {
                 CATALYST RISK: {call.catalystRisk}
               </AlertBanner>
             )}
+            {call?.geoOverride && (
+              <AlertBanner icon={Globe} color={call.bias === "WAIT" ? "#F59E0B" : "#00FF88"}>
+                {call.geoOverride}
+              </AlertBanner>
+            )}
+            {d?.oilGeopolitical && (() => {
+              const g = d.oilGeopolitical
+              if (g.regime === "whipsaw" && g.verdict) {
+                return (
+                  <AlertBanner icon={Globe} color="#FF3B5C">
+                    HEADLINE WHIPSAW: {g.verdict.summary.split(". ")[0]}
+                  </AlertBanner>
+                )
+              }
+              const hot = g.events.find(
+                (e) => e.impact === "high" && e.score !== 0 && Date.now() - new Date(e.publishedAt).getTime() < 6 * 3600e3
+              )
+              if (!hot) return null
+              const mins = Math.max(1, Math.floor((Date.now() - new Date(hot.publishedAt).getTime()) / 60000))
+              return (
+                <AlertBanner icon={Globe} color={g.regime === "extreme" ? "#FF3B5C" : "#F59E0B"}>
+                  GEO ALERT: {hot.title.length > 90 ? hot.title.slice(0, 89) + "…" : hot.title} · {hot.category.replace("_", " ")} ·{" "}
+                  {mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h`} ago
+                </AlertBanner>
+              )
+            })()}
             {vol?.absorption?.detected && (
               <AlertBanner
                 icon={BarChart3}
@@ -1366,6 +1441,222 @@ export default function SignalsDashboard() {
                 </div>
               </motion.div>
             )}
+
+            {/* ── 3b. Oil Geopolitical Catalysts ───────────────────────── */}
+            {d?.oilGeopolitical && d.oilGeopolitical.events.length > 0 && (() => {
+              const g = d.oilGeopolitical
+              const col = (s: number) => (s >= 15 ? "#00FF88" : s <= -15 ? "#FF3B5C" : "#F59E0B")
+              const regimeCol =
+                g.regime === "whipsaw" || g.regime === "extreme" ? "#FF3B5C" : g.regime === "elevated" ? "#F59E0B" : "#6B7280"
+              const pct = (p: number | null) => (p == null ? "—" : `${p >= 0 ? "+" : ""}${p.toFixed(2)}%`)
+              const ago = (iso: string) => {
+                const m = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 60000))
+                return m < 60 ? `${m}m ago` : m < 1440 ? `${Math.floor(m / 60)}h ago` : `${Math.floor(m / 1440)}d ago`
+              }
+              const until = (iso: string) => {
+                const m = Math.floor((new Date(iso).getTime() - Date.now()) / 60000)
+                if (m <= 0) return "now"
+                return m < 60 ? `in ${m}m` : m < 1440 ? `in ${Math.floor(m / 60)}h ${m % 60}m` : `in ${Math.floor(m / 1440)}d`
+              }
+              const bar = (score: number) => Math.min(100, Math.round(Math.abs(score) * 1.25))
+              const shown = showAllGeo ? g.events : g.events.slice(0, 5)
+              const v = g.verdict
+              const pc = g.priceContext
+              const nextCol = g.nextScheduled?.impact === "high" ? "#FF3B5C" : g.nextScheduled?.impact === "medium" ? "#F59E0B" : "#6B7280"
+              return (
+                <motion.div {...fadeUp}>
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <Globe className="size-4" style={{ color: "#F59E0B" }} />
+                    <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">Geopolitical Catalysts</h2>
+                    <span
+                      className="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase"
+                      style={{ backgroundColor: `${col(g.score)}15`, color: col(g.score) }}
+                    >
+                      {g.label}
+                    </span>
+                    <span className="font-mono text-xs font-bold" style={{ color: col(g.score) }}>
+                      {g.score > 0 ? "+" : ""}{g.score}
+                    </span>
+                    <span
+                      className="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                      style={{ backgroundColor: `${regimeCol}15`, color: regimeCol, border: `1px solid ${regimeCol}30` }}
+                    >
+                      {g.regime}
+                    </span>
+                    <span className="text-[10px] text-white/30 ml-auto">{g.eventCount} events · 72h</span>
+                  </div>
+
+                  {v && (v.bullForce || v.bearForce) && (
+                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 mb-3 space-y-2.5">
+                      {v.bullForce && (
+                        <div className="flex items-start gap-3">
+                          <span className="w-9 shrink-0 text-[10px] font-bold text-[#00FF88] mt-0.5">BULL</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-xs text-white/75 leading-snug">
+                                <span className="font-semibold">{v.bullForce.category.replace("_", " ")}</span>
+                                <span className="text-white/45"> · {v.bullForce.topHeadline}</span>
+                              </span>
+                              <span className="font-mono text-[10px] text-white/40 shrink-0 whitespace-nowrap">
+                                {v.bullForce.count} ev · +{v.bullForce.avgScore} · {pct(v.bullForce.avgReactionPct)}
+                              </span>
+                            </div>
+                            <div className="mt-1.5 h-1 rounded bg-white/[0.05]">
+                              <div className="h-1 rounded" style={{ width: `${bar(v.bullForce.avgScore)}%`, backgroundColor: "#00FF88" }} />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {v.bearForce && (
+                        <div className="flex items-start gap-3">
+                          <span className="w-9 shrink-0 text-[10px] font-bold text-[#FF3B5C] mt-0.5">BEAR</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-xs text-white/75 leading-snug">
+                                <span className="font-semibold">{v.bearForce.category.replace("_", " ")}</span>
+                                <span className="text-white/45"> · {v.bearForce.topHeadline}</span>
+                              </span>
+                              <span className="font-mono text-[10px] text-white/40 shrink-0 whitespace-nowrap">
+                                {v.bearForce.count} ev · {v.bearForce.avgScore} · {pct(v.bearForce.avgReactionPct)}
+                              </span>
+                            </div>
+                            <div className="mt-1.5 h-1 rounded bg-white/[0.05]">
+                              <div className="h-1 rounded" style={{ width: `${bar(v.bearForce.avgScore)}%`, backgroundColor: "#FF3B5C" }} />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 border-t border-white/[0.04]">
+                        <span className="w-9 shrink-0 text-[10px] font-bold text-white/50">NET</span>
+                        <span className="text-xs font-semibold" style={{ color: col(g.score) }}>
+                          {v.netLean.toUpperCase()} {g.score > 0 ? "+" : ""}{g.score}
+                        </span>
+                        <span className="text-xs text-white/40">
+                          · {v.priceFollowing ? `price is following ${v.priceFollowing.replace("_", " ")}` : "price undecided"}
+                        </span>
+                      </div>
+                      {v.flipCondition && (
+                        <div className="flex items-start gap-3">
+                          <span className="w-9 shrink-0 text-[10px] font-bold text-[#F59E0B] mt-0.5">FLIP</span>
+                          <span className="text-xs text-white/50 leading-snug">{v.flipCondition}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {pc && (
+                    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3 mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <div className="text-[10px] text-white/30 uppercase">WTI Crude</div>
+                          <div className="font-mono text-lg font-bold text-white/90">${pc.current.toFixed(2)}</div>
+                        </div>
+                        <div className="font-mono text-sm font-bold" style={{ color: pc.change24h >= 0 ? "#00FF88" : "#FF3B5C" }}>
+                          {pc.change24h >= 0 ? "+" : ""}{pc.change24h.toFixed(2)}{" "}
+                          <span className="text-xs">({pc.changePct24h >= 0 ? "+" : ""}{pc.changePct24h.toFixed(2)}%)</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                        <span><span className="text-white/30">7d H </span><span className="font-mono text-white/60">${pc.weekHigh.toFixed(2)}</span></span>
+                        <span><span className="text-white/30">7d L </span><span className="font-mono text-white/60">${pc.weekLow.toFixed(2)}</span></span>
+                        {g.nextScheduled && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium"
+                            style={{ backgroundColor: `${nextCol}15`, color: nextCol }}
+                          >
+                            <Clock className="size-3" />
+                            {g.nextScheduled.name} {until(g.nextScheduled.time)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {g.categoryBreakdown.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {g.categoryBreakdown.map((cat) => {
+                        const c = cat.avgScore >= 10 ? "#00FF88" : cat.avgScore <= -10 ? "#FF3B5C" : "#6B7280"
+                        return (
+                          <span
+                            key={cat.category}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium"
+                            style={{ backgroundColor: `${c}12`, color: c, border: `1px solid ${c}25` }}
+                          >
+                            <Flame className="size-2.5" />
+                            {cat.category.replace("_", " ")}
+                            <span className="font-mono text-[10px] opacity-70">({cat.count})</span>
+                            {cat.avgReactionPct != null && (
+                              <span className="font-mono text-[10px] opacity-90">{pct(cat.avgReactionPct)}</span>
+                            )}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] divide-y divide-white/[0.04]">
+                    {shown.map((ev, i) => {
+                      const dot = ev.sentiment === "bullish" ? "#00FF88" : ev.sentiment === "bearish" ? "#FF3B5C" : "#6B7280"
+                      const imp = ev.impact === "high" ? "#FF3B5C" : ev.impact === "medium" ? "#F59E0B" : "#6B7280"
+                      const rc =
+                        ev.priceReaction?.confirms === true ? "#00FF88" : ev.priceReaction?.confirms === false ? "#FF3B5C" : "#6B7280"
+                      return (
+                        <a
+                          key={`${ev.url}-${i}`}
+                          href={ev.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-start gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors group"
+                        >
+                          <span className="mt-2 size-2 rounded-full shrink-0" style={{ backgroundColor: dot }} />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm text-white/60 leading-relaxed group-hover:text-white/80 transition-colors line-clamp-2">
+                              {ev.title}
+                            </span>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
+                              <span className="text-[10px] text-white/30">{ev.source}</span>
+                              <span className="text-[10px] text-white/20">·</span>
+                              <span className="text-[10px] text-white/30">{ago(ev.publishedAt)}</span>
+                              <span className="text-[10px] text-white/20">·</span>
+                              <span className="text-[10px] font-medium uppercase" style={{ color: imp }}>{ev.impact}</span>
+                              <span className="text-[10px] font-medium rounded px-1 py-px" style={{ backgroundColor: `${dot}15`, color: dot }}>
+                                {ev.category.replace("_", " ")}
+                              </span>
+                            </div>
+                          </div>
+                          {ev.priceReaction && (
+                            <span
+                              title="WTI move since this headline"
+                              className="font-mono text-[11px] font-semibold shrink-0 mt-1"
+                              style={{ color: rc }}
+                            >
+                              {pct(ev.priceReaction.sinceEventPct)}
+                            </span>
+                          )}
+                          <ArrowUpRight className="size-3.5 text-white/20 group-hover:text-white/50 transition-colors shrink-0 mt-1" />
+                        </a>
+                      )
+                    })}
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    {g.events.length > 5 ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllGeo(!showAllGeo)}
+                        className="text-[11px] text-white/40 hover:text-white/70 transition-colors"
+                      >
+                        {showAllGeo ? "Show less" : `Show ${g.events.length - 5} more`}
+                      </button>
+                    ) : <span />}
+                    <span className="text-[10px] text-white/20 text-right">
+                      Updated {new Date(g.lastUpdated).toLocaleTimeString()}
+                      {g.sourcesUsed.length > 0 ? ` · Sources: ${g.sourcesUsed.join(", ")}` : ""}
+                    </span>
+                  </div>
+                </motion.div>
+              )
+            })()}
 
             {/* ── 4. Trade Call Card ────────────────────────────────────── */}
             {call && (
@@ -1554,6 +1845,59 @@ export default function SignalsDashboard() {
                       )}
                     </div>
                   )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── 4a. Oil Scenario Forecast ──────────────────────────────── */}
+            {d?.oilForecast && d.oilForecast.scenarios.length > 0 && (
+              <motion.div {...fadeUp}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Crosshair className="size-4" style={{ color: accent }} />
+                  <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">Scenario Forecast</h2>
+                  <span className="text-[10px] text-white/30 ml-auto">horizon ~{d.oilForecast.horizonHours}h</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {d.oilForecast.scenarios.map((s, i) => {
+                    const c = s.direction === "LONG" ? "#00FF88" : "#FF3B5C"
+                    const px = d.price.mark
+                    const tp = px ? ((s.target - px) / px) * 100 : 0
+                    const p = Math.round(s.probability * 100)
+                    return (
+                      <div key={i} className="rounded-xl border p-4" style={{ borderColor: `${c}30`, backgroundColor: `${c}08` }}>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="rounded px-2 py-0.5 text-[10px] font-bold" style={{ backgroundColor: `${c}20`, color: c }}>
+                            {s.direction}
+                          </span>
+                          <span className="font-mono text-xs font-bold" style={{ color: c }}>{p}%</span>
+                        </div>
+                        <div className="text-sm text-white/85 font-medium leading-snug mb-1">{s.name}</div>
+                        <div className="text-[11px] text-white/45 mb-3 leading-snug">If: {s.trigger}</div>
+                        <div className="h-1 rounded bg-white/[0.05] mb-3">
+                          <div className="h-1 rounded" style={{ width: `${p}%`, backgroundColor: c }} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-[11px]">
+                          <div>
+                            <div className="text-white/30">Target</div>
+                            <div className="font-mono text-white/85">
+                              ${s.target.toFixed(2)} <span style={{ color: c }}>({tp >= 0 ? "+" : ""}{tp.toFixed(1)}%)</span>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-white/30">Stop ref</div>
+                            <div className="font-mono text-white/60">${s.stopRef.toFixed(2)}</div>
+                          </div>
+                          <div>
+                            <div className="text-white/30">R:R</div>
+                            <div className="font-mono text-white/85">{s.rr.toFixed(2)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="mt-2 text-[10px] text-white/30 leading-snug">
+                  Size {d.oilForecast.sizeMultiplier}x · Stops {d.oilForecast.stopMultiplier}x ATR · {d.oilForecast.note}
                 </div>
               </motion.div>
             )}
@@ -3001,28 +3345,20 @@ export default function SignalsDashboard() {
                   />
                 )}
 
-                <StatCard
-                  label="Funding Rate"
-                  value={
-                    market?.fundingRate != null
-                      ? `${(market.fundingRate * 100).toFixed(4)}%`
-                      : "—"
-                  }
-                  sub={
-                    market?.fundingRate != null
-                      ? market.fundingRate < 0
+                {market?.fundingRate != null && (
+                  <StatCard
+                    label="Funding Rate"
+                    value={`${(market.fundingRate * 100).toFixed(4)}%`}
+                    sub={
+                      market.fundingRate < 0
                         ? "Shorts paying longs"
                         : market.fundingRate > 0.01 ? "Overleveraged longs" : "Neutral"
-                      : undefined
-                  }
-                  color={
-                    market?.fundingRate != null
-                      ? market.fundingRate < 0 ? "#00FF88" : market.fundingRate > 0.01 ? "#FF3B5C" : undefined
-                      : undefined
-                  }
-                  accent={accent}
-                  icon={Activity}
-                />
+                    }
+                    color={market.fundingRate < 0 ? "#00FF88" : market.fundingRate > 0.01 ? "#FF3B5C" : undefined}
+                    accent={accent}
+                    icon={Activity}
+                  />
+                )}
 
                 {market?.openInterest != null && (
                   <StatCard
@@ -3310,188 +3646,6 @@ export default function SignalsDashboard() {
                       </div>
                     )
                   })}
-                </div>
-              </motion.div>
-            )}
-
-            {/* ── 9c. Oil Geopolitical Catalysts ────────────────────────── */}
-            {d?.oilGeopolitical && d.oilGeopolitical.events.length > 0 && (
-              <motion.div {...fadeUp}>
-                <div className="flex items-center gap-2 mb-3">
-                  <Globe className="size-4" style={{ color: "#F59E0B" }} />
-                  <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
-                    Geopolitical Catalysts
-                  </h2>
-                  <span
-                    className="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase"
-                    style={{
-                      backgroundColor: `${d.oilGeopolitical.score >= 15 ? "#00FF88" : d.oilGeopolitical.score <= -15 ? "#FF3B5C" : "#F59E0B"}15`,
-                      color: d.oilGeopolitical.score >= 15 ? "#00FF88" : d.oilGeopolitical.score <= -15 ? "#FF3B5C" : "#F59E0B",
-                    }}
-                  >
-                    {d.oilGeopolitical.label}
-                  </span>
-                  <span
-                    className="font-mono text-xs font-bold"
-                    style={{
-                      color: d.oilGeopolitical.score >= 15 ? "#00FF88" : d.oilGeopolitical.score <= -15 ? "#FF3B5C" : "#F59E0B",
-                    }}
-                  >
-                    {d.oilGeopolitical.score > 0 ? "+" : ""}{d.oilGeopolitical.score}
-                  </span>
-                  <span className="text-[10px] text-white/30 ml-auto">
-                    {d.oilGeopolitical.eventCount} events
-                  </span>
-                </div>
-
-                {/* Price impact bar */}
-                {d.oilGeopolitical.priceContext && (
-                  <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3 mb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div>
-                          <div className="text-[10px] text-white/30 uppercase">WTI Crude</div>
-                          <div className="font-mono text-lg font-bold text-white/90">
-                            ${d.oilGeopolitical.priceContext.current.toFixed(2)}
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          <div
-                            className="font-mono text-sm font-bold"
-                            style={{ color: d.oilGeopolitical.priceContext.change24h >= 0 ? "#00FF88" : "#FF3B5C" }}
-                          >
-                            {d.oilGeopolitical.priceContext.change24h >= 0 ? "+" : ""}
-                            {d.oilGeopolitical.priceContext.change24h.toFixed(2)}
-                          </div>
-                          <div
-                            className="font-mono text-xs"
-                            style={{ color: d.oilGeopolitical.priceContext.changePct24h >= 0 ? "#00FF88" : "#FF3B5C" }}
-                          >
-                            ({d.oilGeopolitical.priceContext.changePct24h >= 0 ? "+" : ""}
-                            {d.oilGeopolitical.priceContext.changePct24h.toFixed(2)}%)
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 text-[11px]">
-                        <div>
-                          <span className="text-white/30">7d High </span>
-                          <span className="font-mono text-white/60">${d.oilGeopolitical.priceContext.weekHigh.toFixed(2)}</span>
-                        </div>
-                        <div>
-                          <span className="text-white/30">7d Low </span>
-                          <span className="font-mono text-white/60">${d.oilGeopolitical.priceContext.weekLow.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    {/* Catalyst impact summary */}
-                    {(() => {
-                      const hi = d.oilGeopolitical.categoryBreakdown.filter((c) => Math.abs(c.avgScore) >= 10);
-                      if (hi.length === 0) return null;
-                      const dominant = [...hi].sort((a, b) => Math.abs(b.avgScore) - Math.abs(a.avgScore))[0];
-                      const direction = dominant.avgScore >= 0 ? "bullish" : "bearish";
-                      const priceDir = d.oilGeopolitical.priceContext!.changePct24h >= 0 ? "bullish" : "bearish";
-                      const aligned = direction === priceDir;
-                      return (
-                        <div className="mt-2 pt-2 border-t border-white/[0.04] text-[11px]">
-                          <span className="text-white/40">Dominant catalyst: </span>
-                          <span className="font-medium" style={{ color: dominant.avgScore >= 0 ? "#00FF88" : "#FF3B5C" }}>
-                            {dominant.category.replace("_", " ")}
-                          </span>
-                          <span className="text-white/40"> ({dominant.count} events, {direction}) </span>
-                          <span style={{ color: aligned ? "#00FF88" : "#F59E0B" }}>
-                            {aligned ? "— price confirms" : "— price diverging"}
-                          </span>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                {/* Category breakdown pills */}
-                {d.oilGeopolitical.categoryBreakdown.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    {d.oilGeopolitical.categoryBreakdown.map((cat) => {
-                      const catColor = cat.avgScore >= 10 ? "#00FF88" : cat.avgScore <= -10 ? "#FF3B5C" : "#6B7280";
-                      return (
-                        <span
-                          key={cat.category}
-                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium"
-                          style={{ backgroundColor: `${catColor}12`, color: catColor, border: `1px solid ${catColor}25` }}
-                        >
-                          <Flame className="size-2.5" />
-                          {cat.category.replace("_", " ")}
-                          <span className="font-mono text-[10px] opacity-70">({cat.count})</span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] divide-y divide-white/[0.04]">
-                  {d.oilGeopolitical.events.slice(0, 12).map((ev, i) => {
-                    const dotColor =
-                      ev.sentiment === "bullish"
-                        ? "#00FF88"
-                        : ev.sentiment === "bearish"
-                          ? "#FF3B5C"
-                          : "#6B7280";
-                    const impactColor =
-                      ev.impact === "high"
-                        ? "#FF3B5C"
-                        : ev.impact === "medium"
-                          ? "#F59E0B"
-                          : "#6B7280";
-                    const timeDiff = Date.now() - new Date(ev.publishedAt).getTime();
-                    const timeAgo =
-                      timeDiff < 3600000
-                        ? `${Math.max(1, Math.floor(timeDiff / 60000))}m ago`
-                        : timeDiff < 86400000
-                          ? `${Math.floor(timeDiff / 3600000)}h ago`
-                          : `${Math.floor(timeDiff / 86400000)}d ago`;
-
-                    return (
-                      <a
-                        key={i}
-                        href={ev.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-start gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors group"
-                      >
-                        <span
-                          className="mt-2 size-2 rounded-full shrink-0"
-                          style={{ backgroundColor: dotColor }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm text-white/60 leading-relaxed group-hover:text-white/80 transition-colors line-clamp-2">
-                            {ev.title}
-                          </span>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[10px] text-white/30">{ev.source}</span>
-                            <span className="text-[10px] text-white/20">·</span>
-                            <span className="text-[10px] text-white/30">{timeAgo}</span>
-                            <span className="text-[10px] text-white/20">·</span>
-                            <span
-                              className="text-[10px] font-medium uppercase"
-                              style={{ color: impactColor }}
-                            >
-                              {ev.impact}
-                            </span>
-                            <span
-                              className="text-[10px] font-medium rounded px-1 py-px"
-                              style={{ backgroundColor: `${dotColor}15`, color: dotColor }}
-                            >
-                              {ev.category.replace("_", " ")}
-                            </span>
-                          </div>
-                        </div>
-                        <ArrowUpRight className="size-3.5 text-white/20 group-hover:text-white/50 transition-colors shrink-0 mt-1" />
-                      </a>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-2 text-[10px] text-white/20 text-right">
-                  Updated {new Date(d.oilGeopolitical.lastUpdated).toLocaleTimeString()} · Sources: Google News, OilPrice, GDELT{process.env.NEXT_PUBLIC_HAS_GNEWS ? ", GNews" : ""}
                 </div>
               </motion.div>
             )}

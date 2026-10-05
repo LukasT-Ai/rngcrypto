@@ -156,11 +156,12 @@ export function normalize(s: SignalLog): NormalizedSignal {
   };
 }
 
+// Same symbol, bias and entry (4 significant figures) logged again within 30 minutes of the kept record.
 function dedupeKey(s: NormalizedSignal): string {
   const sig = s.entry === 0 ? "0" : s.entry.toPrecision(4);
-  const bucket = Math.floor(s.timestamp / (15 * 60e3));
-  return `${s.symbol}|${s.bias}|${sig}|${bucket}`;
+  return `${s.symbol}|${s.bias}|${sig}`;
 }
+const DEDUPE_WINDOW_MS = 30 * 60e3;
 
 const median = (xs: number[]) => {
   if (!xs.length) return null;
@@ -202,16 +203,20 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
 
   let duplicatesMerged = 0;
   if (opts.dedupe !== false) {
-    const seen = new Map<string, NormalizedSignal>();
+    const lastKept = new Map<string, NormalizedSignal>();
+    const kept: NormalizedSignal[] = [];
     for (const s of [...rows].sort((a, b) => a.timestamp - b.timestamp)) {
       const k = dedupeKey(s);
-      const first = seen.get(k);
-      if (first) {
-        first.duplicatesMerged++;
+      const prev = lastKept.get(k);
+      if (prev && s.timestamp - prev.timestamp <= DEDUPE_WINDOW_MS) {
+        prev.duplicatesMerged++;
         duplicatesMerged++;
-      } else seen.set(k, s);
+        continue;
+      }
+      lastKept.set(k, s);
+      kept.push(s);
     }
-    rows = [...seen.values()];
+    rows = kept;
   }
   rows.sort((a, b) => b.timestamp - a.timestamp);
 

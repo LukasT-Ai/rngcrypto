@@ -50,7 +50,7 @@ let hotCache: { data: unknown; timestamp: number } | null = null;
 const CACHE_TTL = 60_000;
 
 export async function GET(req: NextRequest) {
-  const blocked = rateLimit(req, 10);
+  const blocked = rateLimit(req, 40);
   if (blocked) return blocked;
 
   if (hotCache && Date.now() - hotCache.timestamp < CACHE_TTL) {

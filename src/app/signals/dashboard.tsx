@@ -976,13 +976,6 @@ export default function SignalsDashboard() {
     refetchInterval: 60_000,
   })
 
-  useEffect(() => {
-    const check = () => fetch("/api/signals/history/check", { method: "POST" }).catch(() => {})
-    check()
-    const id = setInterval(check, 60_000)
-    return () => clearInterval(id)
-  }, [])
-
   const d = data
   const call = d?.call
   const ind = d?.indicators
@@ -1159,7 +1152,7 @@ export default function SignalsDashboard() {
             {/* ── 1. Header ───────────────────────────────────────────── */}
             <motion.div {...fadeUp} className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
               <div>
-                <div className="flex items-center gap-3 mb-1">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-1">
                   <div className="h-2.5 w-2.5 rounded-full animate-pulse" style={{ backgroundColor: accent }} />
                   <span
                     className="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide"

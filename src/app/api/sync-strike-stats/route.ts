@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
-import path from "node:path";
+import { pushCachePath } from "@/lib/push-cache";
 
 const SYNC_TOKEN = process.env.STRIKE_SYNC_TOKEN;
-const CACHE_PATH = path.join(process.cwd(), "data", "strike-stats-cache.json");
+const CACHE_PATH = pushCachePath("strike-stats-cache.json");
 const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024; // 5MB
 const MIN_INTERVAL_MS = 30_000; // 30s minimum between pushes
 

@@ -687,7 +687,7 @@ export default function HomePage() {
             <div className="absolute -bottom-1 -right-1 flex items-center gap-1 rounded-full bg-[#06080F] px-2 py-1 ring-1 ring-white/10">
               <LivePulse />
               <span className="text-[10px] font-medium text-[#00FF88]">
-                Agent Live
+                Signals Live
               </span>
             </div>
           </motion.div>

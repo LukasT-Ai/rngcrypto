@@ -47,6 +47,7 @@ import {
   Layers,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { FreshnessBadge, type FreshnessMeta } from "@/components/freshness-badge"
 import {
   Dialog,
   DialogContent,
@@ -143,6 +144,7 @@ interface StrategyBreakdownEntry {
 }
 
 interface OverviewResponse {
+  _meta?: FreshnessMeta
   stats: OverallStats
   accountValue: number
   accountEquity: number
@@ -729,13 +731,7 @@ export default function StrikeDashboard() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="font-display text-3xl font-bold tracking-tight text-[#22D3EE]">Strike Agent</h1>
-              <Badge variant="secondary" className="gap-1.5 bg-[#22D3EE]/15 text-[#22D3EE] border border-[#22D3EE]/30 text-xs">
-                <span className="relative flex size-1.5">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#22D3EE] opacity-75" />
-                  <span className="relative inline-flex size-1.5 rounded-full bg-[#22D3EE]" />
-                </span>
-                Live
-              </Badge>
+              <FreshnessBadge meta={overview?._meta} accent="#22D3EE" loading={loadingOverview} />
             </div>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Autonomous perpetual futures trading on{" "}

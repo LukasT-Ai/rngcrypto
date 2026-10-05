@@ -14,7 +14,9 @@ export function jumpToSection(id: string, accent = "#F59E0B"): boolean {
     p = p.parentElement
   }
   el.style.scrollMarginTop = "88px"
-  el.scrollIntoView({ behavior: "smooth", block: "start" })
+  // Smooth scrolling across a 6,000px page takes seconds and feels broken; snap when the target is far away
+  const distance = Math.abs(el.getBoundingClientRect().top - 88)
+  el.scrollIntoView({ behavior: distance > 1800 ? "auto" : "smooth", block: "start" })
   if (!el.style.borderRadius) el.style.borderRadius = "12px"
   el.style.transition = "box-shadow 300ms ease"
   el.style.boxShadow = `0 0 0 2px ${accent}`

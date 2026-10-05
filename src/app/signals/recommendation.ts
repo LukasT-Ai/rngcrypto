@@ -95,6 +95,7 @@ function factorReason(d: SignalsResponse, category: string, assessment: string, 
     }
     case "Volume": {
       const v = d.volume
+      if (v.trend === "unavailable" || !Number.isFinite(v.ratio) || v.ratio <= 0) return null
       const abs = v.absorption?.detected ? `, ${v.absorption.direction} absorption` : ""
       return {
         ...base,

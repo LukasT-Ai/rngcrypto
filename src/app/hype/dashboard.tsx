@@ -48,6 +48,7 @@ import {
   Scissors,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { FreshnessBadge, type FreshnessMeta } from "@/components/freshness-badge"
 import {
   Dialog,
   DialogContent,
@@ -156,6 +157,7 @@ interface OpenPosition {
 }
 
 interface OverviewResponse {
+  _meta?: FreshnessMeta
   stats: OverallStats
   assets: AssetStats[]
   recentTrades: Trade[]
@@ -564,13 +566,7 @@ export default function HypeDashboard() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="font-display text-3xl font-bold tracking-tight text-[#7BEBC2]">Hype Agent</h1>
-              <Badge variant="secondary" className="gap-1.5 bg-[#7BEBC2]/15 text-[#7BEBC2] border border-[#7BEBC2]/30 text-xs">
-                <span className="relative flex size-1.5">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#7BEBC2] opacity-75" />
-                  <span className="relative inline-flex size-1.5 rounded-full bg-[#7BEBC2]" />
-                </span>
-                Live
-              </Badge>
+              <FreshnessBadge meta={overview?._meta} accent="#7BEBC2" loading={loadingOverview} />
             </div>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Autonomous perpetual futures trading on{" "}

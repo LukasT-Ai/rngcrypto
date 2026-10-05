@@ -232,7 +232,7 @@ export default async function Image() {
               </span>
             </div>
 
-            {/* Live P&L */}
+            {/* Agent P&L */}
             <div
               style={{
                 display: "flex",
@@ -270,7 +270,7 @@ export default async function Image() {
                     letterSpacing: "1.5px",
                   }}
                 >
-                  Live P&L
+                  Agent P&L
                 </span>
               </div>
               <span

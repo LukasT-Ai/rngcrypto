@@ -44,6 +44,7 @@ import {
   Repeat,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { FreshnessBadge, type FreshnessMeta } from "@/components/freshness-badge"
 import {
   Dialog,
   DialogContent,
@@ -138,6 +139,7 @@ interface StrategyBreakdownEntry {
 }
 
 interface OverviewResponse {
+  _meta?: FreshnessMeta
   stats: OverallStats
   assets: AssetStats[]
   strategyBreakdown?: StrategyBreakdownEntry[]
@@ -713,13 +715,7 @@ export default function AscendDashboard() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="font-display text-3xl font-bold tracking-tight text-[#E8622C]">Ascend Agent</h1>
-              <Badge variant="secondary" className="gap-1.5 bg-[#E8622C]/15 text-[#E8622C] border border-[#E8622C]/30 text-xs">
-                <span className="relative flex size-1.5">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#E8622C] opacity-75" />
-                  <span className="relative inline-flex size-1.5 rounded-full bg-[#E8622C]" />
-                </span>
-                Live
-              </Badge>
+              <FreshnessBadge meta={overview?._meta} accent="#E8622C" loading={loadingOverview} />
             </div>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Autonomous event perpetuals trading on{" "}

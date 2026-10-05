@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
-import fs from "node:fs";
-import path from "node:path";
+import { readPushFile, freshness } from "@/lib/push-cache";
 import {
   getOverallStats,
   getRecentTrades,
@@ -13,7 +12,7 @@ import {
   getStrategyBreakdown,
 } from "@/lib/ascend-db";
 
-const CACHE_PATH = path.join(process.cwd(), "data", "stats-cache.json");
+const CACHE_NAME = "stats-cache.json";
 const PUSH_MAX_AGE = 5 * 60_000; // treat push data as fresh for 5 minutes
 
 type CacheEntry = { data: unknown; timestamp: number };
@@ -39,14 +38,10 @@ interface PushCache {
 }
 
 function readPushCache(allowStale = false): PushCache | null {
-  try {
-    if (!fs.existsSync(CACHE_PATH)) return null;
-    const raw = JSON.parse(fs.readFileSync(CACHE_PATH, "utf-8")) as PushCache;
-    if (!allowStale && Date.now() - raw._pushedAt > PUSH_MAX_AGE) return null;
-    return raw;
-  } catch {
-    return null;
-  }
+  const raw = readPushFile<PushCache>(CACHE_NAME);
+  if (!raw) return null;
+  if (!allowStale && Date.now() - raw._pushedAt > PUSH_MAX_AGE) return null;
+  return raw;
 }
 
 export async function GET(req: NextRequest) {
@@ -55,21 +50,26 @@ export async function GET(req: NextRequest) {
 
   const view = req.nextUrl.searchParams.get("view") ?? "overview";
   const push = readPushCache();
+  const last = push ?? readPushCache(true);
+  // No push -> we are serving the committed SQLite snapshot; say so with the date of its last trade
+  const lastTradeAt = last ? null : (getRecentTrades(1)[0]?.closedAt ?? null);
+  const meta = freshness(last?._pushedAt ?? null, PUSH_MAX_AGE, lastTradeAt);
 
   try {
     let body: unknown;
 
     switch (view) {
       case "overview": {
-        body =
-          push?.overview ??
+        const ov = (push?.overview ??
+          last?.overview ??
           memCached("overview", () => ({
             stats: getOverallStats(),
             assets: getAssetBreakdown(),
             strategyBreakdown: getStrategyBreakdown(),
             recentTrades: getRecentTrades(10),
             dailyStats: getDailyStats(14),
-          }));
+          }))) as Record<string, unknown>;
+        body = { ...ov, _meta: meta };
         break;
       }
 
@@ -113,13 +113,14 @@ export async function GET(req: NextRequest) {
       }
 
       case "live": {
-        body =
-          push?.live ??
+        const lv = (push?.live ??
+          last?.live ??
           memCached("live", () => ({
             openPositions: getOpenPositions(),
             recentTrades: getRecentTrades(5),
             hourlyRate: getHourlyTradeRate(),
-          }));
+          }))) as Record<string, unknown>;
+        body = { ...lv, _meta: meta };
         break;
       }
 
@@ -136,7 +137,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(body, {
       headers: {
         "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
-        "X-Data-Source": push ? "push" : "sqlite",
+        "X-Data-Source": meta.source,
+        "X-Pushed-At": meta.pushedAt ? String(meta.pushedAt) : "",
       },
     });
   } catch (err) {

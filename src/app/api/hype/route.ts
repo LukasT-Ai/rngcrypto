@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
-import fs from "node:fs";
-import path from "node:path";
+import { readPushFile, freshness } from "@/lib/push-cache";
 
-const CACHE_PATH = path.join(process.cwd(), "data", "hype-stats-cache.json");
+const CACHE_NAME = "hype-stats-cache.json";
 const PUSH_MAX_AGE = 5 * 60_000;
 
 type CacheEntry = { data: unknown; timestamp: number };
@@ -29,14 +28,10 @@ interface PushCache {
 }
 
 function readPushCache(allowStale = false): PushCache | null {
-  try {
-    if (!fs.existsSync(CACHE_PATH)) return null;
-    const raw = JSON.parse(fs.readFileSync(CACHE_PATH, "utf-8")) as PushCache;
-    if (!allowStale && Date.now() - raw._pushedAt > PUSH_MAX_AGE) return null;
-    return raw;
-  } catch {
-    return null;
-  }
+  const raw = readPushFile<PushCache>(CACHE_NAME);
+  if (!raw) return null;
+  if (!allowStale && Date.now() - raw._pushedAt > PUSH_MAX_AGE) return null;
+  return raw;
 }
 
 function emptyOverview() {
@@ -66,13 +61,17 @@ export async function GET(req: NextRequest) {
 
   const view = req.nextUrl.searchParams.get("view") ?? "overview";
   const push = readPushCache();
+  // Prefer last-known numbers with an honest stale badge over zeros
+  const last = push ?? readPushCache(true);
+  const meta = freshness(last?._pushedAt ?? null, PUSH_MAX_AGE);
 
   try {
     let body: unknown;
 
     switch (view) {
       case "overview": {
-        body = push?.overview ?? memCached("hype-overview", emptyOverview);
+        const ov = (push?.overview ?? last?.overview ?? memCached("hype-overview", emptyOverview)) as Record<string, unknown>;
+        body = { ...ov, _meta: meta };
         break;
       }
 
@@ -111,7 +110,8 @@ export async function GET(req: NextRequest) {
       }
 
       case "live": {
-        body = push?.live ?? memCached("hype-live", emptyLive);
+        const lv = (push?.live ?? last?.live ?? memCached("hype-live", emptyLive)) as Record<string, unknown>;
+        body = { ...lv, _meta: meta };
         break;
       }
 
@@ -128,7 +128,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(body, {
       headers: {
         "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
-        "X-Data-Source": push ? "push" : "default",
+        "X-Data-Source": meta.source,
+        "X-Pushed-At": meta.pushedAt ? String(meta.pushedAt) : "",
       },
     });
   } catch (err) {

@@ -16,6 +16,9 @@ export function rateLimit(
   req: NextRequest,
   maxPerMinute = 60
 ): NextResponse | null {
+  // Server-to-server scans (hot plays) share the container IP; never throttle them against user limits
+  if (req.headers.get("x-internal-scan") === "1") return null;
+
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     req.headers.get("x-real-ip") ??

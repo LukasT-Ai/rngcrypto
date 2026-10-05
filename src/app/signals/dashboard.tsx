@@ -1,7 +1,9 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react"
-import { useQuery } from "@tanstack/react-query"
+import React, { useState, useEffect, useCallback, useMemo } from "react"
+import { useQuery, keepPreviousData } from "@tanstack/react-query"
+import { buildRecommendation } from "./recommendation"
+import { RecommendationCard } from "./RecommendationCard"
 import { motion } from "framer-motion"
 import {
   TrendingUp,
@@ -121,7 +123,7 @@ interface OilGeo {
   nextScheduled: { name: string; time: string; impact: "high" | "medium" | "low" } | null
 }
 
-interface SignalsResponse {
+export interface SignalsResponse {
   timestamp: number
   asset: string
   assetLabel: string
@@ -343,7 +345,7 @@ interface SignalsResponse {
 }
 
 // Market Map types
-interface MarketMapResponse {
+export interface MarketMapResponse {
   ema5Disconnect: {
     price: number
     ema5: number
@@ -478,7 +480,16 @@ interface SignalLog {
   maxAdverse: number | null
 }
 
-interface HistoryResponse {
+export interface CalibrationBucket {
+  n: number
+  wins: number
+  losses: number
+  tp1Rate: number
+  winRate: number
+  avgR: number | null
+}
+
+export interface HistoryResponse {
   signals: SignalLog[]
   stats: {
     total: number
@@ -491,6 +502,8 @@ interface HistoryResponse {
     avgRR: number
     profitFactor: number
     bySymbol: Record<string, { total: number; wins: number; losses: number; winRate: number }>
+    byGradeSymbol?: Record<string, Record<string, CalibrationBucket>>
+    oilByRegime?: Record<string, CalibrationBucket>
   }
 }
 
@@ -691,6 +704,12 @@ function useCountdown(interval: number, lastFetch: number) {
     return () => clearInterval(id)
   }, [interval, lastFetch])
   return remaining
+}
+
+// Isolated so the 1s tick re-renders this span only, not the whole dashboard
+function Countdown({ lastFetch, color }: { lastFetch: number; color: string }) {
+  const remaining = useCountdown(30_000, lastFetch)
+  return <span className="font-mono" style={{ color }}>{remaining}s</span>
 }
 
 // ---------------------------------------------------------------------------
@@ -904,17 +923,22 @@ export default function SignalsDashboard() {
 
   const accent = TICKERS.find((t) => t.symbol === symbol)?.color ?? "#F59E0B"
 
-  const { data, isLoading } = useQuery<SignalsResponse>({
+  const { data, isLoading, dataUpdatedAt } = useQuery<SignalsResponse>({
     queryKey: ["signals", symbol],
     queryFn: async () => {
       const res = await fetch(`/api/signals?symbol=${symbol}`)
       if (!res.ok) throw new Error(`API error: ${res.status}`)
-      setFetchTs(Date.now())
       return res.json()
     },
     refetchInterval: 30_000,
-    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    staleTime: 25_000,
+    placeholderData: keepPreviousData,
   })
+
+  useEffect(() => {
+    if (dataUpdatedAt) setFetchTs(dataUpdatedAt)
+  }, [dataUpdatedAt])
 
   const { data: hotData } = useQuery<HotResponse>({
     queryKey: ["signals-hot"],
@@ -924,7 +948,7 @@ export default function SignalsDashboard() {
       return res.json()
     },
     refetchInterval: 60_000,
-    refetchIntervalInBackground: true,
+    staleTime: 55_000,
   })
 
   const { data: mapData } = useQuery<MarketMapResponse>({
@@ -935,6 +959,8 @@ export default function SignalsDashboard() {
       return res.json()
     },
     refetchInterval: 120_000,
+    staleTime: 110_000,
+    placeholderData: keepPreviousData,
   })
 
   const { data: historyData } = useQuery<HistoryResponse>({
@@ -953,8 +979,6 @@ export default function SignalsDashboard() {
     const id = setInterval(check, 60_000)
     return () => clearInterval(id)
   }, [])
-
-  const countdown = useCountdown(30_000, fetchTs)
 
   const d = data
   const call = d?.call
@@ -975,6 +999,13 @@ export default function SignalsDashboard() {
   const currentPrice = d?.price?.mark ?? 0
   const change24h = d?.price?.change24h ?? null
   const dp = currentPrice > 0 ? priceDp(currentPrice) : 2
+
+  // Data for a previously selected ticker can linger in the cache for a tick; never recommend on it
+  const staleTicker = !!d && d.asset !== symbol
+  const reco = useMemo(
+    () => (d && !staleTicker ? buildRecommendation(d, mapData, historyData?.stats) : null),
+    [d, mapData, historyData, staleTicker]
+  )
 
   return (
     <div className="min-h-screen bg-[#06080F] pt-24 pb-16">
@@ -1257,7 +1288,7 @@ export default function SignalsDashboard() {
                     className="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide"
                     style={{ backgroundColor: `${accent}20`, color: accent }}
                   >
-                    {d?.asset ?? symbol}
+                    {symbol}
                   </span>
                   <h1 className="text-2xl font-bold text-white">Signals</h1>
                   <button
@@ -1318,11 +1349,26 @@ export default function SignalsDashboard() {
                     ? `Last scan: ${new Date(d.timestamp).toLocaleTimeString()}`
                     : "Connecting..."}
                 </span>
-                <span className="font-mono" style={{ color: accent }}>{countdown}s</span>
+                <Countdown lastFetch={fetchTs} color={accent} />
               </div>
             </motion.div>
 
+            {/* ── 1b. Recommendation ───────────────────────────────────── */}
+            <RecommendationCard
+              reco={reco}
+              accent={accent}
+              dp={dp}
+              price={currentPrice}
+              loading={!d || staleTicker}
+              symbol={symbol}
+            />
+
             {/* ── 2. Alert Banners ──────────────────────────────────────── */}
+            {staleTicker && (
+              <AlertBanner icon={RefreshCw} color={accent}>
+                Loading {symbol} — sections below still show {d?.asset} until fresh data arrives
+              </AlertBanner>
+            )}
             {call?.bias === "WAIT" && (
               <AlertBanner icon={Pause} color={accent}>
                 NO ACTIVE SETUP &mdash; Conditions do not favor a trade. Wait for confirmation.
@@ -1380,7 +1426,7 @@ export default function SignalsDashboard() {
 
             {/* ── 3. Upcoming Catalysts ────────────────────────────────── */}
             {d?.events && d.events.length > 0 && (
-              <motion.div {...fadeUp}>
+              <motion.div {...fadeUp} id="sec-calendar">
                 <div className="flex items-center gap-2 mb-3">
                   <Calendar className="size-4" style={{ color: accent }} />
                   <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
@@ -1464,7 +1510,7 @@ export default function SignalsDashboard() {
               const pc = g.priceContext
               const nextCol = g.nextScheduled?.impact === "high" ? "#FF3B5C" : g.nextScheduled?.impact === "medium" ? "#F59E0B" : "#6B7280"
               return (
-                <motion.div {...fadeUp}>
+                <motion.div {...fadeUp} id="sec-geo">
                   <div className="flex flex-wrap items-center gap-2 mb-3">
                     <Globe className="size-4" style={{ color: "#F59E0B" }} />
                     <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">Geopolitical Catalysts</h2>
@@ -1661,6 +1707,7 @@ export default function SignalsDashboard() {
             {/* ── 4. Trade Call Card ────────────────────────────────────── */}
             {call && (
               <motion.div
+                id="sec-call"
                 {...fadeUp}
                 className="relative rounded-xl overflow-hidden"
                 style={{
@@ -1851,7 +1898,7 @@ export default function SignalsDashboard() {
 
             {/* ── 4a. Oil Scenario Forecast ──────────────────────────────── */}
             {d?.oilForecast && d.oilForecast.scenarios.length > 0 && (
-              <motion.div {...fadeUp}>
+              <motion.div {...fadeUp} id="sec-forecast">
                 <div className="flex items-center gap-2 mb-3">
                   <Crosshair className="size-4" style={{ color: accent }} />
                   <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">Scenario Forecast</h2>
@@ -1904,7 +1951,7 @@ export default function SignalsDashboard() {
 
             {/* ── 4b. Setup Scanner ──────────────────────────────────── */}
             {anticipatory && (
-              <details className="group">
+              <details className="group" id="sec-setups">
                 <summary className="cursor-pointer list-none flex items-center gap-2 text-sm font-semibold text-white/50 uppercase tracking-wider py-2 hover:text-white/70 transition-colors">
                   <Eye className="size-4" />
                   Setup Scanner Details
@@ -2314,7 +2361,7 @@ export default function SignalsDashboard() {
 
             {/* ── 4c. Timeframe Alignment ────────────────────────────────── */}
             {timeframeOutlook && (
-              <details className="group">
+              <details className="group" id="sec-tf-alignment">
                 <summary className="cursor-pointer list-none flex items-center gap-2 text-sm font-semibold text-white/50 uppercase tracking-wider py-2 hover:text-white/70 transition-colors">
                   <Layers className="size-4" />
                   Timeframe Details
@@ -2482,7 +2529,7 @@ export default function SignalsDashboard() {
 
             {/* ── 5. Signal Confluence ──────────────────────────────────── */}
             {call && call.signalFactors.length > 0 && (
-              <motion.div {...fadeUp}>
+              <motion.div {...fadeUp} id="sec-confluence">
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Signal Confluence
                 </h2>
@@ -2496,7 +2543,7 @@ export default function SignalsDashboard() {
 
             {/* ── 6. Divergences & Patterns ────────────────────────────── */}
             {divs && (
-              <motion.div {...fadeUp}>
+              <motion.div {...fadeUp} id="sec-divergences">
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Divergences &amp; Patterns
                 </h2>
@@ -2518,7 +2565,7 @@ export default function SignalsDashboard() {
 
             {/* ── 6b. Market Map ──────────────────────────────────────── */}
             {mapData && (
-              <motion.div {...fadeUp}>
+              <motion.div {...fadeUp} id="sec-market-map">
                 <div className="flex items-center gap-2 mb-4">
                   <Activity className="size-4" style={{ color: accent }} />
                   <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
@@ -3004,7 +3051,7 @@ export default function SignalsDashboard() {
             )}
 
             {/* ── 7. Technical Indicators ──────────────────────────────── */}
-            <div>
+            <div id="sec-indicators">
               <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                 Technical Indicators
               </h2>
@@ -3202,7 +3249,7 @@ export default function SignalsDashboard() {
 
             {/* ── 8. Volume Analysis ────────────────────────────────────── */}
             {vol && (
-              <div>
+              <div id="sec-volume">
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Volume Analysis
                 </h2>
@@ -3327,7 +3374,7 @@ export default function SignalsDashboard() {
             )}
 
             {/* ── 9. Market Data ────────────────────────────────────────── */}
-            <div>
+            <div id="sec-market-data">
               <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                 Market Data
               </h2>
@@ -3440,7 +3487,7 @@ export default function SignalsDashboard() {
 
             {/* ── 9a. Positioning & Liquidation ────────────────────────────── */}
             {d?.positioning && (
-              <motion.div {...fadeUp}>
+              <motion.div {...fadeUp} id="sec-positioning">
                 <div className="flex items-center gap-2 mb-3">
                   <Activity className="size-4" style={{ color: accent }} />
                   <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
@@ -3599,7 +3646,7 @@ export default function SignalsDashboard() {
 
             {/* ── 9b. News Sentiment ──────────────────────────────────────── */}
             {d?.newsSentiment && d.newsSentiment.headlines.length > 0 && (
-              <motion.div {...fadeUp}>
+              <motion.div {...fadeUp} id="sec-news">
                 <div className="flex items-center gap-2 mb-3">
                   <Newspaper className="size-4" style={{ color: accent }} />
                   <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
@@ -3652,7 +3699,7 @@ export default function SignalsDashboard() {
 
             {/* ── 10. Fibonacci Levels ───────────────────────────────────── */}
             {d?.levels?.fibonacci && d.levels.fibonacci.length > 0 && (
-              <motion.div {...fadeUp}>
+              <motion.div {...fadeUp} id="sec-fib">
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Fibonacci Levels
                 </h2>
@@ -3680,7 +3727,7 @@ export default function SignalsDashboard() {
 
             {/* ── 11. Key Price Levels (S/R Map) ────────────────────────── */}
             {d?.levels && (d.levels.supports.length > 0 || d.levels.resistances.length > 0) && (
-              <motion.div {...fadeUp}>
+              <motion.div {...fadeUp} id="sec-levels">
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Key Price Levels
                 </h2>
@@ -3820,7 +3867,7 @@ export default function SignalsDashboard() {
 
             {/* ── 12. HTF Confirmation ───────────────────────────────────── */}
             {d?.htf && (
-              <motion.div {...fadeUp}>
+              <motion.div {...fadeUp} id="sec-htf">
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Higher Timeframe Confirmation
                 </h2>
@@ -3925,7 +3972,7 @@ export default function SignalsDashboard() {
 
             {/* ── 13. Signal Track Record ─────────────────────────────────── */}
             {historyData && (
-              <motion.div {...fadeUp}>
+              <motion.div {...fadeUp} id="sec-track-record">
                 <div className="flex items-center gap-2 mb-4">
                   <Trophy className="size-4" style={{ color: accent }} />
                   <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">

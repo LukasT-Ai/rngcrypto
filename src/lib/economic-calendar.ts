@@ -244,7 +244,10 @@ export async function getUpcomingEvents(
     .sort((a, b) => a.time.getTime() - b.time.getTime());
 }
 
-export async function computeCatalystScore(symbol?: string): Promise<CatalystResult> {
+export async function computeCatalystScore(
+  symbol?: string,
+  assetClass: "crypto" | "stock" | "index" | "commodity" | "thin" = "crypto"
+): Promise<CatalystResult> {
   const events = await getUpcomingEvents(24, symbol);
   let score = 0;
   const riskParts: string[] = [];
@@ -252,15 +255,17 @@ export async function computeCatalystScore(symbol?: string): Promise<CatalystRes
   const now = Date.now();
   const day = new Date().getUTCDay();
   const hour = new Date().getUTCHours();
+  const tradesWeekend = assetClass === "crypto" || assetClass === "thin";
 
-  if (day === 0 || day === 6) {
+  // Crypto trades 24/7; the weekend-liquidity penalty only applies to markets that are actually closed
+  if (!tradesWeekend && (day === 0 || day === 6)) {
     score -= 30;
-    riskParts.push("Weekend, reduced liquidity");
+    riskParts.push("Weekend, underlying market closed");
   }
 
-  if (day >= 1 && day <= 5 && hour >= 13 && hour <= 14) {
+  if ((assetClass === "stock" || assetClass === "index") && day >= 1 && day <= 5 && hour >= 13 && hour <= 14) {
     score -= 15;
-    riskParts.push("US market open, potential volatility");
+    riskParts.push("US cash open, potential volatility");
   }
 
   for (const event of events) {

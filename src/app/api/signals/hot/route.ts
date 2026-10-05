@@ -63,19 +63,23 @@ export async function GET(req: NextRequest) {
   const host = req.headers.get("host") ?? req.nextUrl.host;
   const baseUrl = `${proto}://${host}`;
 
-  const results = await Promise.allSettled(
-    SYMBOLS.map(async (sym) => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20000);
-      try {
-        const res = await fetch(`${baseUrl}/api/signals?symbol=${sym}`, {
-          signal: controller.signal,
-          cache: "no-store",
-          headers: { "User-Agent": "signals-hot-scanner" },
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        return {
+  // Bounded concurrency: 31 simultaneous engine runs raced upstream rate limits and our own limiter
+  const POOL = 4;
+  const queue = [...SYMBOLS];
+  const settled: PromiseSettledResult<Awaited<ReturnType<typeof scanOne>> | null>[] = [];
+
+  async function scanOne(sym: string) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+    try {
+      const res = await fetch(`${baseUrl}/api/signals?symbol=${sym}&log=0`, {
+        signal: controller.signal,
+        cache: "no-store",
+        headers: { "User-Agent": "signals-hot-scanner", "x-internal-scan": "1" },
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return {
           symbol: sym,
           label: TICKER_META[sym]?.label ?? sym,
           color: TICKER_META[sym]?.color ?? "#F59E0B",
@@ -93,13 +97,26 @@ export async function GET(req: NextRequest) {
           volSpikeRatio: data.volume?.spikeRatio ?? null,
           volSpikeLabel: data.volume?.spikeLabel ?? null,
         };
-      } catch {
-        return null;
-      } finally {
-        clearTimeout(timeout);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: POOL }, async () => {
+      while (queue.length > 0) {
+        const sym = queue.shift()!;
+        try {
+          settled.push({ status: "fulfilled", value: await scanOne(sym) });
+        } catch (reason) {
+          settled.push({ status: "rejected", reason });
+        }
       }
     })
   );
+  const results = settled;
 
   const all = results
     .map((r) => (r.status === "fulfilled" ? r.value : null))

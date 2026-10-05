@@ -532,6 +532,12 @@ function analyzeVolume(candles: Candle[]): {
   }
 
   const average = totalVol / volumes.length;
+  // Synthetic feeds (stocks/indices on Strike) publish near-constant volume; treat as unavailable
+  const variance = volumes.reduce((s, v) => s + (v - average) ** 2, 0) / volumes.length;
+  const cv = average > 0 ? Math.sqrt(variance) / average : 0;
+  if (cv < 0.05) {
+    return { ...empty, trend: "unavailable" };
+  }
   const ratio = average > 0 ? current / average : 1;
 
   const halfLen = Math.floor(lookback / 2);
@@ -2731,6 +2737,7 @@ function computeMultiFactorCall(
       absorption: { detected: boolean; direction: "bullish" | "bearish" | null; strength: number } | null;
     };
     isCrypto: boolean;
+    assetClass: "crypto" | "stock" | "index" | "commodity" | "thin";
     newsSentimentScore: number | null;
     oilGeoScore: number | null;
     oilGeoRegime: "calm" | "elevated" | "extreme" | "whipsaw" | null;
@@ -2787,6 +2794,7 @@ function computeMultiFactorCall(
     fibExtension,
     volData,
     isCrypto,
+    assetClass,
     newsSentimentScore,
     oilGeoScore,
     oilGeoRegime,
@@ -2841,15 +2849,16 @@ function computeMultiFactorCall(
       weights.patterns = 0.06;
       weights.catalyst = 0.04;
     } else {
+      // Stocks / indices / metals: no derivatives data exists on Strike, so give that weight to price action
       weights.sentiment = 0;
-      weights.marketStructure = 0.2;
-      weights.momentum = 0.15;
+      weights.derivatives = 0;
+      weights.marketStructure = 0.22;
+      weights.momentum = 0.17;
       weights.volume = 0.13;
-      weights.htf = 0.12;
+      weights.htf = 0.14;
       weights.bollinger = 0.1;
       weights.divergences = 0.1;
-      weights.derivatives = 0.08;
-      weights.patterns = 0.07;
+      weights.patterns = 0.08;
       weights.catalyst = 0.02;
     }
   }
@@ -2893,20 +2902,23 @@ function computeMultiFactorCall(
     takerBuySellRatio
   );
 
+  // Normalize by the weights actually in play so non-crypto assets are not compressed toward 50
+  const weightSum = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
   const weightedScore =
-    ms.score * weights.marketStructure +
-    mom.score * weights.momentum +
-    vol.score * weights.volume +
-    deriv.score * weights.derivatives +
-    htf.score * weights.htf +
-    boll.score * weights.bollinger +
-    divs.score * weights.divergences +
-    sent.score * weights.sentiment +
-    mktData.score * weights.marketData +
-    pats.score * weights.patterns +
-    etfScore.score * weights.etf +
-    catalyst.score * weights.catalyst +
-    liq.score * weights.liquidation;
+    (ms.score * weights.marketStructure +
+      mom.score * weights.momentum +
+      vol.score * weights.volume +
+      deriv.score * weights.derivatives +
+      htf.score * weights.htf +
+      boll.score * weights.bollinger +
+      divs.score * weights.divergences +
+      sent.score * weights.sentiment +
+      mktData.score * weights.marketData +
+      pats.score * weights.patterns +
+      etfScore.score * weights.etf +
+      catalyst.score * weights.catalyst +
+      liq.score * weights.liquidation) /
+    weightSum;
 
   const whipsawPenalty = oilGeoRegime === "whipsaw" ? -8 : 0;
   let confidence = clamp(Math.round(50 + weightedScore / 2 + whipsawPenalty), 0, 100);
@@ -3126,7 +3138,9 @@ function computeMultiFactorCall(
   else grade = "NO TRADE";
 
   const ta = tradeATR * stopMult;
-  const minDist = ta * 0.8;
+  // Stop floor as % of price so low-vol indices are not stopped by noise and thin tokens get room
+  const STOP_FLOOR_PCT: Record<string, number> = { index: 0.0035, commodity: 0.005, stock: 0.005, crypto: 0.004, thin: 0.015 };
+  const minDist = Math.max(ta * 0.8, price * (STOP_FLOOR_PCT[assetClass] ?? 0.005));
 
   const nearestSupport = supports[0] ?? price - 1.5 * ta;
   const nearestResistance = resistances[0] ?? price + 1.5 * ta;
@@ -3390,6 +3404,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const symbol = (searchParams.get("symbol") ?? "BTC").toUpperCase();
+  const shouldLog = searchParams.get("log") !== "0";
 
   const config = SYMBOL_MAP[symbol];
   if (!config) {
@@ -3429,7 +3444,7 @@ export async function GET(req: NextRequest) {
     ),
     // 3: daily klines
     fetchJSON(
-      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=1d&limit=50&priceType=last`
+      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=1d&limit=200&priceType=last`
     ),
     // 4: mark price
     fetchJSON(`${STRIKE}/v2/markPrice?symbol=${strikeSymbol}`),
@@ -3858,7 +3873,19 @@ export async function GET(req: NextRequest) {
   const prevRsi15m = rsiArr.length >= 2 ? rsiArr[rsiArr.length - 2] : null;
 
   // ── Economic calendar / catalyst scoring ────────────────────────────────────
-  const catalystData = await computeCatalystScore(symbol);
+  const INDEX_SYMS = new Set(["SP500", "NAS100"]);
+  const COMMODITY_SYMS = new Set(["OIL", "GOLD", "SILVER"]);
+  const THIN_SYMS = new Set(["SPCX", "MINIMAX", "DRAM", "CRCL", "PUMP", "NIGHT", "UNITREE", "ZHIPU", "CXMT"]);
+  const assetClass: "crypto" | "stock" | "index" | "commodity" | "thin" = INDEX_SYMS.has(symbol)
+    ? "index"
+    : COMMODITY_SYMS.has(symbol)
+      ? "commodity"
+      : THIN_SYMS.has(symbol)
+        ? "thin"
+        : isCrypto
+          ? "crypto"
+          : "stock";
+  const catalystData = await computeCatalystScore(symbol, assetClass);
   const nextOilEvent = symbol === "OIL" ? await getNextOilEvent() : null;
 
   // ── Compute trade call ─────────────────────────────────────────────────────
@@ -3902,6 +3929,7 @@ export async function GET(req: NextRequest) {
       fibExtension,
       volData,
       isCrypto,
+      assetClass,
       newsSentimentScore: newsSentimentData?.score ?? null,
       oilGeoScore: oilGeoData?.score ?? null,
       oilGeoRegime,
@@ -4063,8 +4091,8 @@ export async function GET(req: NextRequest) {
     };
   }
 
-  // ── Log signal for accuracy tracking ────────────────────────────────────────
-  if (call.bias !== "WAIT" && call.confidence >= 55) {
+  // ── Log signal for accuracy tracking (scanner passes log=0 so it does not pollute history) ──
+  if (shouldLog && call.bias !== "WAIT" && call.confidence >= 55) {
     appendSignal({
       symbol,
       timestamp: Date.now(),

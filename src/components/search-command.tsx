@@ -27,7 +27,6 @@ import {
 
 const pages = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Signals", href: "/signals", icon: TrendingUp },
   { name: "Strike Signals", href: "/signals/strike", icon: TrendingUp },
   { name: "Ascend Signals", href: "/signals/ascend", icon: TrendingUp },
   { name: "Signal Performance", href: "/signals/performance", icon: BarChart3 },

@@ -251,8 +251,8 @@ function FeaturedSignalsCard() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link href="/signals" className="inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-[#06080F] transition-opacity hover:opacity-90" style={{ backgroundColor: GREEN }}>
-              Open Signals <ArrowRight className="size-4" />
+            <Link href="/signals/strike" className="inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-[#06080F] transition-opacity hover:opacity-90" style={{ backgroundColor: GREEN }}>
+              Open Strike Signals <ArrowRight className="size-4" />
             </Link>
             <Link href="/signals/performance" className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80">
               <Trophy className="size-3.5" /> Performance

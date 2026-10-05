@@ -5,7 +5,6 @@ import { useState } from "react"
 import { ExternalLink } from "lucide-react"
 
 const exploreLinks = [
-  { href: "/signals", label: "Signals" },
   { href: "/signals/strike", label: "Strike Signals" },
   { href: "/signals/ascend", label: "Ascend Signals" },
   { href: "/signals/performance", label: "Performance" },

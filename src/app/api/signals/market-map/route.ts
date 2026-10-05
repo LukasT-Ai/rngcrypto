@@ -73,7 +73,7 @@ async function fetchJSON(url: string, timeoutMs = 10000): Promise<unknown> {
 }
 
 export async function GET(req: NextRequest) {
-  const blocked = rateLimit(req, 20);
+  const blocked = rateLimit(req, 60);
   if (blocked) return blocked;
 
   const { searchParams } = new URL(req.url);

@@ -3456,7 +3456,7 @@ async function fetchJSON(url: string, timeoutMs = 10000): Promise<unknown> {
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  const blocked = rateLimit(req, 30);
+  const blocked = rateLimit(req, 90);
   if (blocked) return blocked;
 
   const { searchParams } = new URL(req.url);

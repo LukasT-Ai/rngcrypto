@@ -7,7 +7,7 @@ import { fetchMarks } from "./check/core";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const blocked = rateLimit(req, 20);
+  const blocked = rateLimit(req, 90);
   if (blocked) return blocked;
 
   const sp = req.nextUrl.searchParams;

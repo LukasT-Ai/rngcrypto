@@ -50,7 +50,7 @@ function Link({ link, accent }: { link: RecoLink; accent: string }) {
       title="Jump to the section that shows this"
     >
       {link.text}
-      <ArrowDownRight className="ml-0.5 inline size-3 align-[-1px] text-white/25 group-hover:text-white/70 transition-colors" />
+      <ArrowDownRight className="ml-0.5 inline size-3 align-[-1px] text-[#9CA3AF]/70 group-hover:text-white/70 transition-colors" />
     </a>
   )
 }
@@ -83,11 +83,11 @@ export function RecommendationCard({
 }) {
   if (loading || !reco) {
     return (
-      <div id="sec-reco" className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 animate-pulse">
+      <div id="sec-reco" className="rounded-2xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-5 animate-pulse">
         <div className="h-5 w-56 rounded bg-white/[0.06] mb-3" />
         <div className="h-3.5 w-full max-w-2xl rounded bg-white/[0.05] mb-2" />
         <div className="h-3.5 w-3/4 max-w-xl rounded bg-white/[0.05]" />
-        <div className="mt-4 text-[11px] text-white/30">Building recommendation for {symbol}…</div>
+        <div className="mt-4 text-[11px] text-[#9CA3AF]/80">Building recommendation for {symbol}…</div>
       </div>
     )
   }
@@ -98,8 +98,8 @@ export function RecommendationCard({
   return (
     <div
       id="sec-reco"
-      className="rounded-2xl border p-5 sm:p-6"
-      style={{ borderColor: `${c}35`, background: `linear-gradient(135deg, ${c}0D 0%, rgba(255,255,255,0.02) 55%)` }}
+      className="rounded-2xl border p-5 sm:p-6 backdrop-blur-xl shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]"
+      style={{ borderColor: `${c}40`, background: `linear-gradient(135deg, ${c}14 0%, rgba(10,14,23,0.6) 55%)` }}
     >
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <span className="rounded-md px-2.5 py-1 text-sm font-black tracking-wide" style={{ backgroundColor: `${c}22`, color: c }}>
@@ -161,7 +161,7 @@ export function RecommendationCard({
           <div className="flex items-center gap-1.5 mb-2 text-[11px] font-bold uppercase tracking-wider text-white/45">
             <Target className="size-3.5" style={{ color: c }} />
             {reco.action === "WAIT" ? "What the data says" : "Why"}
-            <span className="ml-auto font-mono text-[10px] text-white/30">
+            <span className="ml-auto font-mono text-[10px] text-[#9CA3AF]/80">
               {reco.tally.bull}↑ {reco.tally.bear}↓ of {reco.tally.total}
             </span>
           </div>
@@ -224,7 +224,7 @@ export function RecommendationCard({
         )}
       </div>
 
-      <div className="mt-3 flex items-center gap-1.5 text-[10px] text-white/25">
+      <div className="mt-3 flex items-center gap-1.5 text-[10px] text-[#9CA3AF]/70">
         <Crosshair className="size-3" />
         Every underlined item jumps to the chart or statistic it is based on.
       </div>

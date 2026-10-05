@@ -83,6 +83,13 @@ const TICKERS = [
   { symbol: "CXMT", label: "CXMT", color: "#0284C7" },
 ]
 
+const TICKER_GROUPS: { label: string; symbols: Set<string> }[] = [
+  { label: "Crypto", symbols: new Set(["BTC", "ETH", "BNB", "ADA", "HYPE", "ZEC", "PUMP", "NIGHT", "XRP", "SOL", "NEAR", "CRCL", "MINIMAX", "SPCX", "DRAM"]) },
+  { label: "Commodities", symbols: new Set(["OIL", "GOLD", "SILVER"]) },
+  { label: "Stocks", symbols: new Set(["TSLA", "NVDA", "GOOGL", "COIN", "MU", "SKHYNIX", "AAOI", "SNDK", "UNITREE", "ZHIPU", "CXMT"]) },
+  { label: "Indices", symbols: new Set(["SP500", "NAS100"]) },
+]
+
 // ---------------------------------------------------------------------------
 // Types — matches /api/signals v2 response shape
 // ---------------------------------------------------------------------------
@@ -655,11 +662,10 @@ function StatCard({
 }) {
   return (
     <motion.div
-      {...fadeUp}
-      className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3"
+           className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md px-4 py-3"
     >
       <div className="flex items-center gap-2 mb-1">
-        {Icon && <Icon className="size-3.5 text-white/30" />}
+        {Icon && <Icon className="size-3.5 text-[#9CA3AF]/80" />}
         <span className="text-[10px] uppercase tracking-wider text-white/40">
           {label}
         </span>
@@ -759,8 +765,7 @@ function SkeletonContent() {
 function AlertBanner({ icon: Icon, color, children }: { icon: React.ElementType; color: string; children: React.ReactNode }) {
   return (
     <motion.div
-      {...fadeUp}
-      className="flex items-center gap-3 rounded-xl px-4 py-3"
+           className="flex items-center gap-3 rounded-xl px-4 py-3"
       style={{ backgroundColor: `${color}10`, border: `1px solid ${color}30` }}
     >
       <Icon className="size-5 shrink-0" style={{ color }} />
@@ -777,7 +782,7 @@ function DivergenceCard({ label, value }: { label: string; value: string | null 
   const display = value ?? "None"
   const color = divColor(value)
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md px-4 py-3">
       <span className="text-[10px] uppercase tracking-wider text-white/40">{label}</span>
       <p className="font-mono text-sm font-bold mt-1" style={{ color }}>{display}</p>
     </div>
@@ -796,7 +801,7 @@ function FactorRow({ category, assessment, weight }: { category: string; assessm
       <div className="flex-1">
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs font-semibold" style={{ color }}>{assessment}</span>
-          <span className="text-[10px] text-white/30 font-mono">{weight}%</span>
+          <span className="text-[10px] text-[#9CA3AF]/80 font-mono">{weight}%</span>
         </div>
         <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
           <div className="h-full rounded-full transition-all duration-500" style={{ width: `${weight}%`, backgroundColor: color }} />
@@ -1036,19 +1041,45 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
   return (
     <div className="min-h-screen pt-24 pb-16" style={themeStyle(theme)} data-variant={variant}>
       <GuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
-      <div className="mx-auto max-w-7xl px-4 lg:px-8 space-y-6">
+      <div className="mx-auto max-w-7xl px-4 lg:px-8 space-y-5">
+
+        {/* ── Brand band ─────────────────────────────────────────────── */}
+        <div
+          className="flex flex-col gap-2 rounded-2xl border border-white/[0.08] bg-[#0A0E17]/55 px-4 py-3 backdrop-blur-xl sm:flex-row sm:items-center sm:gap-4"
+          style={{ background: "linear-gradient(135deg, color-mix(in srgb, var(--brand) 10%, transparent) 0%, rgba(10,14,23,0.55) 60%)" }}
+        >
+          <div className="flex items-center gap-3">
+            <span className="relative flex size-2.5">
+              <span className="absolute inline-flex size-full animate-ping rounded-full opacity-60" style={{ backgroundColor: "var(--brand)" }} />
+              <span className="relative inline-flex size-2.5 rounded-full" style={{ backgroundColor: "var(--brand)" }} />
+            </span>
+            <span className="font-display text-lg font-bold tracking-tight" style={{ color: "var(--brand)" }}>{theme.name}</span>
+            <span className="hidden text-xs text-[#9CA3AF] sm:inline">{theme.tagline}</span>
+          </div>
+          <div className="flex items-center gap-3 sm:ml-auto text-[11px] text-[#9CA3AF]">
+            {theme.venueUrl && (
+              <a href={theme.venueUrl} target="_blank" rel="noopener noreferrer" className="rounded-md border border-white/10 px-2 py-0.5 hover:border-white/25 hover:text-white transition-colors">
+                Trade on {theme.name.replace(" Signals", "")} ↗
+              </a>
+            )}
+            <span className="font-mono rounded px-1.5 py-0.5 bg-black/30 border border-white/10">
+              refresh <Countdown lastFetch={fetchTs} color="var(--brand)" />
+            </span>
+            <a href="/signals/performance" className="rounded-md border border-white/10 px-2 py-0.5 hover:border-white/25 hover:text-white transition-colors">Performance</a>
+          </div>
+        </div>
 
         {/* ── Hot Plays Banner ────────────────────────────────────────── */}
         {hotData && hotData.hot.length > 0 && (
           <motion.div {...fadeUp}>
             <div className="flex items-center gap-2 mb-2">
-              <Zap className="size-4 text-[#F59E0B]" />
-              <span className="text-xs font-bold uppercase tracking-wider text-[#F59E0B]">
+              <Zap className="size-4" style={{ color: "var(--brand)" }} />
+              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--brand)" }}>
                 Hot Plays
               </span>
-              <span className="text-[10px] text-white/30">Score 75+</span>
+              <span className="text-[10px] text-[#9CA3AF]/80">Score 75+</span>
               {hotData.hot.length > 6 && (
-                <span className="text-[10px] text-white/20 ml-auto">{hotData.hot.length} signals</span>
+                <span className="text-[10px] text-[#9CA3AF]/60 ml-auto">{hotData.hot.length} signals</span>
               )}
             </div>
             {(() => {
@@ -1148,29 +1179,40 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
           </motion.div>
         )}
 
-        {/* ── Ticker Selector Bar: horizontal snap strip on phones, wrapping grid from sm up ── */}
-        <div className="flex flex-nowrap gap-2 overflow-x-auto snap-x snap-mandatory -mx-4 px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible">
-          {tickers.map((t) => {
-            const active = t.symbol === symbol
-            const score = hotData?.all?.find((h) => h.symbol === t.symbol)?.confidence ?? null
-            const scoreColor = score != null ? (score >= 75 ? "#00FF88" : score >= 55 ? "#F59E0B" : "#FF3B5C") : undefined
+        {/* ── Ticker rails: grouped by asset class; snap strip on phones, wrapping from sm up ── */}
+        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto snap-x snap-mandatory -mx-4 px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible">
+          {TICKER_GROUPS.map((g) => {
+            const items = tickers.filter((t) => g.symbols.has(t.symbol))
+            if (items.length === 0) return null
             return (
-              <button
-                key={t.symbol}
-                onClick={() => setSymbol(t.symbol)}
-                className={cn(
-                  "shrink-0 snap-start rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition-all duration-200 border",
-                  active
-                    ? "text-white border-transparent"
-                    : "border-white/10 hover:border-white/20 bg-transparent"
-                )}
-                style={active
-                  ? { backgroundColor: t.color, borderColor: t.color }
-                  : { color: scoreColor ?? "rgba(255,255,255,0.4)" }
-                }
-              >
-                {t.symbol}
-              </button>
+              <React.Fragment key={g.label}>
+                <span className="shrink-0 pl-1 pr-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9CA3AF]/80 first:pl-0">{g.label}</span>
+                {items.map((t) => {
+                  const active = t.symbol === symbol
+                  const score = hotData?.all?.find((h) => h.symbol === t.symbol)?.confidence ?? null
+                  const scoreColor = score != null ? (score >= 75 ? "#00FF88" : score >= 55 ? "#F59E0B" : "#FF3B5C") : undefined
+                  return (
+                    <button
+                      key={t.symbol}
+                      onClick={() => setSymbol(t.symbol)}
+                      title={score != null ? `${t.label} · confidence ${score}` : t.label}
+                      className={cn(
+                        "shrink-0 snap-start rounded-full px-3.5 py-1.5 text-xs font-bold uppercase tracking-wide transition-all duration-200 border",
+                        active ? "text-[#06080F] border-transparent" : "border-white/10 hover:border-white/25 bg-[#0A0E17]/40 text-[#9CA3AF] hover:text-white"
+                      )}
+                      style={
+                        active
+                          ? { backgroundColor: "var(--brand)", boxShadow: "0 0 18px color-mix(in srgb, var(--brand) 45%, transparent)" }
+                          : scoreColor
+                            ? { color: scoreColor }
+                            : undefined
+                      }
+                    >
+                      {t.symbol}
+                    </button>
+                  )
+                })}
+              </React.Fragment>
             )
           })}
         </div>
@@ -1197,7 +1239,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   <h1 className="text-2xl font-bold text-white">Signals</h1>
                   <button
                     onClick={() => setGuideOpen(true)}
-                    className="rounded-full p-1 text-white/30 hover:text-white/60 hover:bg-white/[0.06] transition-colors"
+                    className="rounded-full p-1 text-[#9CA3AF]/80 hover:text-white/60 hover:bg-white/[0.06] transition-colors"
                     title="Quick Guide"
                   >
                     <HelpCircle className="size-4" />
@@ -1388,7 +1430,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 </div>
               ) : (
                 <div className="rounded-xl bg-white/[0.02] border border-white/[0.06] p-6 text-center">
-                  <span className="text-sm text-white/30">No active setups — watching for alignment</span>
+                  <span className="text-sm text-[#9CA3AF]/80">No active setups — watching for alignment</span>
                 </div>
               )}
             </motion.div>
@@ -1462,9 +1504,9 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
                     Upcoming Catalysts
                   </h2>
-                  <span className="text-[10px] text-white/30">Next 24h</span>
+                  <span className="text-[10px] text-[#9CA3AF]/80">Next 24h</span>
                 </div>
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] divide-y divide-white/[0.04]">
+                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md divide-y divide-white/[0.04]">
                   {d.events.slice(0, 6).map((event, i) => {
                     const eventTime = new Date(event.time)
                     const msUntil = eventTime.getTime() - Date.now()
@@ -1503,7 +1545,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-white/30">{event.currency}</span>
+                          <span className="text-[10px] text-[#9CA3AF]/80">{event.currency}</span>
                           <span
                             className="font-mono text-xs font-semibold"
                             style={{ color: isImminent ? "#FF3B5C" : accent }}
@@ -1542,7 +1584,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
               return (
                 <motion.div {...fadeUp} id="sec-geo">
                   <div className="flex flex-wrap items-center gap-2 mb-3">
-                    <Globe className="size-4" style={{ color: "#F59E0B" }} />
+                    <Globe className="size-4" style={{ color: "var(--brand)" }} />
                     <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">{g.panelTitle ?? "Catalyst Headlines"}</h2>
                     <span
                       className="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase"
@@ -1559,11 +1601,11 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                     >
                       {g.regime}
                     </span>
-                    <span className="text-[10px] text-white/30 ml-auto">{g.eventCount} events · 72h</span>
+                    <span className="text-[10px] text-[#9CA3AF]/80 ml-auto">{g.eventCount} events · 72h</span>
                   </div>
 
                   {v && (v.bullForce || v.bearForce) && (
-                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 mb-3 space-y-2.5">
+                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4 mb-3 space-y-2.5">
                       {v.bullForce && (
                         <div className="flex items-start gap-3">
                           <span className="w-9 shrink-0 text-[10px] font-bold text-[#00FF88] mt-0.5">BULL</span>
@@ -1624,7 +1666,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                     <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3 mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                       <div className="flex items-center gap-3">
                         <div>
-                          <div className="text-[10px] text-white/30 uppercase">{g.assetName ?? d.assetLabel}</div>
+                          <div className="text-[10px] text-[#9CA3AF]/80 uppercase">{g.assetName ?? d.assetLabel}</div>
                           <div className="font-mono text-lg font-bold text-white/90">${fmtPrice(pc.current)}</div>
                         </div>
                         <div className="font-mono text-sm font-bold" style={{ color: pc.change24h >= 0 ? "#00FF88" : "#FF3B5C" }}>
@@ -1633,8 +1675,8 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
-                        <span><span className="text-white/30">7d H </span><span className="font-mono text-white/60">${fmtPrice(pc.weekHigh)}</span></span>
-                        <span><span className="text-white/30">7d L </span><span className="font-mono text-white/60">${fmtPrice(pc.weekLow)}</span></span>
+                        <span><span className="text-[#9CA3AF]/80">7d H </span><span className="font-mono text-white/60">${fmtPrice(pc.weekHigh)}</span></span>
+                        <span><span className="text-[#9CA3AF]/80">7d L </span><span className="font-mono text-white/60">${fmtPrice(pc.weekLow)}</span></span>
                         {g.nextScheduled && (
                           <span
                             className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium"
@@ -1670,7 +1712,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                     </div>
                   )}
 
-                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] divide-y divide-white/[0.04]">
+                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md divide-y divide-white/[0.04]">
                     {shown.map((ev, i) => {
                       const dot = ev.sentiment === "bullish" ? "#00FF88" : ev.sentiment === "bearish" ? "#FF3B5C" : "#6B7280"
                       const imp = ev.impact === "high" ? "#FF3B5C" : ev.impact === "medium" ? "#F59E0B" : "#6B7280"
@@ -1690,10 +1732,10 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                               {ev.title}
                             </span>
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
-                              <span className="text-[10px] text-white/30">{ev.source}</span>
-                              <span className="text-[10px] text-white/20">·</span>
-                              <span className="text-[10px] text-white/30">{ago(ev.publishedAt)}</span>
-                              <span className="text-[10px] text-white/20">·</span>
+                              <span className="text-[10px] text-[#9CA3AF]/80">{ev.source}</span>
+                              <span className="text-[10px] text-[#9CA3AF]/60">·</span>
+                              <span className="text-[10px] text-[#9CA3AF]/80">{ago(ev.publishedAt)}</span>
+                              <span className="text-[10px] text-[#9CA3AF]/60">·</span>
                               <span className="text-[10px] font-medium uppercase" style={{ color: imp }}>{ev.impact}</span>
                               <span className="text-[10px] font-medium rounded px-1 py-px" style={{ backgroundColor: `${dot}15`, color: dot }}>
                                 {ev.category.replace("_", " ")}
@@ -1709,7 +1751,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                               {pct(ev.priceReaction.sinceEventPct)}
                             </span>
                           )}
-                          <ArrowUpRight className="size-3.5 text-white/20 group-hover:text-white/50 transition-colors shrink-0 mt-1" />
+                          <ArrowUpRight className="size-3.5 text-[#9CA3AF]/60 group-hover:text-white/50 transition-colors shrink-0 mt-1" />
                         </a>
                       )
                     })}
@@ -1725,7 +1767,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                         {showAllGeo ? "Show less" : `Show ${g.events.length - 5} more`}
                       </button>
                     ) : <span />}
-                    <span className="text-[10px] text-white/20 text-right">
+                    <span className="text-[10px] text-[#9CA3AF]/60 text-right">
                       Updated {new Date(g.lastUpdated).toLocaleTimeString()}
                       {g.sourcesUsed.length > 0 ? ` · Sources: ${g.sourcesUsed.join(", ")}` : ""}
                     </span>
@@ -1738,8 +1780,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
             {call && (
               <motion.div
                 id="sec-call"
-                {...fadeUp}
-                className="relative rounded-xl overflow-hidden"
+                               className="relative rounded-xl overflow-hidden"
                 style={{
                   background: `linear-gradient(135deg, ${callColor}08 0%, transparent 60%)`,
                   border: `1px solid ${callColor}30`,
@@ -1932,7 +1973,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 <div className="flex items-center gap-2 mb-3">
                   <Crosshair className="size-4" style={{ color: accent }} />
                   <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">Scenario Forecast</h2>
-                  <span className="text-[10px] text-white/30 ml-auto">horizon ~{d.oilForecast.horizonHours}h</span>
+                  <span className="text-[10px] text-[#9CA3AF]/80 ml-auto">horizon ~{d.oilForecast.horizonHours}h</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {d.oilForecast.scenarios.map((s, i) => {
@@ -1955,17 +1996,17 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-[11px]">
                           <div>
-                            <div className="text-white/30">Target</div>
+                            <div className="text-[#9CA3AF]/80">Target</div>
                             <div className="font-mono text-white/85">
                               ${fmtPrice(s.target)} <span style={{ color: c }}>({tp >= 0 ? "+" : ""}{tp.toFixed(1)}%)</span>
                             </div>
                           </div>
                           <div>
-                            <div className="text-white/30">Stop ref</div>
+                            <div className="text-[#9CA3AF]/80">Stop ref</div>
                             <div className="font-mono text-white/60">${fmtPrice(s.stopRef)}</div>
                           </div>
                           <div>
-                            <div className="text-white/30">R:R</div>
+                            <div className="text-[#9CA3AF]/80">R:R</div>
                             <div className="font-mono text-white/85">{s.rr.toFixed(2)}</div>
                           </div>
                         </div>
@@ -1973,7 +2014,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                     )
                   })}
                 </div>
-                <div className="mt-2 text-[10px] text-white/30 leading-snug">{d.oilForecast.note}</div>
+                <div className="mt-2 text-[10px] text-[#9CA3AF]/80 leading-snug">{d.oilForecast.note}</div>
               </motion.div>
             )}
 
@@ -2038,7 +2079,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                 {/* Approaching Levels */}
                 {anticipatory.approachingLevels.length > 0 && (
-                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md overflow-hidden">
                     <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.04]">
                       <Crosshair className="size-4 text-white/40" />
                       <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2083,12 +2124,12 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                               </span>
                               <span className={cn(
                                 "text-xs",
-                                Math.abs(lvl.velocity) > 0.5 ? "text-[#FF3B5C]" : "text-white/30"
+                                Math.abs(lvl.velocity) > 0.5 ? "text-[#FF3B5C]" : "text-[#9CA3AF]/80"
                               )}>
                                 {lvl.velocity > 0 ? <ArrowUp className="size-3 inline" /> : <ArrowDown className="size-3 inline" />}
                               </span>
                               {lvl.estimatedCandles != null && (
-                                <span className="font-mono text-[10px] text-white/30">
+                                <span className="font-mono text-[10px] text-[#9CA3AF]/80">
                                   ~{lvl.estimatedCandles}c
                                 </span>
                               )}
@@ -2101,7 +2142,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                 {/* Retest Tracker */}
                 {anticipatory.retestSetup.active && anticipatory.retestSetup.state && (
-                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 mb-4">
                       <GitBranch className="size-4 text-white/40" />
                       <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2147,7 +2188,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                               />
                               <span className={cn(
                                 "text-[9px] uppercase tracking-wider whitespace-nowrap",
-                                isActive ? "text-[#00FF88] font-bold" : isPast ? "text-white/40" : "text-white/20"
+                                isActive ? "text-[#00FF88] font-bold" : isPast ? "text-white/40" : "text-[#9CA3AF]/60"
                               )}>
                                 {stepLabels[step]}
                               </span>
@@ -2160,7 +2201,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                     <div className="flex items-center gap-4">
                       {anticipatory.retestSetup.level != null && (
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-white/30 uppercase">Level</span>
+                          <span className="text-[10px] text-[#9CA3AF]/80 uppercase">Level</span>
                           <span className="font-mono text-sm font-semibold text-white/80">
                             {anticipatory.retestSetup.level.toFixed(dp)}
                           </span>
@@ -2170,7 +2211,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                       <div className="flex items-center gap-2 ml-auto">
                         <span className={cn(
                           "flex items-center gap-1 text-[10px] uppercase",
-                          anticipatory.retestSetup.volumeConfirms ? "text-[#00FF88]" : "text-white/20"
+                          anticipatory.retestSetup.volumeConfirms ? "text-[#00FF88]" : "text-[#9CA3AF]/60"
                         )}>
                           {anticipatory.retestSetup.volumeConfirms
                             ? <Check className="size-3" />
@@ -2179,7 +2220,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                         </span>
                         <span className={cn(
                           "flex items-center gap-1 text-[10px] uppercase",
-                          anticipatory.retestSetup.rsiResetting ? "text-[#00FF88]" : "text-white/20"
+                          anticipatory.retestSetup.rsiResetting ? "text-[#00FF88]" : "text-[#9CA3AF]/60"
                         )}>
                           {anticipatory.retestSetup.rsiResetting
                             ? <Check className="size-3" />
@@ -2193,7 +2234,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                 {/* Structure Signals */}
                 {anticipatory.structureSignals.length > 0 && (
-                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <GitBranch className="size-4 text-white/40" />
                       <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2226,7 +2267,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                               <span className="font-mono text-xs text-white/60">
                                 {sig.referenceLevel.toFixed(dp)}
                               </span>
-                              <span className="font-mono text-[10px] text-white/30">
+                              <span className="font-mono text-[10px] text-[#9CA3AF]/80">
                                 {sig.distanceToTrigger.toFixed(2)} ATR
                               </span>
                             </div>
@@ -2238,7 +2279,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 )}
 
                 {/* Confluence Meter */}
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <Gauge className="size-4 text-white/40" />
                     <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2251,7 +2292,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                           ? "bg-[#FF3B5C]/15 text-[#FF3B5C] animate-pulse"
                           : anticipatory.confluence.status === "SETUP_FORMING"
                             ? "bg-[#F59E0B]/15 text-[#F59E0B]"
-                            : "bg-white/[0.06] text-white/30"
+                            : "bg-white/[0.06] text-[#9CA3AF]/80"
                       )}
                     >
                       {anticipatory.confluence.status.replace("_", " ")}
@@ -2295,7 +2336,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                               style={{ width: `${Math.min(ind.weight * 100, 100)}%` }}
                             />
                           </div>
-                          <span className="text-[10px] text-white/30 min-w-[80px] truncate text-right">{ind.detail}</span>
+                          <span className="text-[10px] text-[#9CA3AF]/80 min-w-[80px] truncate text-right">{ind.detail}</span>
                         </div>
                       ))}
                     </div>
@@ -2307,7 +2348,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   anticipatory.orderFlow.fundingInflection ||
                   anticipatory.orderFlow.absorptionSequence > 0 ||
                   anticipatory.orderFlow.oiPriceDivergence) && (
-                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <Waves className="size-4 text-white/40" />
                       <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2346,7 +2387,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                 {/* Projections Timeline */}
                 {anticipatory.projections.length > 0 && (
-                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <Clock className="size-4 text-white/40" />
                       <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2372,7 +2413,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                             )}>
                               {proj.trigger}
                             </span>
-                            <span className="font-mono text-[10px] text-white/30">
+                            <span className="font-mono text-[10px] text-[#9CA3AF]/80">
                               ~{proj.estimatedCandles}c
                             </span>
                             {proj.direction === "bullish"
@@ -2467,7 +2508,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   {([timeframeOutlook.short, timeframeOutlook.medium, timeframeOutlook.long] as const).map((horizon) => (
                     <div
                       key={horizon.label}
-                      className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"
+                      className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4"
                     >
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2509,7 +2550,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                         {horizon.biases.map((tf) => (
                           <div key={`${horizon.label}-${tf.timeframe}-detail`}>
                             <div className="flex items-center justify-between text-[10px] mb-1">
-                              <span className="text-white/30 font-mono">{tf.timeframe}</span>
+                              <span className="text-[#9CA3AF]/80 font-mono">{tf.timeframe}</span>
                               <span className="text-white/40">{tf.emaAlignment}</span>
                               <span className="text-white/40">{tf.momentum}</span>
                               <span className="font-mono text-white/50">RSI {tf.rsi}</span>
@@ -2517,7 +2558,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                             {tf.bias !== "NEUTRAL" && tf.entry != null && (
                               <div className="grid grid-cols-4 gap-1 mt-1">
                                 <div className="rounded bg-white/[0.04] px-1.5 py-1 text-center">
-                                  <span className="block text-[8px] text-white/30 uppercase">Entry</span>
+                                  <span className="block text-[8px] text-[#9CA3AF]/80 uppercase">Entry</span>
                                   <span className="block font-mono text-[10px] text-white/70">{tf.entry.toFixed(dp)}</span>
                                 </div>
                                 {tf.stopLoss != null && (
@@ -2542,7 +2583,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                             )}
                             {tf.riskReward != null && (
                               <div className="text-right mt-0.5">
-                                <span className="font-mono text-[9px] text-white/30">R:R 1:{tf.riskReward}</span>
+                                <span className="font-mono text-[9px] text-[#9CA3AF]/80">R:R 1:{tf.riskReward}</span>
                               </div>
                             )}
                           </div>
@@ -2561,7 +2602,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Signal Confluence
                 </h2>
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                   {call.signalFactors.map((f, i) => (
                     <FactorRow key={i} category={f.category} assessment={f.assessment} weight={f.weight} />
                   ))}
@@ -2599,14 +2640,13 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
                     Market Map
                   </h2>
-                  <span className="text-[10px] text-white/20">Daily Structure Analysis</span>
+                  <span className="text-[10px] text-[#9CA3AF]/60">Daily Structure Analysis</span>
                 </div>
 
                 {/* ── Signal Recommendation Card ──────────────────────────── */}
                 {mapData.signal && (
                   <motion.div
-                    {...fadeUp}
-                    className="relative rounded-xl overflow-hidden mb-4"
+                                       className="relative rounded-xl overflow-hidden mb-4"
                     style={{
                       background: `linear-gradient(135deg, ${dirColor(mapData.signal.bias)}06 0%, transparent 60%)`,
                       border: `1px solid ${dirColor(mapData.signal.bias)}30`,
@@ -2635,7 +2675,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                           >
                             {mapData.signal.grade}
                           </div>
-                          <span className="text-[10px] text-white/30">
+                          <span className="text-[10px] text-[#9CA3AF]/80">
                             {mapData.signal.activeSignals}/{mapData.signal.totalModules} modules active
                           </span>
                         </div>
@@ -2660,7 +2700,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                       <div className="mb-4">
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-[10px] text-[#FF3B5C] font-bold">SHORT</span>
-                          <span className="text-[10px] text-white/20">0</span>
+                          <span className="text-[10px] text-[#9CA3AF]/60">0</span>
                           <span className="text-[10px] text-[#00FF88] font-bold">LONG</span>
                         </div>
                         <div className="relative h-3 w-full rounded-full overflow-hidden" style={{ background: "linear-gradient(90deg, #FF3B5C20 0%, #FF3B5C05 45%, transparent 50%, #00FF8805 55%, #00FF8820 100%)" }}>
@@ -2725,7 +2765,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* EMA5 Disconnect */}
                   {mapData.ema5Disconnect && (
-                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">EMA5 Disconnect</span>
                         {mapData.ema5Disconnect.isDisconnected && (
@@ -2748,7 +2788,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                             style={{ color: Math.abs(mapData.ema5Disconnect.deviationATR) >= 1.5 ? (mapData.ema5Disconnect.side === "below" ? "#00FF88" : "#FF3B5C") : accent }}
                           >
                             {mapData.ema5Disconnect.deviation > 0 ? "+" : ""}{mapData.ema5Disconnect.deviation.toFixed(2)}%
-                            <span className="text-white/30 text-[10px] ml-1">({Math.abs(mapData.ema5Disconnect.deviationATR).toFixed(1)} ATR)</span>
+                            <span className="text-[#9CA3AF]/80 text-[10px] ml-1">({Math.abs(mapData.ema5Disconnect.deviationATR).toFixed(1)} ATR)</span>
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -2761,7 +2801,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                         </div>
                         {mapData.ema5Disconnect.reconnectWindow.total > 0 && (
                           <div className="mt-2 pt-2 border-t border-white/[0.04]">
-                            <span className="text-[10px] text-white/30 uppercase tracking-wider">Reconnect Probability</span>
+                            <span className="text-[10px] text-[#9CA3AF]/80 uppercase tracking-wider">Reconnect Probability</span>
                             <div className="flex gap-3 mt-1">
                               {[
                                 { label: "3d", pct: mapData.ema5Disconnect.reconnectWindow.pct3day },
@@ -2772,10 +2812,10 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                                   <span className="font-mono text-sm font-bold" style={{ color: pct >= 70 ? "#00FF88" : pct >= 50 ? "#F59E0B" : "#FF3B5C" }}>
                                     {pct}%
                                   </span>
-                                  <span className="block text-[9px] text-white/30">{label}</span>
+                                  <span className="block text-[9px] text-[#9CA3AF]/80">{label}</span>
                                 </div>
                               ))}
-                              <span className="text-[9px] text-white/20 self-end">n={mapData.ema5Disconnect.reconnectWindow.total}</span>
+                              <span className="text-[9px] text-[#9CA3AF]/60 self-end">n={mapData.ema5Disconnect.reconnectWindow.total}</span>
                             </div>
                           </div>
                         )}
@@ -2785,7 +2825,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* EMA5 × SMA200 Crossover */}
                   {mapData.ema5xSma200 && (
-                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">EMA5 × SMA{mapData.ema5xSma200.smaPeriod}</span>
                         {mapData.ema5xSma200.freshCross && (
@@ -2828,7 +2868,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                         </div>
                         {mapData.ema5xSma200.recentCrossovers.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-white/[0.04]">
-                            <span className="text-[10px] text-white/30 uppercase tracking-wider">Recent Cross Returns</span>
+                            <span className="text-[10px] text-[#9CA3AF]/80 uppercase tracking-wider">Recent Cross Returns</span>
                             <div className="space-y-1 mt-1">
                               {mapData.ema5xSma200.recentCrossovers.slice(-3).map((cross, i) => (
                                 <div key={i} className="flex items-center gap-2 text-[10px]">
@@ -2862,7 +2902,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* RSI Structure (Daily) */}
                   {mapData.rsiStructure.daily && (
-                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">RSI Structure</span>
                         <span
@@ -2884,13 +2924,13 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div className="text-center rounded-lg bg-white/[0.02] p-2">
-                            <span className="text-[10px] text-white/30">HH / HL</span>
+                            <span className="text-[10px] text-[#9CA3AF]/80">HH / HL</span>
                             <p className="font-mono text-xs font-bold text-[#00FF88]">
                               {mapData.rsiStructure.daily.consecutiveHH} / {mapData.rsiStructure.daily.consecutiveHL}
                             </p>
                           </div>
                           <div className="text-center rounded-lg bg-white/[0.02] p-2">
-                            <span className="text-[10px] text-white/30">LH / LL</span>
+                            <span className="text-[10px] text-[#9CA3AF]/80">LH / LL</span>
                             <p className="font-mono text-xs font-bold text-[#FF3B5C]">
                               {mapData.rsiStructure.daily.consecutiveLH} / {mapData.rsiStructure.daily.consecutiveLL}
                             </p>
@@ -2928,7 +2968,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* EMA21 Bounce */}
                   {mapData.ema21Bounce && (
-                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">EMA21 Bounce</span>
                         {mapData.ema21Bounce.invalidation && (
@@ -2953,7 +2993,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                           <span className="text-xs text-white/40">Distance</span>
                           <span className="font-mono text-sm font-bold" style={{ color: mapData.ema21Bounce.isAbove ? "#00FF88" : "#FF3B5C" }}>
                             {mapData.ema21Bounce.distancePct > 0 ? "+" : ""}{mapData.ema21Bounce.distancePct.toFixed(2)}%
-                            <span className="text-white/30 text-[10px] ml-1">({Math.abs(mapData.ema21Bounce.distanceATR).toFixed(1)} ATR)</span>
+                            <span className="text-[#9CA3AF]/80 text-[10px] ml-1">({Math.abs(mapData.ema21Bounce.distanceATR).toFixed(1)} ATR)</span>
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -2971,7 +3011,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                             <span className="text-xs text-white/40">Bounce success rate</span>
                             <span className="font-mono text-xs" style={{ color: mapData.ema21Bounce.bounceSuccessRate >= 60 ? "#00FF88" : "#FF3B5C" }}>
                               {mapData.ema21Bounce.bounceSuccessRate}%
-                              <span className="text-white/20 ml-1">n={mapData.ema21Bounce.bounceSampleSize}</span>
+                              <span className="text-[#9CA3AF]/60 ml-1">n={mapData.ema21Bounce.bounceSampleSize}</span>
                             </span>
                           </div>
                         )}
@@ -2981,7 +3021,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* RSI Alignment */}
                   {mapData.rsiAlignment && (
-                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">RSI Alignment</span>
                         <span
@@ -3028,7 +3068,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* Bounce Probabilities */}
                   {mapData.bounceProbabilities && (
-                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">Forward Returns</span>
                         <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style={{ backgroundColor: `${accent}15`, color: accent }}>
@@ -3038,7 +3078,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                       <div className="overflow-x-auto">
                         <table className="w-full text-[10px]">
                           <thead>
-                            <tr className="text-white/30 border-b border-white/[0.04]">
+                            <tr className="text-[#9CA3AF]/80 border-b border-white/[0.04]">
                               <th className="text-left py-1 font-medium">Window</th>
                               <th className="text-right py-1 font-medium">Win %</th>
                               <th className="text-right py-1 font-medium">Avg</th>
@@ -3067,7 +3107,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                           </tbody>
                         </table>
                       </div>
-                      <div className="mt-2 flex gap-3 text-[9px] text-white/20">
+                      <div className="mt-2 flex gap-3 text-[9px] text-[#9CA3AF]/60">
                         <span>EMA5: {mapData.bounceProbabilities.ema5Side}</span>
                         {mapData.bounceProbabilities.sma200Side && <span>SMA200: {mapData.bounceProbabilities.sma200Side}</span>}
                       </div>
@@ -3698,7 +3738,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                     {d.newsSentiment.score > 0 ? "+" : ""}{d.newsSentiment.score}
                   </span>
                 </div>
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] divide-y divide-white/[0.04]">
+                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md divide-y divide-white/[0.04]">
                   {d.newsSentiment.headlines.slice(0, 5).map((h, i) => {
                     const dotColor =
                       h.sentiment === "bullish"
@@ -3731,7 +3771,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Fibonacci Levels
                 </h2>
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                     {d.levels.fibonacci.map((fib, i) => {
                       const isBelow = fib.price < currentPrice
@@ -3739,7 +3779,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                       return (
                         <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/[0.04] last:border-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs text-white/30 w-12">{fib.level}</span>
+                            <span className="font-mono text-xs text-[#9CA3AF]/80 w-12">{fib.level}</span>
                             <span className="font-mono text-sm font-semibold tabular-nums" style={{ color: c }}>
                               ${fmt(fib.price, dp)}
                             </span>
@@ -3759,7 +3799,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Key Price Levels
                 </h2>
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                   <div className="relative h-12 mb-4">
                     {(() => {
                       const corePrices = [...d.levels.supports, ...d.levels.resistances, currentPrice]
@@ -3862,28 +3902,28 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                       {d.levels.dailyHigh != null && (
                         <div className="flex items-center gap-2">
                           <ArrowUp className="size-3" style={{ color: accent }} />
-                          <span className="text-[10px] text-white/30">D High</span>
+                          <span className="text-[10px] text-[#9CA3AF]/80">D High</span>
                           <span className="font-mono text-xs" style={{ color: accent }}>${fmt(d.levels.dailyHigh, dp)}</span>
                         </div>
                       )}
                       {d.levels.dailyLow != null && (
                         <div className="flex items-center gap-2">
                           <ArrowDown className="size-3" style={{ color: accent }} />
-                          <span className="text-[10px] text-white/30">D Low</span>
+                          <span className="text-[10px] text-[#9CA3AF]/80">D Low</span>
                           <span className="font-mono text-xs" style={{ color: accent }}>${fmt(d.levels.dailyLow, dp)}</span>
                         </div>
                       )}
                       {d.levels.weeklyHigh != null && (
                         <div className="flex items-center gap-2">
                           <ArrowUp className="size-3 text-[#22D3EE]" />
-                          <span className="text-[10px] text-white/30">W High</span>
+                          <span className="text-[10px] text-[#9CA3AF]/80">W High</span>
                           <span className="font-mono text-xs text-[#22D3EE]">${fmt(d.levels.weeklyHigh, dp)}</span>
                         </div>
                       )}
                       {d.levels.weeklyLow != null && (
                         <div className="flex items-center gap-2">
                           <ArrowDown className="size-3 text-[#22D3EE]" />
-                          <span className="text-[10px] text-white/30">W Low</span>
+                          <span className="text-[10px] text-[#9CA3AF]/80">W Low</span>
                           <span className="font-mono text-xs text-[#22D3EE]">${fmt(d.levels.weeklyLow, dp)}</span>
                         </div>
                       )}
@@ -3903,7 +3943,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   {(() => {
                     const tc = dirColor(d.htf.trend1h)
                     return (
-                      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-semibold text-white/50 uppercase">1H</span>
                           <span
@@ -3928,7 +3968,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   {(() => {
                     const tc = dirColor(d.htf.trend4h)
                     return (
-                      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-semibold text-white/50 uppercase">4H</span>
                           <span
@@ -3953,7 +3993,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   {d.htf.trendDaily != null && d.htf.rsiDaily != null && (() => {
                     const tc = dirColor(d.htf.trendDaily!)
                     return (
-                      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-semibold text-white/50 uppercase">Daily</span>
                           <span
@@ -4009,8 +4049,8 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 </div>
 
                 {historyData.stats.total === 0 ? (
-                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-8 text-center">
-                    <Trophy className="size-8 text-white/20 mx-auto mb-3" />
+                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-8 text-center">
+                    <Trophy className="size-8 text-[#9CA3AF]/60 mx-auto mb-3" />
                     <p className="text-sm text-white/40">
                       No signals tracked yet. Signals with confidence &ge; 55 are automatically logged and tracked.
                     </p>
@@ -4020,7 +4060,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                     {/* Stats bar */}
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
                       {/* Win Rate with ring */}
-                      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 flex flex-col items-center justify-center">
+                      <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4 flex flex-col items-center justify-center">
                         <span className="text-[10px] uppercase tracking-wider text-white/40 mb-2">Win Rate</span>
                         <div className="relative size-16">
                           <svg className="size-16 -rotate-90" viewBox="0 0 36 36">
@@ -4060,11 +4100,11 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                     {/* Recent signals table */}
                     {historyData.signals.length > 0 && (
-                      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden mb-4">
+                      <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md overflow-hidden mb-4">
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead>
-                              <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/30">
+                              <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-[#9CA3AF]/80">
                                 <th className="px-4 py-3 text-left font-medium">Time</th>
                                 <th className="px-4 py-3 text-left font-medium">Symbol</th>
                                 <th className="px-4 py-3 text-left font-medium">Bias</th>
@@ -4142,7 +4182,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                       if (entries.length === 0) return null
                       return (
                         <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/30 mb-2 block">Win Rate by Symbol</span>
+                          <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF]/80 mb-2 block">Win Rate by Symbol</span>
                           <div className="flex flex-wrap gap-2">
                             {entries.map(([sym, st]) => {
                               const wrColor = st.winRate >= 60 ? "#00FF88" : st.winRate < 45 ? "#FF3B5C" : "#F59E0B"
@@ -4155,7 +4195,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                                   <span className="font-mono text-xs font-bold" style={{ color: wrColor }}>
                                     {st.winRate.toFixed(0)}%
                                   </span>
-                                  <span className="text-[10px] text-white/30">
+                                  <span className="text-[10px] text-[#9CA3AF]/80">
                                     {st.wins}W / {st.losses}L
                                   </span>
                                 </div>
@@ -4171,7 +4211,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
             )}
 
             {/* ── 14. Footer ────────────────────────────────────────────── */}
-            <div className="flex items-center justify-between border-t border-white/[0.04] pt-4 text-xs text-white/30">
+            <div className="flex items-center justify-between border-t border-white/[0.04] pt-4 text-xs text-[#9CA3AF]/80">
               <span>{ind?.regime ?? "—"} regime</span>
               <span>Powered by multi-factor signal engine &middot; Auto-refreshes every 30s &middot; Not financial advice</span>
             </div>

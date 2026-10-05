@@ -24,6 +24,14 @@ export interface SignalContext {
   timeframe: string | null;
 }
 
+export interface TpHit {
+  level: 1 | 2 | 3;
+  at: number;
+  price: number;
+}
+
+export type ClosedReason = "stop_before_tp" | "stop_after_tp" | "tp3" | "horizon";
+
 export interface SignalLog {
   id: string;
   symbol: string;
@@ -44,6 +52,17 @@ export interface SignalLog {
   maxAdverse: number | null;
   lastCheckedAt?: number;
   context?: SignalContext;
+  // Ladder tracking (added 2026-10-05). Records without `status` were finalized by the old
+  // first-touch checker and are treated as closed as-is.
+  status?: "open" | "closed";
+  tpHits?: TpHit[];
+  stoppedAt?: number | null;
+  stoppedAfterTp?: 0 | 1 | 2 | 3 | null;
+  closedReason?: ClosedReason | null;
+  realizedR?: number | null;
+  mfeR?: number | null;
+  maeR?: number | null;
+  timeToTp1Min?: number | null;
 }
 
 export interface CalibrationBucket {
@@ -144,6 +163,15 @@ export async function appendSignal(entry: {
     maxAdverse: null,
     lastCheckedAt: entry.timestamp,
     context: entry.context,
+    status: "open",
+    tpHits: [],
+    stoppedAt: null,
+    stoppedAfterTp: null,
+    closedReason: null,
+    realizedR: null,
+    mfeR: null,
+    maeR: null,
+    timeToTp1Min: null,
   };
 
   signals.unshift(log);

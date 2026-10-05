@@ -19,10 +19,11 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
 
+// Bot dashboards (/ascend, /strike) remain live but are intentionally unlinked for now.
 const navItems = [
   { href: "/signals", label: "Signals", icon: Crosshair },
-  { href: "/ascend", label: "Ascend", icon: BarChart3 },
-  { href: "/strike", label: "Strike", icon: TrendingUp },
+  { href: "/signals/strike", label: "Strike Signals", icon: TrendingUp },
+  { href: "/signals/ascend", label: "Ascend Signals", icon: BarChart3 },
   { href: "/hype", label: "Hype", icon: Activity },
   { href: "/projects", label: "Projects", icon: Layers },
   { href: "/proposals", label: "Proposals", icon: Zap },

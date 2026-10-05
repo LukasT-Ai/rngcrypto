@@ -5,6 +5,7 @@ import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import { buildRecommendation } from "./recommendation"
 import { RecommendationCard } from "./RecommendationCard"
 import { MacroAlerts, MacroEventCard, MacroScoreStrip, NextEventsStrip, useMacroState } from "./MacroEventPanel"
+import { THEMES, themeStyle, type SignalsVariant } from "./themes"
 import type { AssetImpact, MacroScores } from "@/lib/macro/types"
 import { motion } from "framer-motion"
 import {
@@ -936,13 +937,16 @@ function GuideModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 // Main Dashboard
 // ---------------------------------------------------------------------------
 
-export default function SignalsDashboard() {
-  const [symbol, setSymbol] = useState("BTC")
+export default function SignalsDashboard({ variant = "signals" }: { variant?: SignalsVariant }) {
+  const theme = THEMES[variant]
+  const tickers = useMemo(() => (theme.tickers ? TICKERS.filter((t) => theme.tickers!.includes(t.symbol)) : TICKERS), [theme.tickers])
+  const allowed = useMemo(() => new Set(tickers.map((t) => t.symbol)), [tickers])
+  const [symbol, setSymbol] = useState(theme.defaultSymbol)
   const [fetchTs, setFetchTs] = useState(Date.now())
   const [guideOpen, setGuideOpen] = useState(false)
   const [showAllGeo, setShowAllGeo] = useState(false)
 
-  const accent = TICKERS.find((t) => t.symbol === symbol)?.color ?? "#F59E0B"
+  const accent = tickers.find((t) => t.symbol === symbol)?.color ?? theme.brand
 
   const { data, isLoading, dataUpdatedAt } = useQuery<SignalsResponse>({
     queryKey: ["signals", symbol],
@@ -961,7 +965,7 @@ export default function SignalsDashboard() {
     if (dataUpdatedAt) setFetchTs(dataUpdatedAt)
   }, [dataUpdatedAt])
 
-  const { data: hotData } = useQuery<HotResponse>({
+  const { data: hotRaw } = useQuery<HotResponse>({
     queryKey: ["signals-hot"],
     queryFn: async () => {
       const res = await fetch("/api/signals/hot")
@@ -996,6 +1000,12 @@ export default function SignalsDashboard() {
 
   const macroQ = useMacroState()
 
+  // Variant pages only surface the tickers they list (hot plays included).
+  const hotData = useMemo<HotResponse | undefined>(
+    () => (hotRaw ? { ...hotRaw, hot: hotRaw.hot.filter((h) => allowed.has(h.symbol)), all: hotRaw.all.filter((h) => allowed.has(h.symbol)) } : undefined),
+    [hotRaw, allowed]
+  )
+
   const d = data
   const call = d?.call
   const ind = d?.indicators
@@ -1024,7 +1034,7 @@ export default function SignalsDashboard() {
   )
 
   return (
-    <div className="min-h-screen bg-[#06080F] pt-24 pb-16">
+    <div className="min-h-screen pt-24 pb-16" style={themeStyle(theme)} data-variant={variant}>
       <GuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
       <div className="mx-auto max-w-7xl px-4 lg:px-8 space-y-6">
 
@@ -1140,7 +1150,7 @@ export default function SignalsDashboard() {
 
         {/* ── Ticker Selector Bar: horizontal snap strip on phones, wrapping grid from sm up ── */}
         <div className="flex flex-nowrap gap-2 overflow-x-auto snap-x snap-mandatory -mx-4 px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible">
-          {TICKERS.map((t) => {
+          {tickers.map((t) => {
             const active = t.symbol === symbol
             const score = hotData?.all?.find((h) => h.symbol === t.symbol)?.confidence ?? null
             const scoreColor = score != null ? (score >= 75 ? "#00FF88" : score >= 55 ? "#F59E0B" : "#FF3B5C") : undefined

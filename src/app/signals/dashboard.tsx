@@ -1045,10 +1045,14 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
         {/* ── Brand band ─────────────────────────────────────────────── */}
         <div
-          className="flex flex-col gap-2 rounded-2xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.55)] px-4 py-3 backdrop-blur-xl sm:flex-row sm:items-center sm:gap-4"
-          style={{ background: "linear-gradient(135deg, color-mix(in srgb, var(--brand) 10%, transparent) 0%, rgb(var(--surface-rgb) / 0.55) 60%)" }}
+          className="relative overflow-hidden flex flex-col gap-2 rounded-2xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.55)] px-4 py-3 backdrop-blur-xl sm:flex-row sm:items-center sm:gap-4"
+          style={{
+            background: "linear-gradient(135deg, color-mix(in srgb, var(--brand) 12%, transparent) 0%, rgb(var(--surface-rgb) / 0.55) 60%)",
+            boxShadow: "0 0 30px rgb(var(--glow-rgb) / 0.12), inset 0 1px 0 rgba(255,255,255,0.06)",
+          }}
         >
-          <div className="flex items-center gap-3">
+          <div aria-hidden className="pointer-events-none absolute -top-16 -right-10 size-56 rounded-full blur-3xl" style={{ backgroundColor: "rgb(var(--glow-rgb) / 0.22)" }} />
+          <div className="relative flex items-center gap-3">
             <span className="relative flex size-2.5">
               <span className="absolute inline-flex size-full animate-ping rounded-full opacity-60" style={{ backgroundColor: "var(--brand)" }} />
               <span className="relative inline-flex size-2.5 rounded-full" style={{ backgroundColor: "var(--brand)" }} />

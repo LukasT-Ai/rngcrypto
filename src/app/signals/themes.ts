@@ -13,6 +13,8 @@ export interface SignalsTheme {
   brand2: string
   // Card/surface base as "r g b" (vendor dark background); layered at 40-60% over the shared page image.
   surfaceRgb: string
+  // Glow color as "r g b". Strike: rgba(78,250,176,.3) drop-shadows; Ascend: blurred #FF8D77 blobs (verified on their sites).
+  glowRgb: string
   // Tickers available on this page (null = all tickers the engine supports).
   tickers: string[] | null
   defaultSymbol: string
@@ -28,6 +30,7 @@ export const RNG_THEME: SignalsTheme = {
   brand: "#00FF88",
   brand2: "#F59E0B",
   surfaceRgb: "10 14 23",
+  glowRgb: "0 255 136",
   tickers: null,
   defaultSymbol: "BTC",
   venueUrl: null,
@@ -49,6 +52,7 @@ export const THEMES: Record<SignalsVariant, SignalsTheme> = {
     brand: "#4EFAB0",
     brand2: "#3AD99A",
     surfaceRgb: "10 10 10",
+    glowRgb: "78 250 176",
     tickers: null,
     defaultSymbol: "BTC",
     venueUrl: "https://app.strikefinance.org",
@@ -65,6 +69,7 @@ export const THEMES: Record<SignalsVariant, SignalsTheme> = {
     brand: "#F35233",
     brand2: "#FF4D00",
     surfaceRgb: "12 11 15",
+    glowRgb: "255 141 119",
     tickers: ["BTC", "GOLD", "ADA", "OIL"],
     defaultSymbol: "BTC",
     venueUrl: "https://ascend.market",
@@ -73,5 +78,5 @@ export const THEMES: Record<SignalsVariant, SignalsTheme> = {
 }
 
 export function themeStyle(t: SignalsTheme): CSSProperties {
-  return { ["--brand" as string]: t.brand, ["--brand-2" as string]: t.brand2, ["--surface-rgb" as string]: t.surfaceRgb } as CSSProperties
+  return { ["--brand" as string]: t.brand, ["--brand-2" as string]: t.brand2, ["--surface-rgb" as string]: t.surfaceRgb, ["--glow-rgb" as string]: t.glowRgb } as CSSProperties
 }

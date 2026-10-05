@@ -1,51 +1,38 @@
-import { NextRequest, NextResponse } from "next/server"
-import { rateLimit } from "@/lib/rate-limit"
+import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rate-limit";
+import { getMacroState, MACRO_WEIGHTS } from "@/lib/macro/service";
+import { filterAlerts, type AlertFilter } from "@/lib/macro/alerts";
+import type { MacroAsset } from "@/lib/macro/types";
 
-const cache = new Map<string, { data: unknown; timestamp: number }>()
-const CACHE_TTL = 3600_000 // 1 hour
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const blocked = rateLimit(req, 60)
-  if (blocked) return blocked
+  const blocked = rateLimit(req, 60);
+  if (blocked) return blocked;
 
-  const seriesId = req.nextUrl.searchParams.get("series") ?? "FEDFUNDS"
-  const limit = req.nextUrl.searchParams.get("limit") ?? "252"
+  const sp = req.nextUrl.searchParams;
+  const state = await getMacroState();
 
-  const cacheKey = `${seriesId}-${limit}`
-  const cached = cache.get(cacheKey)
+  const f: AlertFilter = {};
+  const assets = sp.get("assets");
+  if (assets) f.assets = assets.split(",").filter((a): a is MacroAsset => ["BTC", "GOLD", "WTI"].includes(a));
+  const kinds = sp.get("kinds");
+  if (kinds) f.kinds = kinds.split(",") as AlertFilter["kinds"];
+  const minImp = sp.get("minImportance");
+  if (minImp) f.minImportance = minImp as AlertFilter["minImportance"];
+  const dirs = sp.get("directions");
+  if (dirs) f.directions = dirs.split(",") as AlertFilter["directions"];
+  const minConf = sp.get("minConfidence");
+  if (minConf) f.minConfidence = minConf as AlertFilter["minConfidence"];
 
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return NextResponse.json(cached.data, {
-      headers: { "X-Cache": "HIT", "Cache-Control": "public, s-maxage=3600" },
-    })
-  }
+  const body = {
+    ...state,
+    alerts: filterAlerts(state.alerts, f),
+    weights: MACRO_WEIGHTS,
+    serverTime: new Date().toISOString(),
+  };
 
-  try {
-    const apiKey = process.env.FRED_API_KEY ?? "DEMO_KEY"
-    const res = await fetch(
-      `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=${limit}`,
-      { next: { revalidate: 3600 } }
-    )
-
-    if (!res.ok) {
-      return NextResponse.json({ error: "FRED API error" }, { status: res.status })
-    }
-
-    const json = await res.json()
-    const data = (json.observations ?? [])
-      .filter((o: { value: string }) => o.value !== ".")
-      .reverse()
-      .map((o: { date: string; value: string }) => ({
-        date: o.date,
-        value: parseFloat(o.value),
-      }))
-
-    cache.set(cacheKey, { data, timestamp: Date.now() })
-
-    return NextResponse.json(data, {
-      headers: { "X-Cache": "MISS", "Cache-Control": "public, s-maxage=3600" },
-    })
-  } catch (err) {
-    return NextResponse.json({ error: "Failed to fetch FRED data" }, { status: 500 })
-  }
+  return NextResponse.json(body, {
+    headers: { "Cache-Control": "no-store", "X-Data-Age-Ms": String(state.market.dataAgeMs ?? "") },
+  });
 }

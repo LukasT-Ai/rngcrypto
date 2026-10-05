@@ -20,6 +20,7 @@ export type SectionId =
   | "sec-setups"
   | "sec-tf-alignment"
   | "sec-chart"
+  | "sec-macro"
 
 export type Tone = "pos" | "neg" | "neutral"
 
@@ -243,6 +244,35 @@ export function buildRecommendation(
       weight: a.allAligned ? 16 : 8,
     })
   }
+  // Macro Event Intelligence: scheduled releases, their verified surprise and whether the market confirms.
+  const mac = d.macroEvent
+  if (mac) {
+    const act = mac.active
+    if (act?.impact && act.secondsToRelease <= 0 && act.releaseStatus === "verified") {
+      const i = act.impact
+      const dir = i.direction === "bullish" ? 1 : i.direction === "bearish" ? -1 : 0
+      const conf = act.confirmation
+      const confTxt = conf && conf.pct != null ? `; market ${conf.status} (${conf.pct}%)` : conf ? `; market ${conf.status}` : ""
+      reasons.push({
+        text: `${act.title}: ${act.surpriseLabel?.split(" (")[0] ?? "released"} → ${i.direction} for ${mac.asset} (${i.confidence} confidence)${confTxt}`,
+        anchor: "sec-macro",
+        tone: conf?.status === "reversing" ? "neg" : tone(dir),
+        weight: 18 + (conf?.status === "confirmed" ? 6 : 0),
+      })
+    } else if (act && act.secondsToRelease <= 0 && act.releaseStatus && act.releaseStatus !== "verified") {
+      reasons.push({ text: `${act.title} released — awaiting verified data before scoring`, anchor: "sec-macro", tone: "neutral", weight: 12 })
+    }
+    if (mac.scores.macro !== 0 || mac.scores.event !== 0) {
+      const v = mac.scores.event !== 0 ? mac.scores.event : mac.scores.macro
+      reasons.push({
+        text: `Macro backdrop ${mac.scores.macro > 10 ? "supportive" : mac.scores.macro < -10 ? "a headwind" : "neutral"} (${mac.scores.macro > 0 ? "+" : ""}${mac.scores.macro}); event score ${mac.scores.event > 0 ? "+" : ""}${mac.scores.event}, confirmation ${mac.scores.confirmation > 0 ? "+" : ""}${mac.scores.confirmation}`,
+        anchor: "sec-macro",
+        tone: tone(v > 10 ? 1 : v < -10 ? -1 : 0),
+        weight: 10,
+      })
+    }
+  }
+
   const ant = d.anticipatory
   const imminent = ant?.approachingLevels.find((l) => l.tier === "IMMINENT") ?? null
   const structure = ant?.structureSignals[0] ?? null
@@ -285,6 +315,15 @@ export function buildRecommendation(
   }
   if (call.geoOverride && action !== "WAIT") {
     butWatch.unshift({ text: call.geoOverride, anchor: "sec-geo", tone: "neg", weight: 25 })
+  }
+  if (d.macroEvent?.preEventRisk) {
+    const p = d.macroEvent.preEventRisk
+    butWatch.unshift({
+      text: `${p.title} in ${p.minutes} min (${p.importance} impact) — volatility may spike; technical confidence reduced until the print`,
+      anchor: "sec-macro",
+      tone: "neg",
+      weight: 30,
+    })
   }
   if (call.catalystRisk && !butWatch.some((r) => r.anchor === "sec-calendar")) {
     butWatch.push({ text: `Event risk: ${call.catalystRisk}`, anchor: "sec-calendar", tone: "neg", weight: 12 })

@@ -4,6 +4,8 @@ import { appendSignal } from "./history/logger";
 import { computeCatalystScore, getNextOilEvent, getUpcomingEvents } from "@/lib/economic-calendar";
 import { getNewsSentiment, type NewsSentimentResult } from "@/lib/news-sentiment";
 import { getCatalystNews, isCatalystAsset, type OilGeoResult } from "@/lib/oil-geopolitical-news";
+import { getMacroScores, macroAssetFor } from "@/lib/macro/service";
+import type { MacroScores, MacroState as MacroEventIntel } from "@/lib/macro/types";
 
 export const dynamic = "force-dynamic";
 
@@ -2745,6 +2747,8 @@ function computeMultiFactorCall(
     newsSentimentScore: number | null;
     oilGeoScore: number | null;
     oilGeoRegime: "calm" | "elevated" | "extreme" | "whipsaw" | null;
+    macroScores: MacroScores | null;
+    preEventRisk: MacroEventIntel["preEventRisk"];
     catalystScore: number;
     catalystRiskNote: string | null;
     tradeATR: number;
@@ -2802,6 +2806,8 @@ function computeMultiFactorCall(
     newsSentimentScore,
     oilGeoScore,
     oilGeoRegime,
+    macroScores,
+    preEventRisk,
     catalystScore: extCatalystScore,
     catalystRiskNote,
     tradeATR,
@@ -2833,6 +2839,9 @@ function computeMultiFactorCall(
     etf: 0.05,
     catalyst: 0.02,
     liquidation: 0.05,
+    macro: 0,
+    event: 0,
+    confirmation: 0,
   };
 
   if (!isCrypto) {
@@ -2872,6 +2881,14 @@ function computeMultiFactorCall(
     weights.sentiment = 0.14;
     weights.marketStructure = 0.13;
     weights.momentum = 0.11;
+  }
+
+  // Macro Event Intelligence (BTC / GOLD / OIL): weights are configured in lib/macro/service.ts and the
+  // event weight is boosted right after a release, decaying back to base over four hours.
+  if (macroScores) {
+    weights.macro = macroScores.weights.macro;
+    weights.event = macroScores.weights.event;
+    weights.confirmation = macroScores.weights.confirmation;
   }
 
   const ms = scoreMarketStructure(
@@ -2928,11 +2945,21 @@ function computeMultiFactorCall(
       pats.score * weights.patterns +
       etfScore.score * weights.etf +
       catalyst.score * weights.catalyst +
-      liq.score * weights.liquidation) /
+      liq.score * weights.liquidation +
+      (macroScores?.macro ?? 0) * weights.macro +
+      (macroScores?.event ?? 0) * weights.event +
+      (macroScores?.confirmation ?? 0) * weights.confirmation) /
     weightSum;
 
   const whipsawPenalty = oilGeoRegime === "whipsaw" ? -8 : 0;
   let confidence = clamp(Math.round(50 + weightedScore / 2 + whipsawPenalty), 0, 100);
+
+  // Scheduled-release risk: a high/critical print inside 15 minutes caps conviction and is flagged explicitly.
+  let preEventNote: string | null = null;
+  if (preEventRisk) {
+    confidence = Math.min(Math.round(confidence * 0.85), 69);
+    preEventNote = `${preEventRisk.event.title} in ${preEventRisk.minutes}m — volatility risk, technical confidence reduced`;
+  }
 
   const regime =
     adx > 25 ? "trending" : adx < 20 ? "ranging" : "transitional";
@@ -3060,6 +3087,15 @@ function computeMultiFactorCall(
                 : "Strong Bearish",
       weight: Math.round(weights.sentiment * 100),
     });
+  }
+
+  if (macroScores) {
+    const label = (v: number) => (v >= 40 ? "Strong Bullish" : v > 10 ? "Bullish" : v > -10 ? "Neutral" : v > -40 ? "Bearish" : "Strong Bearish");
+    signalFactors.push(
+      { category: "Macro", assessment: label(macroScores.macro), weight: Math.round(weights.macro * 100) },
+      { category: "Event", assessment: label(macroScores.event), weight: Math.round(weights.event * 100) },
+      { category: "Market Confirmation", assessment: label(macroScores.confirmation), weight: Math.round(weights.confirmation * 100) }
+    );
   }
 
   signalFactors.push(
@@ -3391,7 +3427,7 @@ function computeMultiFactorCall(
     bearCase: bearCase.slice(0, 3),
     confirms: confirms.slice(0, 3),
     invalidates: invalidates.slice(0, 3),
-    catalystRisk: catalyst.note,
+    catalystRisk: [catalyst.note, preEventNote].filter(Boolean).join("; ") || null,
     liqSqueezeRisk: liq.squeezeRisk,
     signalFactors,
     geoOverride,
@@ -3901,6 +3937,8 @@ export async function GET(req: NextRequest) {
           ? "crypto"
           : "stock";
   const catalystData = await computeCatalystScore(symbol, assetClass);
+  const macroAsset = macroAssetFor(symbol);
+  const macroInfo = macroAsset ? await getMacroScores(macroAsset).catch(() => null) : null;
   const nextOilEvent =
     symbol === "OIL"
       ? await getNextOilEvent()
@@ -3956,6 +3994,8 @@ export async function GET(req: NextRequest) {
       newsSentimentScore: newsSentimentData?.score ?? null,
       oilGeoScore: oilGeoData?.score ?? null,
       oilGeoRegime,
+      macroScores: macroInfo?.scores ?? null,
+      preEventRisk: macroInfo?.preEventRisk ?? null,
       catalystScore: catalystData.score,
       catalystRiskNote: catalystData.catalystRisk,
       tradeATR,
@@ -4287,6 +4327,30 @@ export async function GET(req: NextRequest) {
           headlines: newsSentimentData.headlines
             .slice(0, 5)
             .map((h) => ({ title: h.title, sentiment: h.sentiment })),
+        }
+      : null,
+    macroEvent: macroInfo && macroAsset
+      ? {
+          asset: macroAsset,
+          scores: macroInfo.scores,
+          preEventRisk: macroInfo.preEventRisk
+            ? { title: macroInfo.preEventRisk.event.title, time: macroInfo.preEventRisk.event.time, minutes: macroInfo.preEventRisk.minutes, importance: macroInfo.preEventRisk.importance }
+            : null,
+          active: macroInfo.active
+            ? {
+                id: macroInfo.active.event.id,
+                title: macroInfo.active.event.title,
+                time: macroInfo.active.event.time,
+                phase: macroInfo.active.phase,
+                secondsToRelease: macroInfo.active.secondsToRelease,
+                releaseStatus: macroInfo.active.release?.status ?? null,
+                surpriseLabel: macroInfo.active.surprise?.label ?? null,
+                impact: (macroInfo.active.postImpact ?? macroInfo.active.preMap).find((i) => i.asset === macroAsset) ?? null,
+                confirmation: macroInfo.active.confirmation
+                  ? { status: macroInfo.active.confirmation.perAsset[macroAsset].status, pct: macroInfo.active.confirmation.pct, note: macroInfo.active.confirmation.perAsset[macroAsset].note }
+                  : null,
+              }
+            : null,
         }
       : null,
     oilGeopolitical: oilGeoData

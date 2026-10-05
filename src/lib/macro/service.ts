@@ -1,0 +1,359 @@
+import type { Alert, EventPhase, EventState, Importance, MacroAsset, MacroRegime, MacroScores, MacroState, MarketSnapshot, ReactionPoint, ScheduledEvent, SnapshotKey, StoredRelease } from "./types";
+import { MACRO_ASSETS, REACTION_SCHEDULE, SNAPSHOT_KEYS } from "./types";
+import { defFor, getMacroEvents } from "./calendar";
+import { fetchRelease, latestCpiYoY, sourceStatus } from "./releases";
+import { computeSurprise } from "./surprise";
+import { impactForSurprise, preReleaseMap, transmission } from "./impact";
+import { evaluateConfirmation } from "./confirmation";
+import { classifyRegime } from "./regime";
+import { fiveDayChanges, getSnapshot, priceAt, setMarketTtl } from "./market";
+import { bestHistoricalStats, findRelease, rollingSurpriseSD, upsertRelease } from "./history";
+import { deriveAlerts } from "./alerts";
+
+// Configurable blend (also surfaced in the API so the UI can show it).
+export const MACRO_WEIGHTS = {
+  macroBase: 0.08,
+  eventBase: 0.12,
+  confirmationBase: 0.08,
+  eventBoostMultiplier: 2.0,
+  eventBoostMinutes: 30,
+  eventDecayMinutes: 240,
+  eventHalfLifeMinutes: 120,
+};
+
+const WINDOW_BEFORE = 2 * 3600e3;
+const WINDOW_AFTER = 4 * 3600e3;
+const RECENT_KEEP = 24 * 3600e3;
+const VERIFY_FOR = 45 * 60e3;
+
+const rank: Record<Importance, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+
+interface Runtime {
+  states: Map<string, EventState>;
+  lastVerifyAttempt: Map<string, number>;
+  regime: MacroRegime | null;
+  regimeAt: number;
+  snapshot: MarketSnapshot | null;
+  alerts: Alert[];
+  lastTick: number;
+  ticking: boolean;
+  stateCache: { state: MacroState; at: number } | null;
+}
+
+const rt: Runtime = {
+  states: new Map(),
+  lastVerifyAttempt: new Map(),
+  regime: null,
+  regimeAt: 0,
+  snapshot: null,
+  alerts: [],
+  lastTick: 0,
+  ticking: false,
+  stateCache: null,
+};
+
+function phaseFor(secondsToRelease: number, s: EventState | null): EventPhase {
+  if (secondsToRelease > 15 * 60) return "upcoming";
+  if (secondsToRelease > 60) return "imminent";
+  if (secondsToRelease > -90) return "releasing";
+  const age = -secondsToRelease;
+  if (age > WINDOW_AFTER / 1000) return "settled";
+  if (s?.release?.status === "verified" && s.reactions.length > 0) return "confirming";
+  return "released";
+}
+
+async function ensureRegime(): Promise<MacroRegime> {
+  if (rt.regime && Date.now() - rt.regimeAt < 5 * 60e3) return rt.regime;
+  const [snap, chg, cpi] = await Promise.all([getSnapshot(), fiveDayChanges(), latestCpiYoY()]);
+  rt.snapshot = snap;
+  rt.regime = classifyRegime({
+    us2y: snap.prices.us2y,
+    us10y: snap.prices.us10y,
+    us2yChg5d: chg.us2y,
+    dxy: snap.prices.dxy,
+    dxyChg5d: chg.dxy,
+    vix: snap.prices.vix,
+    spxChg5d: chg.spx,
+    cpiYoY: cpi,
+  });
+  rt.regimeAt = Date.now();
+  return rt.regime;
+}
+
+function newState(event: ScheduledEvent, regime: MacroRegime, now: number): EventState {
+  const def = defFor(event.defId);
+  const stored = findRelease(event.id);
+  const st: EventState = {
+    event,
+    def,
+    phase: "upcoming",
+    secondsToRelease: Math.round((new Date(event.time).getTime() - now) / 1000),
+    preMap: preReleaseMap(def, regime),
+    release: null,
+    surprise: null,
+    postImpact: null,
+    confirmation: null,
+    reactions: stored?.reactions ?? [],
+    releaseSnapshot: stored?.releaseSnapshot ?? null,
+    historical: null,
+    dataAgeMs: null,
+    alerts: [],
+  };
+  // Rehydrate a verified release after a restart so reactions keep accumulating.
+  if (stored?.actual != null) {
+    st.release = {
+      eventId: event.id,
+      status: "verified",
+      actual: { value: stored.actual, raw: String(stored.actual), period: "", revisionStatus: "unknown", provider: def.source.provider, series: def.source.series ?? "", sourceTimestamp: null, retrievedAt: stored.recordedAt, priorRevised: null },
+      candidates: [],
+      note: "Rehydrated from stored release",
+      checkedAt: stored.recordedAt,
+    };
+    st.surprise = computeSurprise(def, stored.actual, event.forecast ?? stored.forecast, event.previous ?? stored.previous, rollingSurpriseSD(def.id));
+    st.postImpact = impactForSurprise(def, st.surprise.score, st.surprise.magnitude, regime);
+  }
+  return st;
+}
+
+function pctChange(key: SnapshotKey, from: number | null, to: number | null): number | null {
+  if (from == null || to == null || from === 0) return null;
+  if (key === "us2y" || key === "us10y") return Math.round((to - from) * 1000) / 1000;
+  return Math.round(((to - from) / from) * 10000) / 100;
+}
+
+async function snapshotAt(tsMs: number): Promise<MarketSnapshot> {
+  const prices = {} as Record<SnapshotKey, number | null>;
+  for (const k of SNAPSHOT_KEYS) prices[k] = await priceAt(k, tsMs);
+  return { at: new Date(tsMs).toISOString(), prices, dataAgeMs: null };
+}
+
+function persist(st: EventState, regime: MacroRegime) {
+  const rec: StoredRelease = {
+    id: st.event.id,
+    defId: st.def.id,
+    eventTime: st.event.time,
+    forecast: st.event.forecast,
+    previous: st.event.previous,
+    actual: st.release?.actual?.value ?? null,
+    surpriseScore: st.surprise?.score ?? null,
+    magnitude: st.surprise?.magnitude ?? "inline",
+    regime: { inflationFocus: regime.inflationFocus, policyBias: regime.policyBias, risk: regime.risk },
+    releaseSnapshot: st.releaseSnapshot,
+    reactions: st.reactions,
+    confirmation: st.confirmation?.status ?? null,
+    recordedAt: new Date().toISOString(),
+  };
+  upsertRelease(rec);
+}
+
+async function advance(st: EventState, regime: MacroRegime, now: number): Promise<void> {
+  const t0 = new Date(st.event.time).getTime();
+  st.secondsToRelease = Math.round((t0 - now) / 1000);
+  st.phase = phaseFor(st.secondsToRelease, st);
+  if (now < t0) return;
+
+  // 1) Verify the actual number (poll fast for the first minutes, then back off).
+  const age = now - t0;
+  if (st.release?.status !== "verified" && st.release?.status !== "unavailable" && age < VERIFY_FOR) {
+    const last = rt.lastVerifyAttempt.get(st.event.id) ?? 0;
+    const interval = age < 10 * 60e3 ? 10_000 : 60_000;
+    if (now - last >= interval) {
+      rt.lastVerifyAttempt.set(st.event.id, now);
+      const rel = await fetchRelease(st.def, st.event);
+      st.release = rel;
+      if (rel.status === "verified" && rel.actual) {
+        st.surprise = computeSurprise(st.def, rel.actual.value, st.event.forecast, st.event.previous, rollingSurpriseSD(st.def.id));
+        st.postImpact = impactForSurprise(st.def, st.surprise.score, st.surprise.magnitude, regime, rel.actual.components);
+        st.historical = bestHistoricalStats(st.def.id, st.surprise.score, regime);
+        if (!st.releaseSnapshot) st.releaseSnapshot = await snapshotAt(t0);
+        persist(st, regime);
+      }
+    }
+  } else if (st.release == null && age >= VERIFY_FOR) {
+    st.release = await fetchRelease(st.def, st.event);
+  }
+
+  // 2) Reaction samples on the schedule (also for text events, where the market IS the data).
+  if (!st.releaseSnapshot && age >= 30_000) st.releaseSnapshot = await snapshotAt(t0);
+  if (st.releaseSnapshot) {
+    const live = rt.snapshot ?? (await getSnapshot());
+    for (const sched of REACTION_SCHEDULE) {
+      if (age < sched.afterMs) continue;
+      if (st.reactions.some((r) => r.label === sched.label)) continue;
+      // Late (after restart): reconstruct from intraday series; otherwise use the live snapshot.
+      const lateBy = age - sched.afterMs;
+      const useLive = lateBy < 60_000;
+      const target = useLive ? live : await snapshotAt(t0 + sched.afterMs);
+      const changes = {} as Record<SnapshotKey, number | null>;
+      for (const k of SNAPSHOT_KEYS) changes[k] = pctChange(k, st.releaseSnapshot.prices[k], target.prices[k]);
+      st.reactions.push({ label: sched.label, at: new Date(t0 + sched.afterMs).toISOString(), changesPct: changes });
+      persist(st, regime);
+    }
+    st.dataAgeMs = live.dataAgeMs;
+  }
+
+  // 3) Confirmation (needs a directional expectation; for text events use the observed rates/dollar read).
+  if (st.reactions.length > 0) {
+    const s = st.surprise?.score ?? null;
+    const trans = transmission(st.def, s, regime, st.release?.actual?.components);
+    const impacts = st.postImpact ?? impactForSurprise(st.def, s, st.surprise?.magnitude ?? null, regime);
+    st.confirmation = evaluateConfirmation(trans, impacts, st.reactions);
+    if (st.release?.status === "verified") persist(st, regime);
+  }
+}
+
+function decayWeight(ageMin: number | null): number {
+  const w = MACRO_WEIGHTS;
+  if (ageMin == null) return w.eventBase;
+  if (ageMin <= w.eventBoostMinutes) return w.eventBase * w.eventBoostMultiplier;
+  if (ageMin >= w.eventDecayMinutes) return w.eventBase;
+  const f = (ageMin - w.eventBoostMinutes) / (w.eventDecayMinutes - w.eventBoostMinutes);
+  return w.eventBase * (w.eventBoostMultiplier - f * (w.eventBoostMultiplier - 1));
+}
+
+function scoresFor(asset: MacroAsset, regime: MacroRegime, states: EventState[], now: number): MacroScores {
+  // Macro: slow regime lean.
+  let macro = 0;
+  if (regime.policyBias === "easing") macro += asset === "WTI" ? 5 : 20;
+  if (regime.policyBias === "tightening") macro -= asset === "WTI" ? 5 : 20;
+  if (regime.risk === "off") macro += asset === "BTC" ? -20 : asset === "GOLD" ? 10 : -10;
+  if (regime.risk === "on") macro += asset === "BTC" ? 10 : 0;
+  if (regime.inflationFocus === "high") macro += asset === "GOLD" ? 10 : asset === "BTC" ? -5 : 5;
+
+  // Event: verified releases in the last 6h, half-life 2h, weighted by importance.
+  let eventSum = 0;
+  let eventW = 0;
+  let youngest: number | null = null;
+  let confirmation = 0;
+  let confW = 0;
+  for (const s of states) {
+    if (!s.postImpact || s.release?.status !== "verified") continue;
+    const ageMin = (now - new Date(s.event.time).getTime()) / 60e3;
+    if (ageMin > 360 || ageMin < 0) continue;
+    const imp = s.postImpact.find((i) => i.asset === asset);
+    if (!imp) continue;
+    const decay = Math.pow(0.5, ageMin / MACRO_WEIGHTS.eventHalfLifeMinutes);
+    const w = (1 + rank[s.event.importance]) * decay;
+    eventSum += imp.score * w;
+    eventW += w;
+    if (youngest == null || ageMin < youngest) youngest = ageMin;
+    if (s.confirmation && s.confirmation.pct != null) {
+      const pa = s.confirmation.perAsset[asset];
+      const sign = imp.direction === "bullish" ? 1 : imp.direction === "bearish" ? -1 : 0;
+      let c = (s.confirmation.pct - 50) * 2 * sign;
+      if (pa.status === "reversing") c = -Math.abs(c) || -40;
+      if (pa.status === "fading") c *= 0.3;
+      confirmation += c * w;
+      confW += w;
+    }
+  }
+  const event = eventW ? Math.round(eventSum / eventW) : 0;
+  const conf = confW ? Math.round(confirmation / confW) : 0;
+  const ew = decayWeight(youngest);
+  return {
+    macro: Math.round(macro),
+    event,
+    confirmation: conf,
+    weights: { macro: MACRO_WEIGHTS.macroBase, event: Math.round(ew * 1000) / 1000, confirmation: MACRO_WEIGHTS.confirmationBase },
+    eventAgeMinutes: youngest == null ? null : Math.round(youngest),
+    note: youngest == null ? "No verified release in the last 6h; event weight at base" : youngest <= MACRO_WEIGHTS.eventBoostMinutes ? "Fresh release: event weight boosted" : "Event weight decaying toward base",
+  };
+}
+
+export async function tick(): Promise<void> {
+  if (rt.ticking) return;
+  rt.ticking = true;
+  try {
+    const now = Date.now();
+    const regime = await ensureRegime();
+    const events = await getMacroEvents(now - RECENT_KEEP, now + 7 * 86400e3);
+
+    // Faster market polling while anything is in its release window.
+    const hot = events.some((e) => {
+      const dt = new Date(e.time).getTime() - now;
+      return dt < 2 * 60e3 && dt > -20 * 60e3 && rank[e.importance] >= rank.high;
+    });
+    setMarketTtl(hot ? 8_000 : 30_000);
+    rt.snapshot = await getSnapshot();
+
+    for (const e of events) {
+      const dt = new Date(e.time).getTime() - now;
+      if (dt > WINDOW_BEFORE || dt < -RECENT_KEEP) continue;
+      let st = rt.states.get(e.id);
+      if (!st) {
+        st = newState(e, regime, now);
+        rt.states.set(e.id, st);
+      } else {
+        st.event = { ...e, forecast: e.forecast ?? st.event.forecast, previous: e.previous ?? st.event.previous };
+      }
+      await advance(st, regime, now);
+    }
+    for (const [id, st] of rt.states) {
+      if (now - new Date(st.event.time).getTime() > RECENT_KEEP) rt.states.delete(id);
+    }
+
+    const fresh = deriveAlerts([...rt.states.values()], now);
+    rt.alerts = [...fresh, ...rt.alerts].slice(0, 100);
+    rt.lastTick = now;
+    rt.stateCache = null;
+  } finally {
+    rt.ticking = false;
+  }
+}
+
+export async function getMacroState(): Promise<MacroState> {
+  if (rt.stateCache && Date.now() - rt.stateCache.at < 5_000) return rt.stateCache.state;
+  if (Date.now() - rt.lastTick > 20_000) await tick();
+  const now = Date.now();
+  const regime = rt.regime ?? (await ensureRegime());
+  const market = rt.snapshot ?? (await getSnapshot());
+  const all = [...rt.states.values()];
+  for (const s of all) {
+    s.secondsToRelease = Math.round((new Date(s.event.time).getTime() - now) / 1000);
+    s.phase = phaseFor(s.secondsToRelease, s);
+  }
+
+  const upcomingAll = await getMacroEvents(now, now + 7 * 86400e3);
+  const upcoming = upcomingAll.filter((e) => rank[e.importance] >= rank.medium).slice(0, 12);
+
+  // Active = what the trader should be looking at right now.
+  const candidates = all.filter((s) => s.secondsToRelease <= WINDOW_BEFORE / 1000 && s.secondsToRelease >= -WINDOW_AFTER / 1000 && rank[s.event.importance] >= rank.medium);
+  const phaseRank: Record<EventPhase, number> = { releasing: 5, confirming: 4, released: 4, imminent: 3, upcoming: 1, settled: 0 };
+  candidates.sort((a, b) => phaseRank[b.phase] - phaseRank[a.phase] || rank[b.event.importance] - rank[a.event.importance] || Math.abs(a.secondsToRelease) - Math.abs(b.secondsToRelease));
+  const active = candidates[0] ?? null;
+  const recent = all.filter((s) => s !== active && s.secondsToRelease < 0 && rank[s.event.importance] >= rank.medium).sort((a, b) => b.secondsToRelease - a.secondsToRelease).slice(0, 6);
+
+  const scores = Object.fromEntries(MACRO_ASSETS.map((a) => [a, scoresFor(a, regime, all, now)])) as Record<MacroAsset, MacroScores>;
+  const nextBig = upcomingAll.find((e) => rank[e.importance] >= rank.high && new Date(e.time).getTime() - now <= 15 * 60e3);
+  const preEventRisk = nextBig ? { event: nextBig, minutes: Math.max(0, Math.round((new Date(nextBig.time).getTime() - now) / 60e3)), importance: nextBig.importance } : null;
+
+  const state: MacroState = {
+    asOf: new Date(now).toISOString(),
+    regime,
+    market,
+    upcoming,
+    active,
+    recent,
+    scores,
+    alerts: rt.alerts.slice(0, 30),
+    preEventRisk,
+    sources: sourceStatus(),
+  };
+  rt.stateCache = { state, at: now };
+  return state;
+}
+
+// Lightweight accessor for the signal engine (avoids blocking a signal request on network if a tick is recent).
+export async function getMacroScores(asset: MacroAsset): Promise<{ scores: MacroScores; preEventRisk: MacroState["preEventRisk"]; active: EventState | null }> {
+  const s = await getMacroState();
+  return { scores: s.scores[asset], preEventRisk: s.preEventRisk, active: s.active };
+}
+
+export function macroAssetFor(symbol: string): MacroAsset | null {
+  if (symbol === "BTC") return "BTC";
+  if (symbol === "GOLD") return "GOLD";
+  if (symbol === "OIL") return "WTI";
+  return null;
+}
+
+export type { ReactionPoint };

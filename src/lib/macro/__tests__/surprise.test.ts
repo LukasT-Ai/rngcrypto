@@ -1,0 +1,45 @@
+import { describe, expect, it } from "vitest";
+import { computeSurprise, magnitudeFromZ, scoreFromZ } from "../surprise";
+import { EVENT_DEFS } from "../taxonomy";
+
+const def = (id: string) => EVENT_DEFS.find((d) => d.id === id)!;
+
+describe("surprise engine", () => {
+  it("scores a 3-tenths cooler CPI as a large negative economic surprise", () => {
+    const s = computeSurprise(def("cpi_mom"), 0.0, 0.3, 0.2);
+    expect(s.delta).toBeCloseTo(-0.3);
+    expect(s.zScore).toBeCloseTo(-3);
+    expect(s.magnitude).toBe("extreme");
+    expect(s.score).toBeLessThan(-80);
+    expect(s.label).toMatch(/cooler than expected/i);
+  });
+  it("treats an in-line print as inline with score near zero", () => {
+    const s = computeSurprise(def("nfp"), 190, 185, 150);
+    expect(s.magnitude).toBe("inline");
+    expect(Math.abs(s.score ?? 99)).toBeLessThan(10);
+    expect(s.vsPrevious).toBe(40);
+  });
+  it("uses oil vocabulary and sign for inventories", () => {
+    const s = computeSurprise(def("eia_crude"), -7.2, -2.1, 1.4);
+    expect(s.delta).toBeCloseTo(-5.1);
+    expect(s.label).toMatch(/bigger draw than expected/i);
+    expect(s.magnitude).toBe("large");
+  });
+  it("never invents a surprise when actual or consensus is missing", () => {
+    expect(computeSurprise(def("cpi_mom"), null, 0.3, 0.2).score).toBeNull();
+    expect(computeSurprise(def("cpi_mom"), 0.3, null, 0.2).score).toBeNull();
+    expect(computeSurprise(def("cpi_mom"), null, 0.3, 0.2).label).toMatch(/awaiting/i);
+  });
+  it("honours a rolling SD override", () => {
+    const prior = computeSurprise(def("cpi_mom"), 0.5, 0.3, 0.2);
+    const wide = computeSurprise(def("cpi_mom"), 0.5, 0.3, 0.2, 0.4);
+    expect(Math.abs(wide.zScore!)).toBeLessThan(Math.abs(prior.zScore!));
+  });
+  it("saturates the score smoothly", () => {
+    expect(scoreFromZ(0)).toBe(0);
+    expect(scoreFromZ(10)).toBeLessThanOrEqual(100);
+    expect(scoreFromZ(-10)).toBeGreaterThanOrEqual(-100);
+    expect(magnitudeFromZ(0.3)).toBe("inline");
+    expect(magnitudeFromZ(2)).toBe("large");
+  });
+});

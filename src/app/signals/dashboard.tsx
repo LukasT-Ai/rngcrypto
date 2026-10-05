@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo } from "react"
 import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import { buildRecommendation } from "./recommendation"
 import { RecommendationCard } from "./RecommendationCard"
+import { MacroAlerts, MacroEventCard, MacroScoreStrip, NextEventsStrip, useMacroState } from "./MacroEventPanel"
+import type { AssetImpact, MacroScores } from "@/lib/macro/types"
 import { motion } from "framer-motion"
 import {
   TrendingUp,
@@ -318,6 +320,22 @@ export interface SignalsResponse {
     headlines: { title: string; sentiment: string }[]
   } | null
   oilGeopolitical?: OilGeo | null
+  macroEvent?: {
+    asset: "BTC" | "GOLD" | "WTI"
+    scores: MacroScores
+    preEventRisk: { title: string; time: string; minutes: number; importance: string } | null
+    active: {
+      id: string
+      title: string
+      time: string
+      phase: string
+      secondsToRelease: number
+      releaseStatus: string | null
+      surpriseLabel: string | null
+      impact: AssetImpact | null
+      confirmation: { status: string; pct: number | null; note: string } | null
+    } | null
+  } | null
   oilForecast?: {
     horizonHours: number
     scenarios: {
@@ -976,6 +994,8 @@ export default function SignalsDashboard() {
     refetchInterval: 60_000,
   })
 
+  const macroQ = useMacroState()
+
   const d = data
   const call = d?.call
   const ind = d?.indicators
@@ -1149,6 +1169,10 @@ export default function SignalsDashboard() {
           <SkeletonContent />
         ) : (
           <>
+            {/* ── 0b. Macro event strip + fresh alerts ─────────────────── */}
+            <NextEventsStrip events={macroQ.data?.upcoming} />
+            <MacroAlerts alerts={macroQ.data?.alerts} />
+
             {/* ── 1. Header ───────────────────────────────────────────── */}
             <motion.div {...fadeUp} className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
               <div>
@@ -1232,6 +1256,10 @@ export default function SignalsDashboard() {
               loading={!d || staleTicker}
               symbol={symbol}
             />
+
+            {/* ── 1b2. Macro Event Intelligence ───────────────────────── */}
+            <MacroEventCard state={macroQ.data} isLoading={macroQ.isLoading} />
+            {d?.macroEvent && <MacroScoreStrip scores={d.macroEvent.scores} confidence={call?.confidence ?? 50} bias={call?.bias ?? "WAIT"} />}
 
             {/* ── 1c. Active Setups (horizon trades; below the verdict so the recommendation is seen first) ── */}
             <motion.div {...fadeUp} className="space-y-4" id="sec-active-setups">

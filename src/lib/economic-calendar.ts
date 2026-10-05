@@ -29,7 +29,7 @@ function getFirstFriday(year: number, month: number): Date {
   return new Date(Date.UTC(year, month, firstFriday, 12, 30, 0));
 }
 
-function generateScheduledEvents(): CalendarEvent[] {
+export function generateScheduledEvents(): CalendarEvent[] {
   const events: CalendarEvent[] = [];
   const now = new Date();
   const year = now.getUTCFullYear();
@@ -133,7 +133,7 @@ function generateScheduledEvents(): CalendarEvent[] {
 }
 
 // Weekly oil-specific releases (UTC). EIA Wed 10:30 ET, API Tue 16:30 ET, Baker Hughes Fri 13:00 ET.
-function generateOilEvents(): CalendarEvent[] {
+export function generateOilEvents(): CalendarEvent[] {
   const out: CalendarEvent[] = [];
   const now = new Date();
   const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());

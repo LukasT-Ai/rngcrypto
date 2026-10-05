@@ -3753,23 +3753,24 @@ export async function GET(req: NextRequest) {
     const conflict = bd.find((b) => b.category === "CONFLICT");
     const reserves = bd.find((b) => b.category === "RESERVES");
     const nowMs = Date.now();
-    const recentHi = oilGeoData.events.filter(
-      (e) => e.impact === "high" && e.score !== 0 && nowMs - new Date(e.publishedAt).getTime() < 12 * 3600e3
-    ).length;
+    // Share-based so the regime does not inflate as more feeds are added
+    const recent12 = oilGeoData.events.filter((e) => nowMs - new Date(e.publishedAt).getTime() < 12 * 3600e3);
+    const hiStrong = recent12.filter((e) => e.impact === "high" && Math.abs(e.score) >= 60).length;
+    const hiShare = hiStrong / Math.max(1, recent12.length);
     const absScore = Math.abs(oilGeoData.score);
     const whipsaw =
       !!conflict &&
       !!reserves &&
-      conflict.count >= 3 &&
-      reserves.count >= 3 &&
+      conflict.scoredCount >= 3 &&
+      reserves.scoredCount >= 3 &&
       Math.abs(conflict.avgScore) >= 35 &&
       Math.abs(reserves.avgScore) >= 35 &&
       Math.sign(conflict.avgScore) !== Math.sign(reserves.avgScore);
     oilGeoRegime = whipsaw
       ? "whipsaw"
-      : absScore >= 50 || recentHi >= 6
+      : absScore >= 50 || (hiStrong >= 8 && hiShare >= 0.35)
         ? "extreme"
-        : absScore >= 25 || recentHi >= 3
+        : absScore >= 25 || hiStrong >= 4
           ? "elevated"
           : "calm";
   }

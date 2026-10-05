@@ -55,6 +55,7 @@ export interface OilGeoResult {
   categoryBreakdown: {
     category: OilCatalystCategory;
     count: number;
+    scoredCount: number;
     avgScore: number;
     avgReactionPct: number | null;
   }[];
@@ -604,7 +605,7 @@ function buildVerdict(
     b
       ? {
           category: b.category,
-          count: b.count,
+          count: b.scoredCount,
           avgScore: b.avgScore,
           avgReactionPct: b.avgReactionPct,
           topHeadline: topHeadlineFor(b.category, sign),
@@ -677,14 +678,17 @@ export async function getOilGeopoliticalNews(): Promise<OilGeoResult> {
   const seen = new Set<string>();
   const events: OilGeoEvent[] = [];
   const cutoff = Date.now() - 72 * 60 * 60 * 1000;
+  const NOISE = /facebook\.com|moomoo|twitter\.com|\bx\.com|reddit|youtube|tiktok/i;
 
   for (const raw of [...rss.items, ...gnews, ...currents, ...gdelt]) {
     const key = dedupKey(raw.title);
     if (!key || seen.has(key)) continue;
+    if (NOISE.test(raw.source) || NOISE.test(raw.url)) continue;
     const ts = new Date(raw.publishedAt).getTime();
     if (Number.isFinite(ts) && ts < cutoff) continue;
     const ev = toEvent(raw);
     if (!ev) continue;
+    if (ev.category === "GENERAL" && ev.score === 0) continue;
     seen.add(key);
     events.push(ev);
   }
@@ -714,11 +718,15 @@ export async function getOilGeopoliticalNews(): Promise<OilGeoResult> {
     }
   }
 
-  const catMap = new Map<OilCatalystCategory, { count: number; total: number; rSum: number; rN: number }>();
+  // Force strength = mean of scored headlines only; explainers and live-blogs (score 0) must not dilute it
+  const catMap = new Map<OilCatalystCategory, { count: number; scored: number; total: number; rSum: number; rN: number }>();
   for (const e of events) {
-    const c = catMap.get(e.category) ?? { count: 0, total: 0, rSum: 0, rN: 0 };
+    const c = catMap.get(e.category) ?? { count: 0, scored: 0, total: 0, rSum: 0, rN: 0 };
     c.count++;
-    c.total += e.score;
+    if (e.score !== 0) {
+      c.scored++;
+      c.total += e.score;
+    }
     if (e.priceReaction) {
       c.rSum += e.priceReaction.sinceEventPct;
       c.rN++;
@@ -729,10 +737,11 @@ export async function getOilGeopoliticalNews(): Promise<OilGeoResult> {
     .map(([category, c]) => ({
       category,
       count: c.count,
-      avgScore: Math.round(c.total / c.count),
+      scoredCount: c.scored,
+      avgScore: c.scored > 0 ? Math.round(c.total / c.scored) : 0,
       avgReactionPct: c.rN > 0 ? Math.round((c.rSum / c.rN) * 100) / 100 : null,
     }))
-    .sort((a, b) => b.count - a.count);
+    .sort((a, b) => b.scoredCount - a.scoredCount || b.count - a.count);
 
   const verdict = buildVerdict(events, categoryBreakdown, netScore);
 

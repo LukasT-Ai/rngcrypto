@@ -161,23 +161,18 @@ interface GNewsArticle {
 
 async function fetchGDELT(): Promise<OilGeoEvent[]> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = setTimeout(() => controller.abort(), 12000);
 
   try {
-    const queries = [
-      "crude oil OPEC sanctions",
-      "oil pipeline attack middle east",
-      "oil production inventory demand",
-    ];
-    const allArticles: GDELTArticle[] = [];
+    const query = '(crude oil OR OPEC OR oil sanctions OR oil pipeline OR oil production OR brent OR WTI OR "strait of hormuz" OR oil inventory) sourcelang:eng';
+    const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=75&format=json&sort=datedesc&timespan=4320`;
+    const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
 
-    for (const q of queries) {
-      const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=artlist&maxrecords=30&format=json&sort=datedesc&timespan=1440`;
-      const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
-      if (!res.ok) continue;
+    let allArticles: GDELTArticle[] = [];
+    if (res.ok) {
       const data = await res.json();
       if (data.articles) {
-        allArticles.push(...data.articles);
+        allArticles = data.articles;
       }
     }
 
@@ -231,19 +226,15 @@ async function fetchGNews(): Promise<OilGeoEvent[]> {
   const timeout = setTimeout(() => controller.abort(), 8000);
 
   try {
-    const queries = [
-      "crude oil OPEC production",
-      "oil sanctions conflict pipeline",
-    ];
-    const allArticles: GNewsArticle[] = [];
+    const query = "crude oil OR OPEC OR oil sanctions OR oil pipeline OR brent crude";
+    const url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&lang=en&max=10&sortby=publishedAt&apikey=${apiKey}`;
+    const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
 
-    for (const q of queries) {
-      const url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(q)}&lang=en&max=10&sortby=publishedAt&apikey=${apiKey}`;
-      const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
-      if (!res.ok) continue;
+    let allArticles: GNewsArticle[] = [];
+    if (res.ok) {
       const data = await res.json();
       if (data.articles) {
-        allArticles.push(...data.articles);
+        allArticles = data.articles;
       }
     }
 

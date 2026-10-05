@@ -173,7 +173,7 @@ export function MacroEventCard({ state, isLoading }: { state: MacroApi | undefin
   if (!a) {
     const next = state?.upcoming?.[0]
     return (
-      <div id="sec-macro" className="rounded-2xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md px-5 py-4 flex flex-wrap items-center gap-3 text-sm">
+      <div id="sec-macro" className="rounded-2xl border border-white/[0.08] bg-[rgb(var(--surface-rgb,10_14_23)/0.5)] backdrop-blur-md px-5 py-4 flex flex-wrap items-center gap-3 text-sm">
         <Radio className="size-4 text-[#9CA3AF]/80" />
         <span className="text-white/50">No scheduled release in the next two hours.</span>
         {next && (
@@ -198,7 +198,7 @@ export function MacroEventCard({ state, isLoading }: { state: MacroApi | undefin
   const confColor = conf?.status === "confirmed" ? GREEN : conf?.status === "reversing" || conf?.status === "unconfirmed" ? RED : AMBER
 
   return (
-    <div id="sec-macro" className="rounded-2xl border p-5 sm:p-6 backdrop-blur-xl" style={{ borderColor: `${c}50`, background: `linear-gradient(135deg, ${c}16 0%, rgba(10,14,23,0.6) 60%)` }}>
+    <div id="sec-macro" className="rounded-2xl border p-5 sm:p-6 backdrop-blur-xl" style={{ borderColor: `${c}50`, background: `linear-gradient(135deg, ${c}16 0%, rgb(var(--surface-rgb, 10 14 23) / 0.6) 60%)` }}>
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <span className="rounded-md px-2 py-0.5 text-[10px] font-black tracking-wider" style={{ backgroundColor: `${c}22`, color: c }}>
           {released ? "⚡ " : "🔴 "}
@@ -403,7 +403,7 @@ export function MacroScoreStrip({ scores, confidence, bias }: { scores: MacroSco
     </div>
   )
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border bg-[#0A0E17]/45 backdrop-blur-md px-3 py-2" style={{ borderColor: "color-mix(in srgb, var(--brand, #9CA3AF) 30%, transparent)" }}>
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border bg-[rgb(var(--surface-rgb,10_14_23)/0.45)] backdrop-blur-md px-3 py-2" style={{ borderColor: "color-mix(in srgb, var(--brand, #9CA3AF) 30%, transparent)" }}>
       {cell("Technical", Math.round(overall))}
       {cell("Macro", scores.macro, scores.weights.macro)}
       {cell("Event", scores.event, scores.weights.event)}

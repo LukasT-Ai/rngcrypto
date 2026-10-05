@@ -9,6 +9,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const livePages: MetadataRoute.Sitemap = [
     { url: `${baseUrl}`, lastModified: new Date(), changeFrequency: "hourly", priority: 1 },
     { url: `${baseUrl}/signals`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.95 },
+    { url: `${baseUrl}/signals/strike`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.9 },
+    { url: `${baseUrl}/signals/ascend`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.9 },
+    { url: `${baseUrl}/signals/performance`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.85 },
     { url: `${baseUrl}/markets`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.8 },
     { url: `${baseUrl}/news`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.7 },
   ]

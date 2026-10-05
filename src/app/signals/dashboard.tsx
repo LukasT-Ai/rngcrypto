@@ -662,7 +662,7 @@ function StatCard({
 }) {
   return (
     <motion.div
-           className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md px-4 py-3"
+           className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md px-4 py-3"
     >
       <div className="flex items-center gap-2 mb-1">
         {Icon && <Icon className="size-3.5 text-[#9CA3AF]/80" />}
@@ -782,7 +782,7 @@ function DivergenceCard({ label, value }: { label: string; value: string | null 
   const display = value ?? "None"
   const color = divColor(value)
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md px-4 py-3">
+    <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md px-4 py-3">
       <span className="text-[10px] uppercase tracking-wider text-white/40">{label}</span>
       <p className="font-mono text-sm font-bold mt-1" style={{ color }}>{display}</p>
     </div>
@@ -1045,8 +1045,8 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
         {/* ── Brand band ─────────────────────────────────────────────── */}
         <div
-          className="flex flex-col gap-2 rounded-2xl border border-white/[0.08] bg-[#0A0E17]/55 px-4 py-3 backdrop-blur-xl sm:flex-row sm:items-center sm:gap-4"
-          style={{ background: "linear-gradient(135deg, color-mix(in srgb, var(--brand) 10%, transparent) 0%, rgba(10,14,23,0.55) 60%)" }}
+          className="flex flex-col gap-2 rounded-2xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.55)] px-4 py-3 backdrop-blur-xl sm:flex-row sm:items-center sm:gap-4"
+          style={{ background: "linear-gradient(135deg, color-mix(in srgb, var(--brand) 10%, transparent) 0%, rgb(var(--surface-rgb) / 0.55) 60%)" }}
         >
           <div className="flex items-center gap-3">
             <span className="relative flex size-2.5">
@@ -1198,7 +1198,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                       title={score != null ? `${t.label} · confidence ${score}` : t.label}
                       className={cn(
                         "shrink-0 snap-start rounded-full px-3.5 py-1.5 text-xs font-bold uppercase tracking-wide transition-all duration-200 border",
-                        active ? "text-[#06080F] border-transparent" : "border-white/10 hover:border-white/25 bg-[#0A0E17]/40 text-[#9CA3AF] hover:text-white"
+                        active ? "text-[#06080F] border-transparent" : "border-white/10 hover:border-white/25 bg-[rgb(var(--surface-rgb)/0.4)] text-[#9CA3AF] hover:text-white"
                       )}
                       style={
                         active
@@ -1506,7 +1506,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   </h2>
                   <span className="text-[10px] text-[#9CA3AF]/80">Next 24h</span>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md divide-y divide-white/[0.04]">
+                <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md divide-y divide-white/[0.04]">
                   {d.events.slice(0, 6).map((event, i) => {
                     const eventTime = new Date(event.time)
                     const msUntil = eventTime.getTime() - Date.now()
@@ -1605,7 +1605,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   </div>
 
                   {v && (v.bullForce || v.bearForce) && (
-                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4 mb-3 space-y-2.5">
+                    <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4 mb-3 space-y-2.5">
                       {v.bullForce && (
                         <div className="flex items-start gap-3">
                           <span className="w-9 shrink-0 text-[10px] font-bold text-[#00FF88] mt-0.5">BULL</span>
@@ -1712,7 +1712,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                     </div>
                   )}
 
-                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md divide-y divide-white/[0.04]">
+                  <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md divide-y divide-white/[0.04]">
                     {shown.map((ev, i) => {
                       const dot = ev.sentiment === "bullish" ? "#00FF88" : ev.sentiment === "bearish" ? "#FF3B5C" : "#6B7280"
                       const imp = ev.impact === "high" ? "#FF3B5C" : ev.impact === "medium" ? "#F59E0B" : "#6B7280"
@@ -2079,7 +2079,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                 {/* Approaching Levels */}
                 {anticipatory.approachingLevels.length > 0 && (
-                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md overflow-hidden">
+                  <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md overflow-hidden">
                     <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.04]">
                       <Crosshair className="size-4 text-white/40" />
                       <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2142,7 +2142,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                 {/* Retest Tracker */}
                 {anticipatory.retestSetup.active && anticipatory.retestSetup.state && (
-                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                  <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 mb-4">
                       <GitBranch className="size-4 text-white/40" />
                       <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2234,7 +2234,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                 {/* Structure Signals */}
                 {anticipatory.structureSignals.length > 0 && (
-                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                  <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <GitBranch className="size-4 text-white/40" />
                       <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2279,7 +2279,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 )}
 
                 {/* Confluence Meter */}
-                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <Gauge className="size-4 text-white/40" />
                     <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2348,7 +2348,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   anticipatory.orderFlow.fundingInflection ||
                   anticipatory.orderFlow.absorptionSequence > 0 ||
                   anticipatory.orderFlow.oiPriceDivergence) && (
-                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                  <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <Waves className="size-4 text-white/40" />
                       <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2387,7 +2387,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                 {/* Projections Timeline */}
                 {anticipatory.projections.length > 0 && (
-                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                  <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <Clock className="size-4 text-white/40" />
                       <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2508,7 +2508,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   {([timeframeOutlook.short, timeframeOutlook.medium, timeframeOutlook.long] as const).map((horizon) => (
                     <div
                       key={horizon.label}
-                      className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4"
+                      className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4"
                     >
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
@@ -2602,7 +2602,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Signal Confluence
                 </h2>
-                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                   {call.signalFactors.map((f, i) => (
                     <FactorRow key={i} category={f.category} assessment={f.assessment} weight={f.weight} />
                   ))}
@@ -2765,7 +2765,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* EMA5 Disconnect */}
                   {mapData.ema5Disconnect && (
-                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">EMA5 Disconnect</span>
                         {mapData.ema5Disconnect.isDisconnected && (
@@ -2825,7 +2825,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* EMA5 × SMA200 Crossover */}
                   {mapData.ema5xSma200 && (
-                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">EMA5 × SMA{mapData.ema5xSma200.smaPeriod}</span>
                         {mapData.ema5xSma200.freshCross && (
@@ -2902,7 +2902,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* RSI Structure (Daily) */}
                   {mapData.rsiStructure.daily && (
-                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">RSI Structure</span>
                         <span
@@ -2968,7 +2968,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* EMA21 Bounce */}
                   {mapData.ema21Bounce && (
-                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">EMA21 Bounce</span>
                         {mapData.ema21Bounce.invalidation && (
@@ -3021,7 +3021,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* RSI Alignment */}
                   {mapData.rsiAlignment && (
-                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">RSI Alignment</span>
                         <span
@@ -3068,7 +3068,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                   {/* Bounce Probabilities */}
                   {mapData.bounceProbabilities && (
-                    <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                    <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold uppercase tracking-wider text-white/40">Forward Returns</span>
                         <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style={{ backgroundColor: `${accent}15`, color: accent }}>
@@ -3738,7 +3738,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                     {d.newsSentiment.score > 0 ? "+" : ""}{d.newsSentiment.score}
                   </span>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md divide-y divide-white/[0.04]">
+                <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md divide-y divide-white/[0.04]">
                   {d.newsSentiment.headlines.slice(0, 5).map((h, i) => {
                     const dotColor =
                       h.sentiment === "bullish"
@@ -3771,7 +3771,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Fibonacci Levels
                 </h2>
-                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                     {d.levels.fibonacci.map((fib, i) => {
                       const isBelow = fib.price < currentPrice
@@ -3799,7 +3799,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider mb-3">
                   Key Price Levels
                 </h2>
-                <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                   <div className="relative h-12 mb-4">
                     {(() => {
                       const corePrices = [...d.levels.supports, ...d.levels.resistances, currentPrice]
@@ -3943,7 +3943,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   {(() => {
                     const tc = dirColor(d.htf.trend1h)
                     return (
-                      <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                      <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-semibold text-white/50 uppercase">1H</span>
                           <span
@@ -3968,7 +3968,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   {(() => {
                     const tc = dirColor(d.htf.trend4h)
                     return (
-                      <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                      <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-semibold text-white/50 uppercase">4H</span>
                           <span
@@ -3993,7 +3993,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                   {d.htf.trendDaily != null && d.htf.rsiDaily != null && (() => {
                     const tc = dirColor(d.htf.trendDaily!)
                     return (
-                      <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4">
+                      <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-semibold text-white/50 uppercase">Daily</span>
                           <span
@@ -4049,7 +4049,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 </div>
 
                 {historyData.stats.total === 0 ? (
-                  <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-8 text-center">
+                  <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-8 text-center">
                     <Trophy className="size-8 text-[#9CA3AF]/60 mx-auto mb-3" />
                     <p className="text-sm text-white/40">
                       No signals tracked yet. Signals with confidence &ge; 55 are automatically logged and tracked.
@@ -4060,7 +4060,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                     {/* Stats bar */}
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
                       {/* Win Rate with ring */}
-                      <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-4 flex flex-col items-center justify-center">
+                      <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md p-4 flex flex-col items-center justify-center">
                         <span className="text-[10px] uppercase tracking-wider text-white/40 mb-2">Win Rate</span>
                         <div className="relative size-16">
                           <svg className="size-16 -rotate-90" viewBox="0 0 36 36">
@@ -4100,7 +4100,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
                     {/* Recent signals table */}
                     {historyData.signals.length > 0 && (
-                      <div className="rounded-xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md overflow-hidden mb-4">
+                      <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md overflow-hidden mb-4">
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead>

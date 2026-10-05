@@ -20,7 +20,7 @@ const GREEN = "#00FF88"
 const RED = "#FF3B5C"
 const AMBER = "#F59E0B"
 const GRAY = "#9CA3AF"
-const CARD = "rounded-2xl border border-white/[0.08] bg-[#0A0E17]/55 backdrop-blur-xl"
+const CARD = "rounded-2xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.55)] backdrop-blur-xl"
 
 const fmtR = (r: number | null | undefined, dp = 2) => (r == null ? "—" : `${r > 0 ? "+" : ""}${r.toFixed(dp)}R`)
 const fmtPct = (p: number | null | undefined) => (p == null ? "—" : `${p.toFixed(p >= 10 ? 0 : 1)}%`)
@@ -156,7 +156,7 @@ export default function PerformanceDashboard() {
   return (
     <div className="min-h-screen pt-24 pb-16" style={themeStyle(RNG_THEME)}>
       <div className="mx-auto max-w-7xl px-4 lg:px-8 space-y-5">
-        <div className={cn(CARD, "flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between")} style={{ background: "linear-gradient(135deg, color-mix(in srgb, var(--brand) 10%, transparent) 0%, rgba(10,14,23,0.55) 60%)" }}>
+        <div className={cn(CARD, "flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between")} style={{ background: "linear-gradient(135deg, color-mix(in srgb, var(--brand) 10%, transparent) 0%, rgb(var(--surface-rgb) / 0.55) 60%)" }}>
           <div>
             <div className="flex items-center gap-2">
               <Trophy className="size-5" style={{ color: "var(--brand)" }} />

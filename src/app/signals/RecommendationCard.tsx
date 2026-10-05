@@ -83,7 +83,7 @@ export function RecommendationCard({
 }) {
   if (loading || !reco) {
     return (
-      <div id="sec-reco" className="rounded-2xl border border-white/[0.08] bg-[#0A0E17]/50 backdrop-blur-md p-5 animate-pulse">
+      <div id="sec-reco" className="rounded-2xl border border-white/[0.08] bg-[rgb(var(--surface-rgb,10_14_23)/0.5)] backdrop-blur-md p-5 animate-pulse">
         <div className="h-5 w-56 rounded bg-white/[0.06] mb-3" />
         <div className="h-3.5 w-full max-w-2xl rounded bg-white/[0.05] mb-2" />
         <div className="h-3.5 w-3/4 max-w-xl rounded bg-white/[0.05]" />
@@ -99,7 +99,7 @@ export function RecommendationCard({
     <div
       id="sec-reco"
       className="rounded-2xl border p-5 sm:p-6 backdrop-blur-xl shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]"
-      style={{ borderColor: `${c}40`, background: `linear-gradient(135deg, ${c}14 0%, rgba(10,14,23,0.6) 55%)` }}
+      style={{ borderColor: `${c}40`, background: `linear-gradient(135deg, ${c}14 0%, rgb(var(--surface-rgb, 10 14 23) / 0.6) 55%)` }}
     >
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <span className="rounded-md px-2.5 py-1 text-sm font-black tracking-wide" style={{ backgroundColor: `${c}22`, color: c }}>

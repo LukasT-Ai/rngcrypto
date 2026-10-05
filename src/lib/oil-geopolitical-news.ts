@@ -186,19 +186,23 @@ interface RSSItem {
   link: string;
   pubDate: string;
   source: string;
+  description?: string;
 }
 
 function parseRSSItems(xml: string, sourceName: string): RSSItem[] {
   const items: RSSItem[] = [];
-  const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+  const itemRegex = /<item[\s>]([\s\S]*?)<\/item>/gi;
   let match;
   while ((match = itemRegex.exec(xml)) !== null) {
     const block = match[1];
-    const title = block.match(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/)?.[1] ?? "";
-    const link = block.match(/<link>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/link>/)?.[1] ?? "";
-    const pubDate = block.match(/<pubDate>(.*?)<\/pubDate>/)?.[1] ?? "";
+    const titleRaw = block.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/)?.[1] ?? "";
+    const title = titleRaw.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+    const link = block.match(/<link[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/)?.[1]?.trim() ?? "";
+    const pubDate = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1]?.trim() ?? "";
+    const descRaw = block.match(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/)?.[1] ?? "";
+    const desc = descRaw.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
     if (title) {
-      items.push({ title: title.trim(), link: link.trim(), pubDate, source: sourceName });
+      items.push({ title, link, pubDate, source: sourceName, description: desc });
     }
   }
   return items;
@@ -219,7 +223,11 @@ async function fetchRSSFeeds(): Promise<OilGeoEvent[]> {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
       try {
-        const res = await fetch(feed.url, { signal: controller.signal, cache: "no-store" });
+        const res = await fetch(feed.url, {
+          signal: controller.signal,
+          cache: "no-store",
+          headers: { "User-Agent": "RNGcrypto/1.0 (Oil Signal Engine)" },
+        });
         if (!res.ok) return [];
         const xml = await res.text();
         return parseRSSItems(xml, feed.name);
@@ -234,12 +242,13 @@ async function fetchRSSFeeds(): Promise<OilGeoEvent[]> {
   for (const result of results) {
     if (result.status !== "fulfilled") continue;
     for (const item of result.value) {
+      const text = `${item.title} ${item.description ?? ""}`;
       const isOilRelated =
-        GENERAL_OIL_KEYWORDS.test(item.title) ||
-        CATEGORY_RULES.some((r) => r.keywords.test(item.title));
+        GENERAL_OIL_KEYWORDS.test(text) ||
+        CATEGORY_RULES.some((r) => r.keywords.test(text));
       if (!isOilRelated) continue;
 
-      const { category, sentiment, impact, score } = categorizeEvent(item.title);
+      const { category, sentiment, impact, score } = categorizeEvent(text);
       events.push({
         title: item.title,
         url: item.link,
@@ -263,7 +272,11 @@ async function fetchGDELT(): Promise<OilGeoEvent[]> {
   try {
     const query = '(crude oil OR OPEC OR "oil sanctions" OR "oil pipeline" OR brent OR WTI OR "strait of hormuz" OR "oil reserves" OR aramco OR kharg OR tanker attack OR "oil price" OR houthi OR "middle east" oil OR "strategic petroleum" OR diesel reserves OR G7 oil) sourcelang:eng';
     const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=75&format=json&sort=datedesc&timespan=4320`;
-    const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
+    const res = await fetch(url, {
+      signal: controller.signal,
+      cache: "no-store",
+      headers: { "User-Agent": "RNGcrypto/1.0 (Oil Signal Engine)" },
+    });
 
     let allArticles: GDELTArticle[] = [];
     if (res.ok) {

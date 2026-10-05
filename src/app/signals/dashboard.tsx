@@ -3387,7 +3387,7 @@ export default function SignalsDashboard() {
                     {(() => {
                       const hi = d.oilGeopolitical.categoryBreakdown.filter((c) => Math.abs(c.avgScore) >= 10);
                       if (hi.length === 0) return null;
-                      const dominant = hi.sort((a, b) => Math.abs(b.avgScore) - Math.abs(a.avgScore))[0];
+                      const dominant = [...hi].sort((a, b) => Math.abs(b.avgScore) - Math.abs(a.avgScore))[0];
                       const direction = dominant.avgScore >= 0 ? "bullish" : "bearish";
                       const priceDir = d.oilGeopolitical.priceContext!.changePct24h >= 0 ? "bullish" : "bearish";
                       const aligned = direction === priceDir;

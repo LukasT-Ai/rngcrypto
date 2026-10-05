@@ -286,6 +286,13 @@ interface SignalsResponse {
       url: string
     }[]
     categoryBreakdown: { category: string; count: number; avgScore: number }[]
+    priceContext: {
+      current: number
+      change24h: number
+      changePct24h: number
+      weekHigh: number
+      weekLow: number
+    } | null
   } | null
   positioning?: {
     longShortRatio: number | null
@@ -3337,6 +3344,69 @@ export default function SignalsDashboard() {
                   </span>
                 </div>
 
+                {/* Price impact bar */}
+                {d.oilGeopolitical.priceContext && (
+                  <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3 mb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <div className="text-[10px] text-white/30 uppercase">WTI Crude</div>
+                          <div className="font-mono text-lg font-bold text-white/90">
+                            ${d.oilGeopolitical.priceContext.current.toFixed(2)}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <div
+                            className="font-mono text-sm font-bold"
+                            style={{ color: d.oilGeopolitical.priceContext.change24h >= 0 ? "#00FF88" : "#FF3B5C" }}
+                          >
+                            {d.oilGeopolitical.priceContext.change24h >= 0 ? "+" : ""}
+                            {d.oilGeopolitical.priceContext.change24h.toFixed(2)}
+                          </div>
+                          <div
+                            className="font-mono text-xs"
+                            style={{ color: d.oilGeopolitical.priceContext.changePct24h >= 0 ? "#00FF88" : "#FF3B5C" }}
+                          >
+                            ({d.oilGeopolitical.priceContext.changePct24h >= 0 ? "+" : ""}
+                            {d.oilGeopolitical.priceContext.changePct24h.toFixed(2)}%)
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 text-[11px]">
+                        <div>
+                          <span className="text-white/30">7d High </span>
+                          <span className="font-mono text-white/60">${d.oilGeopolitical.priceContext.weekHigh.toFixed(2)}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/30">7d Low </span>
+                          <span className="font-mono text-white/60">${d.oilGeopolitical.priceContext.weekLow.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Catalyst impact summary */}
+                    {(() => {
+                      const hi = d.oilGeopolitical.categoryBreakdown.filter((c) => Math.abs(c.avgScore) >= 10);
+                      if (hi.length === 0) return null;
+                      const dominant = hi.sort((a, b) => Math.abs(b.avgScore) - Math.abs(a.avgScore))[0];
+                      const direction = dominant.avgScore >= 0 ? "bullish" : "bearish";
+                      const priceDir = d.oilGeopolitical.priceContext!.changePct24h >= 0 ? "bullish" : "bearish";
+                      const aligned = direction === priceDir;
+                      return (
+                        <div className="mt-2 pt-2 border-t border-white/[0.04] text-[11px]">
+                          <span className="text-white/40">Dominant catalyst: </span>
+                          <span className="font-medium" style={{ color: dominant.avgScore >= 0 ? "#00FF88" : "#FF3B5C" }}>
+                            {dominant.category.replace("_", " ")}
+                          </span>
+                          <span className="text-white/40"> ({dominant.count} events, {direction}) </span>
+                          <span style={{ color: aligned ? "#00FF88" : "#F59E0B" }}>
+                            {aligned ? "— price confirms" : "— price diverging"}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 {/* Category breakdown pills */}
                 {d.oilGeopolitical.categoryBreakdown.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-3">
@@ -3358,7 +3428,7 @@ export default function SignalsDashboard() {
                 )}
 
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] divide-y divide-white/[0.04]">
-                  {d.oilGeopolitical.events.slice(0, 8).map((ev, i) => {
+                  {d.oilGeopolitical.events.slice(0, 12).map((ev, i) => {
                     const dotColor =
                       ev.sentiment === "bullish"
                         ? "#00FF88"
@@ -3421,7 +3491,7 @@ export default function SignalsDashboard() {
                 </div>
 
                 <div className="mt-2 text-[10px] text-white/20 text-right">
-                  Updated {new Date(d.oilGeopolitical.lastUpdated).toLocaleTimeString()}
+                  Updated {new Date(d.oilGeopolitical.lastUpdated).toLocaleTimeString()} · Sources: Google News, OilPrice, GDELT{process.env.NEXT_PUBLIC_HAS_GNEWS ? ", GNews" : ""}
                 </div>
               </motion.div>
             )}

@@ -4030,7 +4030,7 @@ export async function GET(req: NextRequest) {
           label: oilGeoData.label,
           eventCount: oilGeoData.eventCount,
           lastUpdated: oilGeoData.lastUpdated,
-          events: oilGeoData.events.slice(0, 10).map((e) => ({
+          events: oilGeoData.events.slice(0, 15).map((e) => ({
             title: e.title,
             source: e.source,
             publishedAt: e.publishedAt,
@@ -4040,6 +4040,7 @@ export async function GET(req: NextRequest) {
             url: e.url,
           })),
           categoryBreakdown: oilGeoData.categoryBreakdown,
+          priceContext: oilGeoData.priceContext,
         }
       : null,
     events: catalystData.events.map((e) => ({

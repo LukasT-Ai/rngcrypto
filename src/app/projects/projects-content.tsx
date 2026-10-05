@@ -46,26 +46,29 @@ type Project = {
 
 const projects: Project[] = [
   {
-    name: "Good Vibes Club",
-    tagline: "Kill Em' With Kindness",
+    name: "Ascend Markets",
+    tagline: "Private, multichain, institutional grade DeFi on Midnight",
     description:
-      "6,968 meticulously crafted 3D PFP NFTs on Ethereum by award-winning animation studio Toast. An art-forward IP built around Vibetown with a thriving builder community: Vibe Off, Smash The Wall, SpotiVibe, GVC Badges, and AI tools.",
-    status: "Holder",
-    statusColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-    categories: ["NFT", "Ethereum", "Community"],
-    chain: "ethereum",
-    icon: Palette,
-    externalHref: "https://opensea.io/collection/good-vibes-club",
+      "Leveraged event perpetuals with up to 1001x on outcome probabilities, Perps on BTC (50x) and ADA (10x) settled in USDC, an orderbook spot DEX live on Midnight mainnet, and prediction markets across outcome, rolling asset and macro types. Execution, risk and liquidation logic settle on Midnight with zero knowledge proofs, so the exchange can prove it is solvent without publishing anyone's book. Selective disclosure runs through the MogBoard: you choose what other traders see about your perps activity. Stake $ASCEND from your own wallet for 100% of protocol fees. Announced next on X: the first token launchpad on Midnight.",
+    status: "Active",
+    statusColor: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    categories: ["Perps", "Prediction Markets", "DEX", "Launchpad Soon"],
+    chain: "midnight",
+    icon: Crosshair,
+    externalHref: "https://ascend.market",
     links: [
-      { label: "Website", url: "https://www.goodvibesclub.io" },
-      { label: "OpenSea", url: "https://opensea.io/collection/good-vibes-club" },
+      { label: "Website", url: "https://ascend.market" },
+      { label: "Perps", url: "https://perps.ascend.market" },
+      { label: "DEX", url: "https://dex.ascend.market" },
+      { label: "X", url: "https://x.com/AscendPerps" },
     ],
-    images: [{ src: "/avatar/character.jpg", alt: "Good Vibes Club 3D PFP" }],
+    images: [{ src: "/avatar/ascend_logo_coin.jpg", alt: "Ascend Markets logo coin" }],
     stats: [
-      { label: "Supply", value: "6,968" },
-      { label: "Volume", value: "13.5K ETH" },
+      { label: "Event Perps", value: "Up to 1001x" },
+      { label: "Fees to Stakers", value: "100%" },
+      { label: "Settlement", value: "ZK on Midnight" },
     ],
-    gradient: "from-purple-500/15 via-transparent to-transparent",
+    gradient: "from-orange-500/15 via-transparent to-transparent",
   },
   {
     name: "Liqwid Finance",
@@ -88,6 +91,28 @@ const projects: Project[] = [
       { label: "Protocol", value: "Lending" },
     ],
     gradient: "from-cyan-500/15 via-transparent to-transparent",
+  },
+  {
+    name: "Good Vibes Club",
+    tagline: "Kill Em' With Kindness",
+    description:
+      "6,968 meticulously crafted 3D PFP NFTs on Ethereum by award-winning animation studio Toast. An art-forward IP built around Vibetown with a thriving builder community: Vibe Off, Smash The Wall, SpotiVibe, GVC Badges, and AI tools.",
+    status: "Holder",
+    statusColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    categories: ["NFT", "Ethereum", "Community"],
+    chain: "ethereum",
+    icon: Palette,
+    externalHref: "https://opensea.io/collection/good-vibes-club",
+    links: [
+      { label: "Website", url: "https://www.goodvibesclub.io" },
+      { label: "OpenSea", url: "https://opensea.io/collection/good-vibes-club" },
+    ],
+    images: [{ src: "/avatar/character.jpg", alt: "Good Vibes Club 3D PFP" }],
+    stats: [
+      { label: "Supply", value: "6,968" },
+      { label: "Volume", value: "13.5K ETH" },
+    ],
+    gradient: "from-purple-500/15 via-transparent to-transparent",
   },
   {
     name: "Midnight",
@@ -313,6 +338,7 @@ function VenueSignalsCard({ name, color, logo, tagline, description, href, venue
 }
 
 const projectAccents: Record<string, string> = {
+  "Ascend Markets": "#F35233",
   "Good Vibes Club": "#A855F7",
   "Liqwid Finance": "#22D3EE",
   Midnight: "#818CF8",

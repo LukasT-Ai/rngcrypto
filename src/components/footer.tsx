@@ -5,16 +5,17 @@ import { useState } from "react"
 import { ExternalLink } from "lucide-react"
 
 const exploreLinks = [
-  { href: "/ascend", label: "Ascend" },
-  { href: "/strike", label: "Strike" },
-  { href: "/hype", label: "Hype" },
+  { href: "/signals", label: "Signals" },
+  { href: "/signals/strike", label: "Strike Signals" },
+  { href: "/signals/ascend", label: "Ascend Signals" },
+  { href: "/signals/performance", label: "Performance" },
   { href: "/projects", label: "Projects" },
   { href: "/blog", label: "Blog" },
   { href: "/about", label: "About" },
 ]
 
 const ecosystemLinks = [
-  { href: "https://ascend.trade", label: "Ascend Market" },
+  { href: "https://ascend.market", label: "Ascend Market" },
   { href: "https://liqwid.finance", label: "Liqwid Finance" },
   { href: "https://midnight.network", label: "Midnight" },
 ]

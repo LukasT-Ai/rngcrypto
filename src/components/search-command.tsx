@@ -20,7 +20,6 @@ import {
   PenSquare,
   Gamepad2,
   Youtube,
-  Bot,
   Search,
   Bitcoin,
   TrendingUp,
@@ -28,6 +27,10 @@ import {
 
 const pages = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "Signals", href: "/signals", icon: TrendingUp },
+  { name: "Strike Signals", href: "/signals/strike", icon: TrendingUp },
+  { name: "Ascend Signals", href: "/signals/ascend", icon: TrendingUp },
+  { name: "Signal Performance", href: "/signals/performance", icon: BarChart3 },
   { name: "Markets", href: "/markets", icon: BarChart3 },
   { name: "Macro Economy", href: "/macro", icon: Globe },
   { name: "DeFi", href: "/defi", icon: Layers },
@@ -35,7 +38,6 @@ const pages = [
   { name: "Blog", href: "/blog", icon: PenSquare },
   { name: "Web3 Entertainment", href: "/web3", icon: Gamepad2 },
   { name: "YouTube", href: "/youtube", icon: Youtube },
-  { name: "RnG Bot", href: "/bot", icon: Bot },
   { name: "About", href: "/about", icon: Search },
   { name: "Subscribe", href: "/subscribe", icon: PenSquare },
 ]

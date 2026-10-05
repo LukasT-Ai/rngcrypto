@@ -18,9 +18,8 @@ export default function BotPage() {
       </div>
       <p className="text-sm text-muted-foreground -mt-2">
         This bot is no longer trading. Live signal generation has moved to the{" "}
-        <a href="/signals" className="underline underline-offset-2 hover:text-foreground">Signals</a> page; the
-        active agents are on the <a href="/strike" className="underline underline-offset-2 hover:text-foreground">Strike</a>{" "}
-        and <a href="/hype" className="underline underline-offset-2 hover:text-foreground">Hype</a> dashboards.
+        <a href="/signals" className="underline underline-offset-2 hover:text-foreground">Signals</a> page, with its
+        verified track record on <a href="/signals/performance" className="underline underline-offset-2 hover:text-foreground">Performance</a>.
       </p>
 
       {/* Strategy overview */}

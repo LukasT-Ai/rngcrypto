@@ -29,13 +29,13 @@ export default function NewsPage() {
   const { data: news, isLoading } = useQuery<NewsItem[]>({
     queryKey: ["news-full"],
     queryFn: async () => {
-      const res = await fetch(
-        "https://cryptopanic.com/api/free/v1/posts/?auth_token=free&public=true&kind=news"
-      )
+      const res = await fetch("/api/news")
+      if (!res.ok) throw new Error(`News API ${res.status}`)
       const json = await res.json()
-      return json.results ?? []
+      return Array.isArray(json) ? json : []
     },
     refetchInterval: 120_000,
+    staleTime: 60_000,
   })
 
   return (

@@ -74,10 +74,10 @@ const CACHE_TTL = 2 * 60 * 1000;
 const UA = { "User-Agent": "RNGcrypto/1.0 (Catalyst Engine)" };
 const caches = new Map<CatalystAsset, { data: CatalystResult; timestamp: number }>();
 
-const gnq = (q: string) => `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+export const gnq = (q: string) => `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
 
-const PRICE_UP = /\b(jump|surge|soar|rall(y|ies)|climb|ris(e|es|ing)|gain|extend|firm|higher|rebound|spike|breakout|record\s*high|all-?time\s*high|multi-\w+\s*high)\w*/i;
-const PRICE_DOWN = /\b(fall|drop|plung|tumbl|slump|retreat|slide|lower|eas(e|es|ing)|pressur|dip|sink|weak|sell-?off|crash|correct)\w*/i;
+export const PRICE_UP = /\b(jump|surge|soar|rall(y|ies)|climb|ris(e|es|ing)|gain|extend|firm|higher|rebound|spike|breakout|record\s*high|all-?time\s*high|multi-\w+\s*high)\w*/i;
+export const PRICE_DOWN = /\b(fall|drop|plung|tumbl|slump|retreat|slide|lower|eas(e|es|ing)|pressur|dip|sink|weak|sell-?off|crash|correct)\w*/i;
 
 const MAGNITUDE_WORDS =
   /\b(clos(ed|ure)|shut\s*down|halt|100\s*million|billion|record|major|massive|largest|unprecedented|emergency|blockade|war|explosion|destroy|crisis|shock|collapse|severe|historic|all-?time)\b/gi;
@@ -247,8 +247,8 @@ const BTC: AssetConfig = {
     },
     {
       category: "MACRO",
-      keywords: /\b(fed\b|fomc|powell|rate\s*(cut|hike|decision|path)|interest\s*rate|cpi|pce|inflation|treasury\s*yield|bond\s*yield|dollar|dxy|jobs\s*report|payroll|unemployment|recession|tariff|trade\s*war|liquidity|qe\b|qt\b|balance\s*sheet|debt\s*ceiling|shutdown)\b/i,
-      bullish: /\b(cut|dovish|cool|eas(e|ing)|weaker\s*dollar|dollar\s*(fall|drop|slide|weak)|liquidity|stimulus|pause|soft\s*landing|risk-?on|rally|below\s*expect)\w*/i,
+      keywords: /\b(fed\b|fomc|powell|rate\s*(cut|hike|decision|path)|interest\s*rate|cpi|pce|inflation|treasury\s*yield|bond\s*yield|dollar|dxy|jobs\s*report|payroll|unemployment|recession|tariff|trade\s*war|qe\b|qt\b|balance\s*sheet|debt\s*ceiling|shutdown)\b/i,
+      bullish: /\b(cut|dovish|cool|eas(e|ing)|weaker\s*dollar|dollar\s*(fall|drop|slide|weak)|stimulus|pause|soft\s*landing|risk-?on|rally|below\s*expect)\w*/i,
       bearish: /\b(hike|hawkish|hot|sticky|stronger\s*dollar|dollar\s*(rise|jump|surge|strong)|tighten|higher\s*for\s*longer|recession|risk-?off|above\s*expect|sell-?off)\w*/i,
       baseImpact: "high",
       needsAsset: true,
@@ -565,8 +565,29 @@ interface Classification {
   strength: number;
 }
 
-function scoreAgainstRules(cfg: AssetConfig, text: string): Classification[] {
+// Negated policy phrasing: "fading hike bets" / "hike odds recede" is dovish, "cut hopes fade" is hawkish.
+// Rewriting before scoring stops "hike" and "cut" from being counted with the wrong sign.
+const EASE = "(?:fad\\w*|reced\\w*|eas\\w*|trim\\w*|par(?:e|ed|es|ing)(?:\\s*back)?|dial\\w*\\s*back|scal\\w*\\s*back|pric\\w*\\s*out|cool\\w*|wan\\w*|slip\\w*|fall\\w*|drop\\w*|unwind\\w*|retreat\\w*|dim\\w*|lower\\w*|reduc\\w*|evaporat\\w*|dash\\w*|collaps\\w*|shrink\\w*)";
+const HIKE = "(?:rate\\s*)?(?:hikes?|hawkish|tightening)";
+const CUT = "(?:rate\\s*)?cuts?";
+const QUAL = "(?:bets?|odds|prospects?|expectations?|chances?|wagers?|hopes?|pricing|calls?)";
+const NEG_REWRITES: [RegExp, string][] = [
+  [new RegExp(`\\b${EASE}\\s+(?:\\w+\\s+){0,3}${HIKE}\\s*${QUAL}?\\b`, "gi"), " dovish "],
+  [new RegExp(`\\b${HIKE}\\s*${QUAL}\\s+(?:\\w+\\s+){0,2}${EASE}\\b`, "gi"), " dovish "],
+  [new RegExp(`\\b${EASE}\\s+(?:\\w+\\s+){0,3}${CUT}\\s*${QUAL}?\\b`, "gi"), " hawkish "],
+  [new RegExp(`\\b${CUT}\\s*${QUAL}\\s+(?:\\w+\\s+){0,2}${EASE}\\b`, "gi"), " hawkish "],
+  [/\bno\s+(?:rate\s*)?hike\b|\bhold\w*\s+(?:rates?\s+)?steady\b|\brates?\s+unchanged\b|\bskip\w*\s+(?:a\s+)?hike\b|\bpause\w*\s+(?:rate\s*)?hikes?\b/gi, " dovish "],
+  [/\bno\s+(?:rate\s*)?cut\b|\bcuts?\s+(?:are\s+)?off\s+the\s+table\b|\bdelay\w*\s+(?:rate\s*)?cuts?\b/gi, " hawkish "],
+];
+function normalizeNegations(text: string): string {
+  let t = text;
+  for (const [re, rep] of NEG_REWRITES) t = t.replace(re, rep);
+  return t;
+}
+
+function scoreAgainstRules(cfg: AssetConfig, rawText: string): Classification[] {
   const out: Classification[] = [];
+  const text = normalizeNegations(rawText);
   const mag = Math.min(countMatches(MAGNITUDE_WORDS, text), 3);
   const hasAsset = cfg.assetRe.test(text);
   for (const rule of cfg.rules) {
@@ -641,7 +662,7 @@ function splitPublisher(title: string, fallback: string): { title: string; sourc
 
 const dedupKey = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60);
 
-interface RawItem {
+export interface RawItem {
   title: string;
   description: string;
   url: string;
@@ -717,8 +738,13 @@ async function fetchJSON<T>(url: string, ms: number): Promise<T | null> {
 }
 
 async function fetchFeeds(cfg: AssetConfig): Promise<{ items: RawItem[]; ok: string[] }> {
+  return fetchFeedList(cfg.feeds);
+}
+
+// Shared RSS aggregation (also used by /api/news and the crypto news-sentiment scorer)
+export async function fetchFeedList(feeds: { url: string; name: string }[]): Promise<{ items: RawItem[]; ok: string[] }> {
   const results = await Promise.allSettled(
-    cfg.feeds.map(async (f) => {
+    feeds.map(async (f) => {
       const xml = await fetchText(f.url, 8000);
       return { name: f.name, items: xml ? parseRSS(xml, f.name) : [] };
     })

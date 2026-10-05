@@ -11,11 +11,17 @@ export default function BotPage() {
     <div className="mx-auto max-w-[1440px] space-y-6 px-4 py-6 lg:px-6">
       <div className="flex items-center gap-3">
         <h1 className="text-2xl font-semibold">RnG Daytrader Bot</h1>
-        <Badge variant="secondary" className="bg-gain-bg text-gain text-xs gap-1">
-          <span className="size-1.5 rounded-full bg-gain pulse-live" />
-          Live
+        <Badge variant="secondary" className="bg-muted text-muted-foreground text-xs gap-1">
+          <span className="size-1.5 rounded-full bg-muted-foreground/60" />
+          Archived · retired Feb 2026
         </Badge>
       </div>
+      <p className="text-sm text-muted-foreground -mt-2">
+        This bot is no longer trading. Live signal generation has moved to the{" "}
+        <a href="/signals" className="underline underline-offset-2 hover:text-foreground">Signals</a> page; the
+        active agents are on the <a href="/strike" className="underline underline-offset-2 hover:text-foreground">Strike</a>{" "}
+        and <a href="/hype" className="underline underline-offset-2 hover:text-foreground">Hype</a> dashboards.
+      </p>
 
       {/* Strategy overview */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

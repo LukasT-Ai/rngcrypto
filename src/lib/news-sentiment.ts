@@ -1,18 +1,4 @@
-interface CryptoPanicPost {
-  title: string;
-  url: string;
-  source: { title: string };
-  published_at: string;
-  votes: {
-    positive: number;
-    negative: number;
-    important: number;
-    toxic: number;
-    liked: number;
-    disliked: number;
-  };
-  currencies?: { code: string }[];
-}
+import { fetchFeedList, gnq, PRICE_UP, PRICE_DOWN, type RawItem } from "./catalyst-news";
 
 interface Headline {
   title: string;
@@ -29,17 +15,35 @@ export interface NewsSentimentResult {
   headlines: Headline[];
 }
 
-let sentimentCache: { data: NewsSentimentResult; timestamp: number } | null =
-  null;
+// CryptoPanic's free endpoint was retired; crypto headlines now come from the same RSS
+// aggregation the catalyst engine uses, scored by vocabulary instead of votes.
+const FEEDS = [
+  { url: "https://www.coindesk.com/arc/outboundfeeds/rss/", name: "CoinDesk" },
+  { url: "https://cointelegraph.com/rss", name: "Cointelegraph" },
+  { url: "https://decrypt.co/feed", name: "Decrypt" },
+  { url: "https://www.theblock.co/rss.xml", name: "The Block" },
+  { url: gnq("(crypto OR bitcoin OR ethereum OR altcoin) when:1d"), name: "Google News" },
+];
+
+const BULL =
+  /\b(inflow|approv|adopt|buy|bought|accumulat|partnership|launch|upgrade|record|bullish|breakout|green\s*light|clarity|integrat|treasury\s*purchase|institutional\s*demand|short\s*squeeze)\w*/i;
+const BEAR =
+  /\b(outflow|hack|exploit|lawsuit|ban|sell-?off|liquidat|bearish|crackdown|delay|bankrupt|insolven|depeg|probe|charge|fine|halt|freeze|dump|capitulat)\w*/i;
+
+let itemCache: { items: RawItem[]; timestamp: number } | null = null;
 const CACHE_TTL = 5 * 60 * 1000;
 
-function scorePost(post: CryptoPanicPost): number {
-  const v = post.votes;
-  const bullish = (v.positive ?? 0) + (v.liked ?? 0) + (v.important ?? 0) * 0.3;
-  const bearish = (v.negative ?? 0) + (v.disliked ?? 0) + (v.toxic ?? 0) * 0.5;
-  const total = bullish + bearish;
-  if (total === 0) return 0;
-  return Math.round(((bullish - bearish) / total) * 100);
+function count(re: RegExp, s: string): number {
+  const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+  return (s.match(g) ?? []).length;
+}
+
+function scoreTitle(title: string): number {
+  const bull = count(BULL, title) + count(PRICE_UP, title);
+  const bear = count(BEAR, title) + count(PRICE_DOWN, title);
+  const net = bull - bear;
+  if (net === 0) return 0;
+  return Math.max(-100, Math.min(100, net * 30));
 }
 
 function sentimentLabel(score: number): string {
@@ -58,120 +62,63 @@ function headlineSentiment(score: number): string {
   return "bearish";
 }
 
-async function fetchCryptoPanic(): Promise<NewsSentimentResult> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+async function loadItems(): Promise<RawItem[]> {
+  if (itemCache && Date.now() - itemCache.timestamp < CACHE_TTL) return itemCache.items;
+  const { items } = await fetchFeedList(FEEDS);
+  const seen = new Set<string>();
+  const cutoff = Date.now() - 48 * 3600e3;
+  const deduped = items
+    .filter((it) => {
+      const k = it.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60);
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      const t = new Date(it.publishedAt).getTime();
+      return !Number.isFinite(t) || t >= cutoff;
+    })
+    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  itemCache = { items: deduped, timestamp: Date.now() };
+  return deduped;
+}
 
+const NAME: Record<string, RegExp> = {
+  BTC: /bitcoin|\bbtc\b/i,
+  ETH: /ethereum|\beth\b/i,
+  SOL: /solana|\bsol\b/i,
+  ADA: /cardano|\$ada\b/i,
+  XRP: /\bxrp\b|ripple/i,
+  BNB: /\bbnb\b|binance/i,
+  NEAR: /\bnear\s*protocol|\bnear\b(?=.{0,30}(token|crypto|protocol))/i,
+  HYPE: /hyperliquid|\bhype\b/i,
+  ZEC: /zcash|\bzec\b/i,
+  PUMP: /pump\.?fun|\bpump\b(?=.{0,20}token)/i,
+  NIGHT: /midnight\s*network|\bnight\b(?=.{0,20}(token|midnight))/i,
+  CRCL: /\bcircle\b|\bcrcl\b|usdc/i,
+  COIN: /coinbase/i,
+  MINIMAX: /minimax/i,
+  SPCX: /spacex/i,
+  DRAM: /\bdram\b/i,
+};
+
+function aggregate(items: RawItem[]): NewsSentimentResult {
+  const scored = items.slice(0, 60).map((it) => {
+    const s = scoreTitle(it.title);
+    return { title: it.title, sentiment: headlineSentiment(s), source: it.source, url: it.url, publishedAt: it.publishedAt, score: s };
+  });
+  const nonZero = scored.filter((h) => h.score !== 0);
+  const pool = nonZero.length > 0 ? nonZero : scored;
+  const avg = pool.length > 0 ? Math.round(pool.reduce((s, h) => s + h.score, 0) / pool.length) : 0;
+  return { score: Math.max(-100, Math.min(100, avg)), label: sentimentLabel(avg), headlines: scored.slice(0, 10) };
+}
+
+export async function getNewsSentiment(symbol?: string): Promise<NewsSentimentResult> {
   try {
-    const res = await fetch(
-      "https://cryptopanic.com/api/free/v1/posts/?public=true",
-      { signal: controller.signal, cache: "no-store" }
-    );
-    if (!res.ok) throw new Error(`CryptoPanic ${res.status}`);
-    const data = (await res.json()) as { results?: CryptoPanicPost[] };
-
-    const posts = data.results ?? [];
-    if (posts.length === 0) {
-      return { score: 0, label: "Neutral", headlines: [] };
-    }
-
-    const scored = posts.slice(0, 30).map((p) => {
-      const s = scorePost(p);
-      return {
-        title: p.title,
-        sentiment: headlineSentiment(s),
-        source: p.source?.title ?? "Unknown",
-        url: p.url,
-        publishedAt: p.published_at,
-        score: s,
-        currencies: p.currencies?.map((c) => c.code.toUpperCase()) ?? [],
-      };
-    });
-
-    const withVotes = scored.filter(
-      (h) => h.sentiment !== "neutral" || h.score !== 0
-    );
-    const aggregatePool = withVotes.length > 0 ? withVotes : scored;
-    const avgScore =
-      aggregatePool.length > 0
-        ? Math.round(
-            aggregatePool.reduce((sum, h) => sum + h.score, 0) /
-              aggregatePool.length
-          )
-        : 0;
-
-    return {
-      score: Math.max(-100, Math.min(100, avgScore)),
-      label: sentimentLabel(avgScore),
-      headlines: scored.slice(0, 10).map(({ currencies: _, ...h }) => h),
-    };
+    const items = await loadItems();
+    if (!symbol) return aggregate(items);
+    const re = NAME[symbol.toUpperCase()] ?? new RegExp(`\\b${symbol}\\b`, "i");
+    const mine = items.filter((it) => re.test(it.title));
+    if (mine.length < 2) return { ...aggregate(items), headlines: aggregate(items).headlines.slice(0, 5) };
+    return aggregate(mine);
   } catch {
     return { score: 0, label: "Neutral", headlines: [] };
-  } finally {
-    clearTimeout(timeout);
   }
-}
-
-export async function getNewsSentiment(
-  symbol?: string
-): Promise<NewsSentimentResult> {
-  if (sentimentCache && Date.now() - sentimentCache.timestamp < CACHE_TTL) {
-    return filterBySymbol(sentimentCache.data, symbol);
-  }
-
-  const result = await fetchCryptoPanic();
-  sentimentCache = { data: result, timestamp: Date.now() };
-  return filterBySymbol(result, symbol);
-}
-
-function filterBySymbol(
-  data: NewsSentimentResult,
-  symbol?: string
-): NewsSentimentResult {
-  if (!symbol) return data;
-
-  const sym = symbol.toUpperCase();
-  const filtered = data.headlines.filter(
-    (h) =>
-      h.title.toUpperCase().includes(sym) ||
-      h.title.toUpperCase().includes(symbolToName(sym))
-  );
-
-  if (filtered.length === 0) return data;
-
-  const avgScore =
-    filtered.length > 0
-      ? Math.round(
-          filtered.reduce((sum, h) => sum + h.score, 0) / filtered.length
-        )
-      : data.score;
-
-  return {
-    score: Math.max(-100, Math.min(100, avgScore)),
-    label: sentimentLabel(avgScore),
-    headlines: filtered,
-  };
-}
-
-function symbolToName(sym: string): string {
-  const map: Record<string, string> = {
-    BTC: "BITCOIN",
-    ETH: "ETHEREUM",
-    SOL: "SOLANA",
-    ADA: "CARDANO",
-    XRP: "XRP",
-    BNB: "BNB",
-    NEAR: "NEAR",
-    HYPE: "HYPERLIQUID",
-    ZEC: "ZCASH",
-    TSLA: "TESLA",
-    NVDA: "NVIDIA",
-    GOOGL: "GOOGLE",
-    GOLD: "GOLD",
-    OIL: "OIL",
-    SILVER: "SILVER",
-    COIN: "COINBASE",
-    MU: "MICRON",
-  };
-  return map[sym] ?? sym;
 }

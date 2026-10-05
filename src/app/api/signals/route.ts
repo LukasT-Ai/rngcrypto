@@ -3905,7 +3905,10 @@ export async function GET(req: NextRequest) {
     symbol === "OIL"
       ? await getNextOilEvent()
       : isCatalystAsset(symbol)
-        ? ((await getUpcomingEvents(96, symbol)).find((e) => e.impact === "high") ?? null)
+        ? await (async () => {
+            const up = await getUpcomingEvents(120, symbol);
+            return up.find((e) => e.impact === "high") ?? up.find((e) => e.impact === "medium") ?? null;
+          })()
         : null;
 
   // ── Compute trade call ─────────────────────────────────────────────────────

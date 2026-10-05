@@ -69,18 +69,22 @@ export default function MarketsPage() {
   const router = useRouter()
   const [search, setSearch] = useState("")
 
-  const { data: coins, isLoading } = useQuery<CoinMarket[]>({
+  const { data: coins, isLoading, isError } = useQuery<CoinMarket[]>({
     queryKey: ["markets-list"],
     queryFn: async () => {
-      const res = await fetch(
-        "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=true"
-      )
-      return res.json()
+      // Proxy through our API: server-side cache + last-good fallback when CoinGecko rate-limits
+      const res = await fetch("/api/prices?ids=&per_page=50&sparkline=true")
+      if (!res.ok) throw new Error(`Prices API ${res.status}`)
+      const json = await res.json()
+      if (!Array.isArray(json)) throw new Error("Unexpected payload")
+      return json as CoinMarket[]
     },
     refetchInterval: 60_000,
+    staleTime: 30_000,
+    retry: 2,
   })
 
-  const filtered = coins?.filter(
+  const filtered = (Array.isArray(coins) ? coins : []).filter(
     (c) =>
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       c.symbol.toLowerCase().includes(search.toLowerCase())

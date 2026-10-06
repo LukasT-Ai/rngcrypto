@@ -53,6 +53,9 @@ export function transmission(def: MacroEventDef, surpriseScore: number | null, r
       o = -0.5 * s;
       break;
     case "fed_communication":
+      // Synthetic surprise from the front-end yield reaction: + = hawkish (yields up), - = dovish
+      r = s;
+      break;
     case "auction":
     case "crypto":
       break;
@@ -148,7 +151,9 @@ export function directionOf(score: number): Direction {
 }
 
 function confidenceFor(score: number, magnitude: SurpriseMagnitude | null, relevance: number, kind: MacroEventDef["kind"]): Confidence {
-  if (kind === "fed_communication" || kind === "auction") return "low";
+  if (kind === "auction") return "low";
+  // Fed communication has no number: confidence comes only from a synthetic score derived from the 2Y reaction.
+  if (kind === "fed_communication" && (magnitude == null || Math.abs(score) < 20)) return "low";
   const a = Math.abs(score);
   if (a >= 45 && (magnitude === "large" || magnitude === "extreme") && relevance >= 0.6) return "high";
   if (a >= 20 && relevance >= 0.4) return "medium";

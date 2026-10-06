@@ -90,6 +90,8 @@ export interface SignalStats {
   >;
   byGradeSymbol: Record<string, Record<string, CalibrationBucket>>;
   oilByRegime: Record<string, CalibrationBucket>;
+  // Long vs short performance side by side; the engine must earn its record on both sides.
+  byBias: Record<"LONG" | "SHORT", CalibrationBucket & { total: number; pending: number }>;
 }
 
 let memoryCache: SignalLog[] | null = null;
@@ -305,9 +307,16 @@ export function computeStats(signals: SignalLog[]): SignalStats {
   }
   for (const [r, list] of regimes) oilByRegime[r] = bucketOf(list);
 
+  const sideOf = (b: "LONG" | "SHORT") => {
+    const list = signals.filter((s) => s.bias === b);
+    return { ...bucketOf(list), total: list.length, pending: list.filter((s) => s.outcome === "pending").length };
+  };
+  const byBias: SignalStats["byBias"] = { LONG: sideOf("LONG"), SHORT: sideOf("SHORT") };
+
   return {
     byGradeSymbol,
     oilByRegime,
+    byBias,
     total: signals.length,
     wins: wins.length,
     losses: losses.length,

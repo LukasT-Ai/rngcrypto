@@ -347,7 +347,7 @@ export function buildRecommendation(
     const h = d.htf
     oneLiner = call.geoOverride
       ? call.geoOverride
-      : call.confidence < 45
+      : Math.abs(bull - bear) <= 1
         ? `Signals are mixed (${bull} bullish vs ${bear} bearish factors, confidence ${call.confidence}%) — there is no edge right now.`
         : d.patterns.squeeze === "volatility_compression" && d.indicators.adx < 20
           ? `Volatility is compressed (ADX ${d.indicators.adx.toFixed(0)}) — wait for the breakout direction before committing.`

@@ -49,3 +49,15 @@ describe("regime classification", () => {
     expect(r.confidence).toBe("low");
   });
 });
+
+describe("regime: dollar breakout", () => {
+  const base = { us2y: 3.8, us10y: 4.1, us2yChg5d: 0.02, dxy: 104, dxyChg5d: null as number | null, vix: 15, spxChg5d: 0.4, cpiYoY: 2.8 };
+  it("a 5d DXY surge reads as tightening and a slump as easing when yields are quiet", () => {
+    expect(classifyRegime({ ...base, dxyChg5d: 1.8 }).policyBias).toBe("tightening");
+    expect(classifyRegime({ ...base, dxyChg5d: -1.8 }).policyBias).toBe("easing");
+    expect(classifyRegime({ ...base, dxyChg5d: 0.4 }).policyBias).toBe("hold");
+  });
+  it("front-end yields keep precedence over the dollar", () => {
+    expect(classifyRegime({ ...base, us2yChg5d: -0.2, dxyChg5d: 1.8 }).policyBias).toBe("easing");
+  });
+});

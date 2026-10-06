@@ -2,7 +2,7 @@ import type { Alert, EventPhase, EventState, Importance, MacroAsset, MacroRegime
 import { MACRO_ASSETS, REACTION_SCHEDULE, SNAPSHOT_KEYS } from "./types";
 import { defFor, getMacroEvents } from "./calendar";
 import { fetchRelease, latestCpiYoY, sourceStatus } from "./releases";
-import { computeSurprise } from "./surprise";
+import { computeSurprise, magnitudeFromZ } from "./surprise";
 import { impactForSurprise, preReleaseMap, transmission } from "./impact";
 import { evaluateConfirmation } from "./confirmation";
 import { classifyRegime } from "./regime";
@@ -194,6 +194,33 @@ async function advance(st: EventState, regime: MacroRegime, now: number): Promis
     st.dataAgeMs = live.dataAgeMs;
   }
 
+  // 2b) Text events (FOMC statement, minutes, Fed speeches) have no number. Read the front-end yield reaction
+  //     at 5m (then 15m) as a synthetic hawkish/dovish surprise so a hawkish Fed scores bearish for BTC and
+  //     gold with the same magnitude a dovish Fed scores bullish. 2Y change is stored in percentage points.
+  if (st.def.kind === "fed_communication" && st.reactions.length > 0) {
+    const sample = st.reactions.find((r) => r.label === "15m") ?? st.reactions.find((r) => r.label === "5m") ?? null;
+    const us2yPts = sample?.changesPct.us2y ?? null;
+    if (us2yPts != null) {
+      const bp = us2yPts * 100;
+      const syntheticScore = Math.round(100 * Math.tanh(bp / 8)); // +5bp => about +55 (hawkish)
+      const dxy = sample?.changesPct.dxy ?? null;
+      // Dollar disagreeing with yields halves the read; agreeing leaves it intact.
+      const agreed = dxy == null ? 1 : Math.sign(dxy) === Math.sign(bp) || Math.abs(dxy) < 0.1 ? 1 : 0.5;
+      const score = Math.round(syntheticScore * agreed);
+      const magnitude = magnitudeFromZ(bp / 5);
+      st.surprise = {
+        delta: Math.round(bp * 10) / 10,
+        unit: st.def.unit,
+        zScore: Math.round((bp / 5) * 100) / 100,
+        score,
+        magnitude,
+        label: Math.abs(bp) < 2 ? "Market read: neutral (2Y little changed)" : `Market read: ${bp > 0 ? "hawkish" : "dovish"} (2Y ${bp > 0 ? "+" : ""}${bp.toFixed(1)}bp at ${sample!.label}${dxy != null ? `, DXY ${dxy >= 0 ? "+" : ""}${dxy.toFixed(2)}%` : ""})`,
+        vsPrevious: null,
+      };
+      st.postImpact = impactForSurprise(st.def, score, magnitude, regime);
+    }
+  }
+
   // 3) Confirmation (needs a directional expectation; for text events use the observed rates/dollar read).
   if (st.reactions.length > 0) {
     const s = st.surprise?.score ?? null;
@@ -218,9 +245,11 @@ function scoresFor(asset: MacroAsset, regime: MacroRegime, states: EventState[],
   let macro = 0;
   if (regime.policyBias === "easing") macro += asset === "WTI" ? 5 : 20;
   if (regime.policyBias === "tightening") macro -= asset === "WTI" ? 5 : 20;
+  // Risk regime is a mirror: what risk-off takes from BTC and crude (and gives gold), risk-on gives back.
   if (regime.risk === "off") macro += asset === "BTC" ? -20 : asset === "GOLD" ? 10 : -10;
-  if (regime.risk === "on") macro += asset === "BTC" ? 10 : 0;
+  if (regime.risk === "on") macro += asset === "BTC" ? 20 : asset === "GOLD" ? -10 : 10;
   if (regime.inflationFocus === "high") macro += asset === "GOLD" ? 10 : asset === "BTC" ? -5 : 5;
+  if (regime.inflationFocus === "low") macro += asset === "GOLD" ? -10 : asset === "BTC" ? 5 : -5;
 
   // Event: verified releases in the last 6h, half-life 2h, weighted by importance.
   let eventSum = 0;

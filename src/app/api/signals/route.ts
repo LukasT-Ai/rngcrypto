@@ -6,6 +6,9 @@ import { getNewsSentiment, type NewsSentimentResult } from "@/lib/news-sentiment
 import { getCatalystNews, isCatalystAsset, type OilGeoResult } from "@/lib/oil-geopolitical-news";
 import { getMacroScores, macroAssetFor } from "@/lib/macro/service";
 import type { MacroScores, MacroState as MacroEventIntel } from "@/lib/macro/types";
+import { computeMacroRegime, macroBonus as regimeBonus, type MacroRegimeResult } from "@/lib/ta/macro-regime";
+import { analyzeElliottMTF, type ElliottMTFResult } from "@/lib/ta/elliott";
+import { scoreShortSideComposite, type CompositeResult } from "@/lib/ta/indicators";
 
 export const dynamic = "force-dynamic";
 
@@ -671,17 +674,22 @@ function detectDivergence(
       ? iSlice[indHigh2Idx]
       : null;
 
+  let bull: string | null = null;
+  let bear: string | null = null;
   if (iLow1 != null && iLow2 != null) {
-    if (priceLow2 < priceLow1 && iLow2 > iLow1) return "bullish";
-    if (priceLow2 > priceLow1 && iLow2 < iLow1) return "hidden_bullish";
+    if (priceLow2 < priceLow1 && iLow2 > iLow1) bull = "bullish";
+    else if (priceLow2 > priceLow1 && iLow2 < iLow1) bull = "hidden_bullish";
   }
-
   if (iHigh1 != null && iHigh2 != null) {
-    if (priceHigh2 > priceHigh1 && iHigh2 < iHigh1) return "bearish";
-    if (priceHigh2 < priceHigh1 && iHigh2 > iHigh1) return "hidden_bearish";
+    if (priceHigh2 > priceHigh1 && iHigh2 < iHigh1) bear = "bearish";
+    else if (priceHigh2 < priceHigh1 && iHigh2 > iHigh1) bear = "hidden_bearish";
   }
-
-  return null;
+  // Both sides present: the more recent pivot wins; a dead heat is no signal (no bullish-first priority).
+  if (bull && bear) {
+    if (indLow2Idx === indHigh2Idx) return null;
+    return indLow2Idx > indHigh2Idx ? bull : bear;
+  }
+  return bull ?? bear;
 }
 
 function detectVolumeDivergence(
@@ -753,6 +761,11 @@ function detectCandlestickPattern(candles: Candle[]): string | null {
     return "hammer";
   }
 
+  // Same shape as a hammer but after an up move: hanging man (bearish)
+  if (lowerWick > body * 2 && upperWick < body * 0.5 && c.close > p.close) {
+    return "hanging_man";
+  }
+
   if (upperWick > body * 2 && lowerWick < body * 0.5 && c.close < p.close) {
     return "inverted_hammer";
   }
@@ -779,6 +792,15 @@ function detectCandlestickPattern(candles: Candle[]): string | null {
     body > pBody
   ) {
     return "bearish_engulfing";
+  }
+
+  // Dark cloud cover: prior green, opens above prior high, closes below prior midpoint
+  if (p.close > p.open && c.close < c.open && c.open > p.high && c.close < (p.open + p.close) / 2 && c.close > p.open) {
+    return "dark_cloud_cover";
+  }
+  // Piercing line: prior red, opens below prior low, closes above prior midpoint
+  if (p.close < p.open && c.close > c.open && c.open < p.low && c.close > (p.open + p.close) / 2 && c.close < p.open) {
+    return "piercing_line";
   }
 
   const ppBody = Math.abs(pp.close - pp.open);
@@ -870,9 +892,11 @@ interface MacroState {
     priceAboveBoth: boolean;
   } | null;
   weeklyEngulfing: boolean;
+  // Signed regime score in [-100, 100] from lib/ta/macro-regime (bearish mirrors of every bullish pattern).
   macroScore: number;
   signals: string[];
-  bias: string;
+  bias: MacroRegimeResult["bias"];
+  regime: Pick<MacroRegimeResult, "components" | "details"> | null;
   eventBlackout: { blocked: boolean; event?: string; date?: string };
 }
 
@@ -1214,16 +1238,22 @@ async function fetchMacroSignals(): Promise<MacroState | null> {
       signals.push("TRIPLE SIGNAL: Stochastic + Golden Cross + 21/377 EMA confluence");
     }
 
-    const bias = macroScore >= 20 ? "strong_bull" : macroScore >= 10 ? "bull" : macroScore >= 5 ? "lean_bull" : "neutral";
+    // The legacy block above only knows bullish patterns. The regime module scores both sides (death cross,
+    // weekly stoch breakdown, 21<377, bearish engulfing, LH/LL structure, 200d slope, Pi Cycle) and is the
+    // source of truth for score and bias; the legacy fields stay for the dashboard's historical-stat cards.
+    const regime = computeMacroRegime(candles);
+    void macroScore;
+    void signals;
 
     const state: MacroState = {
       stochastic,
       goldenCross,
       ema21_377,
       weeklyEngulfing,
-      macroScore,
-      signals,
-      bias,
+      macroScore: regime.score,
+      signals: regime.signals,
+      bias: regime.bias,
+      regime: { components: regime.components, details: regime.details },
       eventBlackout: getEventBlackout(),
     };
 
@@ -1234,11 +1264,19 @@ async function fetchMacroSignals(): Promise<MacroState | null> {
   }
 }
 
+// Symmetric: a regime aligned with the call adds up to +20; a regime opposed by 15+ points costs 10.
 function getMacroBonus(macroState: MacroState | null, bias: "LONG" | "SHORT" | "WAIT", isCrypto: boolean): number {
   if (!macroState || !isCrypto) return 0;
-  if (bias === "LONG") return Math.min(macroState.macroScore, 20);
-  if (bias === "SHORT" && macroState.macroScore >= 15) return -10;
-  return 0;
+  return regimeBonus(macroState.macroScore, bias);
+}
+
+// Grade ladder shared by the call and the post-macro re-grade so confidence and grade never disagree.
+function gradeFor(confidence: number, strongCategories: number): string {
+  if (confidence >= 85 && strongCategories >= 3) return "A+";
+  if (confidence >= 75) return "A";
+  if (confidence >= 60) return "B";
+  if (confidence >= 55) return "C";
+  return "NO TRADE";
 }
 
 // ── Daily / Weekly High-Low ──────────────────────────────────────────────────
@@ -1341,18 +1379,23 @@ function scoreMomentum(
   const notes: string[] = [];
 
   const isTrendingBull = trendDir === "bull" && (macroBias === "strong_bull" || macroBias === "bull");
-  const isTrendingBear = trendDir === "bear" && (macroBias === "neutral");
+  const isTrendingBear = trendDir === "bear" && (macroBias === "strong_bear" || macroBias === "bear");
 
   if (isTrendingBull && rsi > 70) {
     score += 5;
     notes.push(`RSI momentum (${rsi.toFixed(0)}) — trending bull regime`);
-    if (prevRsi != null && prevRsi <= 70 && rsi > 70) {
+    if (prevRsi != null && prevRsi <= 70) {
       score += 15;
       notes.push("RSI momentum cross above 70 — bullish entry signal");
     }
   } else if (isTrendingBear && rsi < 30) {
-    score += 5;
+    // Mirror of the bull momentum entry: in a confirmed bear regime, RSI breaking 30 is continuation, not a dip to buy
+    score -= 5;
     notes.push(`RSI momentum (${rsi.toFixed(0)}) — trending bear regime`);
+    if (prevRsi != null && prevRsi >= 30) {
+      score -= 15;
+      notes.push("RSI momentum cross below 30 — bearish entry signal");
+    }
   } else if (rsi < 30) {
     score += 35;
     notes.push(`RSI oversold (${rsi.toFixed(0)})`);
@@ -1416,31 +1459,27 @@ function scoreVolume(
     return { score: 0, notes };
   }
 
-  if (volRatio > 1.5) {
-    notes.push(`Volume ${volRatio.toFixed(1)}x above average`);
-  } else if (volRatio < 0.5) {
-    score -= 10;
-    notes.push("Volume below average");
-  }
+  // Volume has no direction of its own: spikes and rising participation CONFIRM whichever side CVD says is in
+  // control. A high-volume breakdown must score as negative as a high-volume breakout scores positive.
+  const dir = cvd >= 0 ? 1 : -1;
+  const side = dir > 0 ? "buyers" : "sellers";
 
-  // 20 EMA spike scoring — best as confirmation, DRY filter is strongest edge
+  if (volRatio > 1.5) notes.push(`Volume ${volRatio.toFixed(1)}x above average`);
+
   if (spikeLabel === "EXTREME SPIKE") {
-    score += 15;
-    notes.push(`Vol spike ${spikeRatio.toFixed(1)}x above 20 EMA — real breakout`);
+    score += 15 * dir;
+    notes.push(`Vol spike ${spikeRatio.toFixed(1)}x above 20 EMA — real ${dir > 0 ? "breakout" : "breakdown"}`);
   } else if (spikeLabel === "HIGH SPIKE") {
-    score += 10;
-    notes.push(`Vol spike ${spikeRatio.toFixed(1)}x above 20 EMA — conviction move`);
-  } else if (spikeLabel === "DRY") {
-    score -= 15;
-    notes.push(`Vol dry (${spikeRatio.toFixed(1)}x EMA) — low conviction, fakeout risk`);
+    score += 10 * dir;
+    notes.push(`Vol spike ${spikeRatio.toFixed(1)}x above 20 EMA — conviction move by ${side}`);
   }
 
   if (volTrend === "increasing") {
-    score += 15;
-    notes.push("Volume trend increasing");
+    score += 15 * dir;
+    notes.push(`Volume trend increasing behind ${side}`);
   } else if (volTrend === "decreasing") {
-    score -= 15;
-    notes.push("Volume trend decreasing");
+    score -= 15 * dir;
+    notes.push(`Volume trend decreasing — ${side} losing participation`);
   }
 
   if (cvd > 0) {
@@ -1449,6 +1488,12 @@ function scoreVolume(
   } else {
     score -= 30;
     notes.push("Negative CVD — net selling pressure");
+  }
+
+  // Low participation is a conviction haircut for either side, not a bearish vote
+  if (spikeLabel === "DRY" || volRatio < 0.5) {
+    score = Math.round(score * 0.6);
+    notes.push(spikeLabel === "DRY" ? `Vol dry (${spikeRatio.toFixed(1)}x EMA) — low conviction, fakeout risk` : "Volume below average — low conviction");
   }
 
   // Absorption: informational only — backtest shows weak predictive power at short TFs
@@ -1479,10 +1524,10 @@ function scoreDerivatives(
     } else if (fundingRate > 0.05) {
       score -= 30;
       notes.push("High positive funding — longs overleveraged");
-    } else if (fundingRate > 0.02) {
+    } else if (fundingRate > 0.01) {
       score -= 10;
       notes.push("Elevated positive funding");
-    } else if (fundingRate < 0) {
+    } else if (fundingRate < -0.005) {
       score += 10;
       notes.push("Slightly negative funding");
     }
@@ -1687,25 +1732,22 @@ function scoreSentiment(
 
 function scoreMarketData(
   btcDominance: number | null,
-  isCrypto: boolean
+  isCrypto: boolean,
+  symbol: string
 ): { score: number; notes: string[] } {
   let score = 0;
   const notes: string[] = [];
 
-  if (!isCrypto) return { score: 0, notes: [] };
+  if (!isCrypto || btcDominance == null) return { score: 0, notes: [] };
 
-  if (btcDominance != null) {
-    if (btcDominance > 55) {
-      score += 15;
-      notes.push(
-        `High BTC dominance (${btcDominance.toFixed(1)}%) — capital flowing to BTC`
-      );
-    } else if (btcDominance < 40) {
-      score -= 10;
-      notes.push(
-        `Low BTC dominance (${btcDominance.toFixed(1)}%) — alt season`
-      );
-    }
+  // Capital rotating into BTC is bullish for BTC and bearish for alts; the inverse for alt season.
+  const sign = symbol === "BTC" ? 1 : -1;
+  if (btcDominance > 55) {
+    score += 15 * sign;
+    notes.push(`High BTC dominance (${btcDominance.toFixed(1)}%) — capital flowing to BTC${sign < 0 ? ", headwind for alts" : ""}`);
+  } else if (btcDominance < 40) {
+    score -= 15 * sign;
+    notes.push(`Low BTC dominance (${btcDominance.toFixed(1)}%) — alt season${sign < 0 ? ", tailwind for alts" : ""}`);
   }
 
   return { score: clamp(score, -100, 100), notes };
@@ -1719,13 +1761,8 @@ function scorePatterns(
 
   if (!pattern) return { score: 0, notes: [] };
 
-  const bullish = [
-    "hammer",
-    "inverted_hammer",
-    "bullish_engulfing",
-    "morning_star",
-  ];
-  const bearish = ["shooting_star", "bearish_engulfing", "evening_star"];
+  const bullish = ["hammer", "inverted_hammer", "bullish_engulfing", "morning_star", "piercing_line"];
+  const bearish = ["shooting_star", "hanging_man", "bearish_engulfing", "evening_star", "dark_cloud_cover"];
 
   if (bullish.includes(pattern)) {
     score += 40;
@@ -1770,11 +1807,11 @@ function applyCatalystScore(
   catalystRisk: string | null,
   fundingRate: number | null
 ): { score: number; note: string | null } {
-  let score = catalystScore;
+  const score = catalystScore;
   let note = catalystRisk;
 
+  // Extreme funding in either direction is squeeze risk for whoever is crowded: flag it, do not vote bearish
   if (fundingRate != null && Math.abs(fundingRate) > 0.05) {
-    score -= 20;
     note =
       (note ? note + "; " : "") + "Extreme funding rate, squeeze risk";
   }
@@ -1790,7 +1827,8 @@ function scoreLiquidation(
   shortLiqs24h: number | null,
   fundingRate: number | null,
   oiChange: number | null,
-  takerBuySellRatio: number | null
+  takerBuySellRatio: number | null,
+  priceChange24h: number | null
 ): { score: number; notes: string[]; squeezeRisk: string | null } {
   let score = 0;
   const notes: string[] = [];
@@ -1835,12 +1873,16 @@ function scoreLiquidation(
   }
 
   if (oiChange != null) {
+    // Rising OI confirms the prevailing move (longs building on a rally, shorts building in a selloff);
+    // falling OI means that move is unwinding.
+    const px = priceChange24h ?? 0;
+    const pxDir = px > 0.25 ? 1 : px < -0.25 ? -1 : 0;
     if (oiChange > 15) {
-      score += 10;
-      notes.push(`OI surging +${oiChange.toFixed(1)}% — new money entering`);
+      score += 10 * pxDir;
+      notes.push(`OI surging +${oiChange.toFixed(1)}% — ${pxDir > 0 ? "longs building on the rally" : pxDir < 0 ? "shorts building into the selloff" : "new money entering, direction unclear"}`);
     } else if (oiChange < -15) {
-      score -= 10;
-      notes.push(`OI dropping ${oiChange.toFixed(1)}% — positions unwinding`);
+      score -= 10 * pxDir;
+      notes.push(`OI dropping ${oiChange.toFixed(1)}% — ${pxDir > 0 ? "short covering, rally may stall" : pxDir < 0 ? "long liquidation, selloff may exhaust" : "positions unwinding"}`);
     }
   }
 
@@ -2692,6 +2734,94 @@ function computeTimeframeOutlook(params: {
 
 // ── Main Trade Call Computation ──────────────────────────────────────────────
 
+// ── Trend-system + exhaustion composite (lib/ta/indicators) across 15m / 4h / 1d ─────────────────────
+// Trend tools (SMC structure, Ichimoku, squeeze, Chandelier, Donchian, PSAR, AVWAP, HA, MACD zero cross)
+// and exhaustion tools (double top/bottom, H&S, wedges, liquidity sweeps, TD Sequential, climax, CCI, %R)
+// are averaged separately. A reversal read (trend one way, exhaustion the other) only carries full weight
+// once a STRUCTURAL confirmation exists (CHoCH, sweep, confirmed pattern); otherwise it is a "forming" note.
+interface TaSystem {
+  trendScore: number;
+  exhaustionScore: number;
+  score: number;
+  setup: "continuation" | "reversal_confirmed" | "reversal_forming" | "none";
+  direction: "bullish" | "bearish" | null;
+  confirmedBy: string[];
+  notes: string[];
+  perTF: Record<string, { trend: number; exhaustion: number; score: number; top: { name: string; score: number; note: string }[] }>;
+}
+
+const STRUCTURAL = new Set(["marketStructure", "liquiditySweep", "doubleTopBottom", "headAndShouldersBoth", "wedge"]);
+
+function computeTaSystem(series: Record<string, Candle[]>, tfWeights: Record<string, number>): TaSystem | null {
+  const perTF: TaSystem["perTF"] = {};
+  const comps: Record<string, CompositeResult> = {};
+  let wsum = 0, trend = 0, exh = 0;
+  for (const tf of Object.keys(series)) {
+    const c = series[tf];
+    if (!c || c.length < 60) continue;
+    let r: CompositeResult;
+    try {
+      r = scoreShortSideComposite(c);
+    } catch {
+      continue;
+    }
+    comps[tf] = r;
+    const w = tfWeights[tf] ?? 1;
+    wsum += w;
+    trend += w * r.trendScore;
+    exh += w * r.exhaustionScore;
+    perTF[tf] = {
+      trend: r.trendScore,
+      exhaustion: r.exhaustionScore,
+      score: r.score,
+      top: [...r.components].filter((k) => k.score !== 0).sort((a, b) => Math.abs(b.score) - Math.abs(a.score)).slice(0, 4).map((k) => ({ name: k.name, score: k.score, note: k.note })),
+    };
+  }
+  if (wsum === 0) return null;
+  const trendScore = Math.round((trend / wsum) * 10) / 10;
+  const exhaustionScore = Math.round((exh / wsum) * 10) / 10;
+
+  // Structural confirmations agreeing with the exhaustion direction, on any timeframe.
+  const exhDir = exhaustionScore <= -25 ? -1 : exhaustionScore >= 25 ? 1 : 0;
+  const confirmedBy: string[] = [];
+  if (exhDir !== 0) {
+    for (const tf of Object.keys(comps)) {
+      for (const k of comps[tf].components) {
+        if (STRUCTURAL.has(k.name) && Math.sign(k.score) === exhDir && Math.abs(k.score) >= 55) confirmedBy.push(`${tf} ${k.name}`);
+      }
+    }
+  }
+
+  let setup: TaSystem["setup"] = "none";
+  let direction: TaSystem["direction"] = null;
+  let score: number;
+  const notes: string[] = [];
+  const opposed = exhDir !== 0 && Math.sign(trendScore) === -exhDir && Math.abs(trendScore) >= 25;
+  if (opposed) {
+    direction = exhDir > 0 ? "bullish" : "bearish";
+    if (confirmedBy.length > 0) {
+      setup = "reversal_confirmed";
+      // Confirmed reversal: exhaustion leads, the stale trend is discounted
+      score = Math.round(0.7 * exhaustionScore + 0.3 * trendScore);
+      notes.push(`${direction === "bearish" ? "Uptrend exhausting with structure broken" : "Downtrend exhausting with structure reclaimed"} — reversal ${direction === "bearish" ? "short" : "long"} confirmed by ${confirmedBy.slice(0, 2).join(", ")}`);
+    } else {
+      setup = "reversal_forming";
+      // Not confirmed: trend still rules, exhaustion only trims it
+      score = Math.round(0.75 * trendScore + 0.25 * exhaustionScore);
+      notes.push(`${direction === "bearish" ? "Uptrend showing bearish exhaustion" : "Downtrend showing bullish exhaustion"} — ${direction === "bearish" ? "short" : "long"} setup forming, wait for a structure break`);
+    }
+  } else if (Math.abs(trendScore) >= 25) {
+    setup = "continuation";
+    direction = trendScore > 0 ? "bullish" : "bearish";
+    score = Math.round(0.6 * trendScore + 0.4 * exhaustionScore);
+    notes.push(`Trend system ${direction} (${trendScore > 0 ? "+" : ""}${trendScore}) with ${exhDir === 0 ? "no exhaustion against it" : "exhaustion aligned"} — ${direction === "bearish" ? "short" : "long"} continuation`);
+  } else {
+    score = Math.round(0.6 * trendScore + 0.4 * exhaustionScore);
+    notes.push(`Trend system flat (${trendScore > 0 ? "+" : ""}${trendScore}); exhaustion ${exhaustionScore > 0 ? "+" : ""}${exhaustionScore}`);
+  }
+  return { trendScore, exhaustionScore, score: clamp(score, -100, 100), setup, direction, confirmedBy, notes, perTF };
+}
+
 function computeMultiFactorCall(
   params: {
     price: number;
@@ -2761,6 +2891,10 @@ function computeMultiFactorCall(
     takerBuySellRatio: number | null;
     prevRsi: number | null;
     macroBias: string | null;
+    symbol: string;
+    change24h: number;
+    elliott: ElliottMTFResult | null;
+    taSystem: TaSystem | null;
   },
   dec: number
 ) {
@@ -2820,6 +2954,10 @@ function computeMultiFactorCall(
     takerBuySellRatio,
     prevRsi,
     macroBias,
+    symbol,
+    change24h,
+    elliott,
+    taSystem,
   } = params;
 
   const trendDir15m =
@@ -2839,6 +2977,11 @@ function computeMultiFactorCall(
     etf: 0.05,
     catalyst: 0.02,
     liquidation: 0.05,
+    // Elliott Wave position (impulse 1-5 / corrective ABC across 15m, 1h, 4h). Wave 5 and wave B tops
+    // argue for shorts; wave 2, 4 and C bottoms argue for longs. Weight scales with count confidence.
+    elliott: 0.08,
+    // Trend-system + exhaustion composite (SMC, Ichimoku, squeeze, Chandelier, TD Sequential, patterns, sweeps)
+    taSystem: 0.12,
     macro: 0,
     event: 0,
     confirmation: 0,
@@ -2915,7 +3058,7 @@ function computeMultiFactorCall(
   );
   const divs = scoreDivergences(rsiDiv15m, rsiDiv1h, macdDiv, volDiv);
   const sent = scoreSentiment(fearGreed, newsSentimentScore, isCrypto, oilGeoScore);
-  const mktData = scoreMarketData(btcDominance, isCrypto);
+  const mktData = scoreMarketData(btcDominance, isCrypto, symbol);
   const pats = scorePatterns(pattern);
   const etfScore = scoreETFFlows(etfNet);
   const catalyst = applyCatalystScore(extCatalystScore, catalystRiskNote, fundingRate);
@@ -2927,11 +3070,23 @@ function computeMultiFactorCall(
     shortLiqs24h,
     fundingRate,
     oiChange,
-    takerBuySellRatio
+    takerBuySellRatio,
+    change24h
   );
 
-  // Normalize by the weights actually in play so non-crypto assets are not compressed toward 50
-  const weightSum = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
+  // Elliott: scale weight by how confident the count is; a weak or absent count carries little weight.
+  const ewScore = elliott ? clamp(Math.round(elliott.consensus.score), -100, 100) : 0;
+  weights.elliott = elliott
+    ? weights.elliott * (0.25 + 0.75 * clamp(elliott.consensus.confidence, 0, 100) / 100) * (elliott.consensus.agreement >= 0.66 ? 1 : 0.5)
+    : 0;
+
+  const taScore = taSystem ? taSystem.score : 0;
+  if (!taSystem) weights.taSystem = 0;
+
+  // Normalize by the weights actually in play so non-crypto assets are not compressed toward 50.
+  // Catalyst risk is direction-neutral (event proximity, closed markets), so it is NOT a vote in the
+  // weighted score; it haircuts confidence below instead.
+  const weightSum = (Object.values(weights).reduce((a, b) => a + b, 0) - weights.catalyst) || 1;
   const weightedScore =
     (ms.score * weights.marketStructure +
       mom.score * weights.momentum +
@@ -2944,15 +3099,20 @@ function computeMultiFactorCall(
       mktData.score * weights.marketData +
       pats.score * weights.patterns +
       etfScore.score * weights.etf +
-      catalyst.score * weights.catalyst +
       liq.score * weights.liquidation +
+      ewScore * weights.elliott +
+      taScore * weights.taSystem +
       (macroScores?.macro ?? 0) * weights.macro +
       (macroScores?.event ?? 0) * weights.event +
       (macroScores?.confirmation ?? 0) * weights.confirmation) /
     weightSum;
 
   const whipsawPenalty = oilGeoRegime === "whipsaw" ? -8 : 0;
-  let confidence = clamp(Math.round(50 + weightedScore / 2 + whipsawPenalty), 0, 100);
+  // Conviction is the MAGNITUDE of the evidence. A strongly bearish board is a high-confidence SHORT, not a
+  // low-confidence LONG; the sign only picks the side below.
+  const strength = Math.abs(weightedScore);
+  const catalystHaircut = Math.round(Math.max(-100, Math.min(0, catalyst.score)) / 10); // 0 to -10
+  let confidence = clamp(Math.round(50 + strength / 2 + whipsawPenalty + catalystHaircut), 0, 100);
 
   // Scheduled-release risk: a high/critical print inside 15 minutes caps conviction and is flagged explicitly.
   let preEventNote: string | null = null;
@@ -3024,6 +3184,18 @@ function computeMultiFactorCall(
             ? "Neutral"
             : "Bearish",
       weight: Math.round(weights.divergences * 100),
+    },
+    {
+      category: "Trend System",
+      assessment:
+        taScore > 40 ? "Strong Bullish" : taScore > 12 ? "Bullish" : taScore > -12 ? "Neutral" : taScore > -40 ? "Bearish" : "Strong Bearish",
+      weight: Math.round(weights.taSystem * 100),
+    },
+    {
+      category: "Elliott Wave",
+      assessment:
+        ewScore > 40 ? "Strong Bullish" : ewScore > 10 ? "Bullish" : ewScore > -10 ? "Neutral" : ewScore > -40 ? "Bearish" : "Strong Bearish",
+      weight: Math.round(weights.elliott * 100),
     },
   ];
 
@@ -3124,8 +3296,10 @@ function computeMultiFactorCall(
       f.assessment === "Bearish"
   ).length;
 
+  // A directional call needs tradeable conviction AFTER event and catalyst haircuts; below the logging
+  // threshold it is a lean, not a trade. Same bar for both sides.
   const isWait =
-    confidence < 45 ||
+    confidence < 55 ||
     (squeeze === "volatility_compression" && adx < 20) ||
     (trend1h !== trend4h && adx < 20);
 
@@ -3177,12 +3351,7 @@ function computeMultiFactorCall(
     }
   }
 
-  let grade: string;
-  if (confidence >= 85 && strongCategories >= 3) grade = "A+";
-  else if (confidence >= 75) grade = "A";
-  else if (confidence >= 60) grade = "B";
-  else if (confidence >= 45) grade = "C";
-  else grade = "NO TRADE";
+  const grade = gradeFor(confidence, strongCategories);
 
   const ta = tradeATR * stopMult;
   // Stop floor as % of price so low-vol indices are not stopped by noise and thin tokens get room
@@ -3258,13 +3427,15 @@ function computeMultiFactorCall(
         ? fibExtension
         : round(tp3 - 1.5 * ta, dec);
   } else {
+    // WAIT: shape the provisional plan by the lean so the bear case is not drawn as a long
+    const lean = weightedScore >= 0 ? 1 : -1;
     entry = price;
     secondaryEntry = null;
     secondaryStopLoss = null;
-    stopLoss = price - 1.5 * ta;
-    tp1 = price + 1.5 * ta;
-    tp2 = price + 2.5 * ta;
-    tp3 = price + 4 * ta;
+    stopLoss = price - 1.5 * ta * lean;
+    tp1 = price + 1.5 * ta * lean;
+    tp2 = price + 2.5 * ta * lean;
+    tp3 = price + 4 * ta * lean;
     extendedTarget = null;
   }
 
@@ -3300,9 +3471,13 @@ function computeMultiFactorCall(
   const reward = Math.abs(tp2 - entry);
   const riskReward = risk > 0 ? Math.round((reward / risk) * 100) / 100 : 0;
 
+  const ewNotes = elliott && elliott.consensus.direction && Math.abs(ewScore) >= 10 ? elliott.consensus.notes.slice(0, 2).map((n) => `Elliott ${n}`) : [];
+  const taNotes = taSystem ? taSystem.notes.slice(0, 1) : [];
   const reasoning = [
     ...ms.notes,
     ...mom.notes,
+    ...taNotes,
+    ...ewNotes,
     ...vol.notes.slice(0, 2),
     ...deriv.notes,
     ...htf.notes,
@@ -3317,6 +3492,12 @@ function computeMultiFactorCall(
   const bullCase: string[] = [];
   const bearCase: string[] = [];
 
+  if (taSystem?.setup === "reversal_confirmed" && taSystem.direction === "bearish") bearCase.push(`Reversal short confirmed (${taSystem.confirmedBy[0]})`);
+  if (taSystem?.setup === "reversal_confirmed" && taSystem.direction === "bullish") bullCase.push(`Reversal long confirmed (${taSystem.confirmedBy[0]})`);
+  if (taSystem?.setup === "continuation" && taSystem.direction === "bearish") bearCase.push("Trend system: bearish continuation (structure, Ichimoku, Chandelier agree)");
+  if (taSystem?.setup === "continuation" && taSystem.direction === "bullish") bullCase.push("Trend system: bullish continuation (structure, Ichimoku, Chandelier agree)");
+  if (ewScore >= 20) bullCase.push("Elliott count: corrective wave completing — impulse up favoured");
+  if (ewScore <= -20) bearCase.push("Elliott count: terminal wave (5 or B) — reversal down favoured");
   if (ms.score > 0)
     bullCase.push("Bullish market structure with EMA alignment");
   if (mom.score > 0)
@@ -3433,6 +3614,8 @@ function computeMultiFactorCall(
     geoOverride,
     sizeMultiplier,
     stopMultiplier: stopMult,
+    strongCategories,
+    weightedScore: Math.round(weightedScore * 10) / 10,
   };
 }
 
@@ -3949,6 +4132,17 @@ export async function GET(req: NextRequest) {
           })()
         : null;
 
+  // ── Elliott Wave count across timeframes (pure, local) ───────────────────
+  let elliottMTF: ElliottMTFResult | null = null;
+  try {
+    elliottMTF = analyzeElliottMTF({ "15m": candles15m, "1h": candles1h, "4h": candles4h });
+  } catch {
+    elliottMTF = null;
+  }
+
+  // ── Trend-system + exhaustion composite across 15m / 4h / 1d ───────────────
+  const taSystem = computeTaSystem({ "15m": candles15m, "4h": candles4h, "1d": candlesDaily }, { "15m": 0.25, "4h": 0.4, "1d": 0.35 });
+
   // ── Compute trade call ─────────────────────────────────────────────────────
   const call = computeMultiFactorCall(
     {
@@ -4008,6 +4202,10 @@ export async function GET(req: NextRequest) {
       takerBuySellRatio,
       prevRsi: prevRsi15m,
       macroBias: macroState?.bias ?? null,
+      symbol,
+      change24h,
+      elliott: elliottMTF,
+      taSystem,
     },
     dec
   );
@@ -4015,12 +4213,13 @@ export async function GET(req: NextRequest) {
   // Apply macro bonus to confidence for crypto assets
   const macroBonus = getMacroBonus(macroState, call.bias, isCrypto);
   if (macroBonus !== 0) {
+    const side = call.bias.toLowerCase();
     call.confidence = clamp(call.confidence + macroBonus, 0, 100);
-    if (macroBonus > 0 && call.confidence >= 75 && call.grade !== "A+" && call.grade !== "A") {
-      call.grade = "A";
-    }
-    if (macroBonus > 0) {
-      call.reasoning.unshift(`Macro ${macroState!.bias.replace("_", " ")} (+${macroBonus})`);
+    call.grade = gradeFor(call.confidence, call.strongCategories);
+    call.reasoning.unshift(`Macro regime ${macroState!.bias.replace(/_/g, " ")} ${macroBonus > 0 ? "supports" : "opposes"} the ${side} (${macroBonus > 0 ? "+" : ""}${macroBonus})`);
+    if (call.confidence < 55 && call.bias !== "WAIT") {
+      call.reasoning.unshift(`Stand aside: the ${side} lean is fighting the macro regime and drops below tradeable conviction`);
+      call.bias = "WAIT";
     }
   }
 
@@ -4270,6 +4469,18 @@ export async function GET(req: NextRequest) {
       squeeze,
     },
     call,
+    taSystem,
+    elliott: elliottMTF
+      ? {
+          consensus: elliottMTF.consensus,
+          perTF: Object.fromEntries(
+            Object.entries(elliottMTF.perTF).map(([tf, r]) => [
+              tf,
+              { pattern: r.pattern, direction: r.direction, currentWave: r.currentWave, confidence: r.confidence, score: Math.round(r.score), targets: r.targets, notes: r.notes.slice(0, 3), waves: r.waves },
+            ])
+          ),
+        }
+      : null,
     anticipatory,
     activeSetups: [
       timeframeOutlook.short.trade ? { horizon: "Short-Term", horizonLabel: "SCALP" as const, timeframes: timeframeOutlook.short.timeframes.join(" + "), ...timeframeOutlook.short.trade } : null,
@@ -4283,6 +4494,7 @@ export async function GET(req: NextRequest) {
           bias: macroState.bias,
           score: macroState.macroScore,
           signals: macroState.signals,
+          regime: macroState.regime,
           stochastic: macroState.stochastic
             ? {
                 k: Math.round(macroState.stochastic.k * 100) / 100,

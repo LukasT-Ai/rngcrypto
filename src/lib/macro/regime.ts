@@ -26,6 +26,12 @@ export function classifyRegime(i: RegimeInputs, asOf = new Date().toISOString())
     else if (i.us2yChg5d <= -0.12) policyBias = "easing";
   }
   if (policyBias === "hold" && i.us2y != null && i.us10y != null && i.us2y - i.us10y > 0.25) policyBias = "tightening";
+  // Dollar breakout (5d move of 1.5% or more) is the market pricing tighter US policy relative to the world;
+  // a dollar breakdown is the mirror. Front-end yields keep precedence.
+  if (policyBias === "hold" && i.dxyChg5d != null) {
+    if (i.dxyChg5d >= 1.5) policyBias = "tightening";
+    else if (i.dxyChg5d <= -1.5) policyBias = "easing";
+  }
 
   let risk: MacroRegime["risk"] = "neutral";
   if (i.vix != null) {

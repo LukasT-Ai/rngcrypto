@@ -232,7 +232,7 @@ function ImpactRows({ impacts, phaseLabel }: { impacts: AssetImpact[]; phaseLabe
 
 const CHECK_THR: Record<SnapshotKey, number> = { dxy: 0.1, us2y: 0.02, us10y: 0.02, spx: 0.15, ndx: 0.2, vix: 2, btc: 0.3, gold: 0.2, wti: 0.4 }
 
-export function MacroEventCard({ state, isLoading }: { state: MacroApi | undefined; isLoading: boolean }) {
+export function MacroEventCard({ state, isLoading, asset }: { state: MacroApi | undefined; isLoading: boolean; asset?: MacroAsset | null }) {
   const now = useNow(1000)
   const predQ = usePredictionState()
   if (isLoading && !state) {
@@ -308,7 +308,7 @@ export function MacroEventCard({ state, isLoading }: { state: MacroApi | undefin
           <div className="space-y-3">
             <ImpactRows impacts={impacts} phaseLabel={phaseLabel} />
             <p className="text-xs text-white/55 leading-snug">{a.def.logic}</p>
-            <EventOddsInline defId={a.def.id} state={predQ.data} />
+            <EventOddsInline defId={a.def.id} state={predQ.data} asset={asset} />
           </div>
         </div>
       ) : (
@@ -327,7 +327,7 @@ export function MacroEventCard({ state, isLoading }: { state: MacroApi | undefin
             ))}
           </div>
           <ExpectationNote event={a.event} />
-          <EventOddsInline defId={a.def.id} state={predQ.data} />
+          <EventOddsInline defId={a.def.id} state={predQ.data} asset={asset} />
 
           {verified ? (
             <div className="text-sm font-semibold" style={{ color: (a.surprise?.score ?? 0) === 0 ? AMBER : "white" }}>

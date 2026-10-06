@@ -6,6 +6,7 @@ import { buildRecommendation } from "./recommendation"
 import { RecommendationCard } from "./RecommendationCard"
 import { MacroAlerts, MacroEventCard, MacroScoreStrip, NextEventsStrip, RecentResults, useMacroState } from "./MacroEventPanel"
 import { PredictionOddsPanel } from "./PredictionOddsPanel"
+import type { MacroAsset } from "@/lib/macro/types"
 import { THEMES, themeStyle, type SignalsVariant } from "./themes"
 import type { AssetImpact, MacroScores } from "@/lib/macro/types"
 import { motion } from "framer-motion"
@@ -949,6 +950,8 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
   const tickers = useMemo(() => (theme.tickers ? TICKERS.filter((t) => theme.tickers!.includes(t.symbol)) : TICKERS), [theme.tickers])
   const allowed = useMemo(() => new Set(tickers.map((t) => t.symbol)), [tickers])
   const [symbol, setSymbol] = useState(theme.defaultSymbol)
+  // Prediction-market asset for the selected ticker (Kalshi/Polymarket list BTC, gold and WTI price markets).
+  const predAsset: MacroAsset | null = symbol === "BTC" ? "BTC" : symbol === "GOLD" ? "GOLD" : symbol === "OIL" ? "WTI" : null
   const [fetchTs, setFetchTs] = useState(Date.now())
   const [guideOpen, setGuideOpen] = useState(false)
   const [showAllGeo, setShowAllGeo] = useState(false)
@@ -1317,9 +1320,9 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
             />
 
             {/* ── 1b2. Macro Event Intelligence ───────────────────────── */}
-            <MacroEventCard state={macroQ.data} isLoading={macroQ.isLoading} />
+            <MacroEventCard state={macroQ.data} isLoading={macroQ.isLoading} asset={predAsset} />
             {d?.macroEvent && <MacroScoreStrip scores={d.macroEvent.scores} confidence={call?.confidence ?? 50} bias={call?.bias ?? "WAIT"} />}
-            <PredictionOddsPanel asset={symbol === "BTC" ? "BTC" : symbol === "GOLD" ? "GOLD" : symbol === "OIL" ? "WTI" : null} />
+            <PredictionOddsPanel asset={predAsset} symbol={symbol} />
 
             {/* ── 1c. Active Setups (horizon trades; below the verdict so the recommendation is seen first) ── */}
             <motion.div {...fadeUp} className="space-y-4" id="sec-active-setups">

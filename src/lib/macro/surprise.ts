@@ -60,17 +60,20 @@ export function computeSurprise(
   const magnitude = magnitudeFromZ(z);
   const words = KIND_WORDS[def.kind] ?? { above: "above expectations", below: "below expectations" };
   const qualifier = magnitude === "extreme" ? "Dramatically " : magnitude === "large" ? "Significantly " : magnitude === "small" ? "Slightly " : "";
-  const label =
-    magnitude === "inline"
-      ? "In line with expectations"
-      : `${qualifier}${delta > 0 ? words.above : words.below}`;
+  const direction = delta > 0 ? words.above : words.below;
+  // Without a consensus the comparison is week-over-week, so the words must say "last print", not "expected".
+  const phrase = vsPrev ? direction.replace(/than expected/, "than the prior print").replace(/expectations/, "the prior print") : direction;
+  const label = magnitude === "inline" ? (vsPrev ? "Little changed from the prior print" : "In line with expectations") : `${qualifier}${phrase}`;
+  const detail = vsPrev
+    ? `${formatValue(actual, unit, def.decimals)} vs ${formatValue(anchor, unit, def.decimals)} prior; no consensus published`
+    : `${delta > 0 ? "+" : ""}${formatValue(delta, unit, def.decimals)} vs consensus`;
   return {
     delta,
     unit,
     zScore: z == null ? null : round(z, 2),
     score: scoreFromZ(z),
     magnitude,
-    label: `${label} (${delta > 0 ? "+" : ""}${formatValue(delta, unit, def.decimals)} vs ${vsPrev ? "previous, no consensus" : "consensus"})`,
+    label: `${label} (${detail})`,
     vsPrevious: previous != null ? round(actual - previous, 4) : null,
   };
 }

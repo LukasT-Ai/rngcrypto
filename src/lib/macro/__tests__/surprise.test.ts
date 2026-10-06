@@ -30,7 +30,14 @@ describe("surprise engine", () => {
     // No consensus and no previous: nothing to judge against.
     expect(computeSurprise(def("cpi_mom"), 0.3, null, null).score).toBeNull();
     // No consensus but a previous print: judged against previous and labelled as such.
-    expect(computeSurprise(def("cpi_mom"), 0.3, null, 0.2).label).toContain("vs previous, no consensus");
+    const prev = computeSurprise(def("cpi_mom"), 0.3, null, 0.2).label;
+    expect(prev).toContain("no consensus published");
+    expect(prev).not.toMatch(/than expected/);
+    // Oil without a consensus: a draw after a build reads as a bigger draw than the prior print, bullish for WTI.
+    const api = computeSurprise(def("api_crude"), -2.1, null, 1.0);
+    expect(api.label).toMatch(/bigger draw than the prior print/i);
+    expect(api.label).toContain("-2.1M bbl vs +1.0M bbl prior");
+    expect(api.score!).toBeLessThan(0);
     expect(computeSurprise(def("cpi_mom"), null, 0.3, 0.2).label).toMatch(/awaiting/i);
   });
   it("honours a rolling SD override", () => {
@@ -55,7 +62,7 @@ describe("no-consensus fallback", () => {
     const r = computeSurprise(def, -5.0, null, 0.9);
     expect(r.score).not.toBeNull();
     expect(r.score! < 0).toBe(true);
-    expect(r.label).toContain("vs previous, no consensus");
+    expect(r.label).toContain("no consensus published");
     expect(r.vsPrevious).toBeCloseTo(-5.9, 3);
     // Same delta vs consensus should score stronger than vs previous (1.5x SD).
     const c = computeSurprise(def, -5.0, 0.9, null);

@@ -238,6 +238,9 @@ export interface StoredRelease {
   forecast: number | null;
   previous: number | null;
   actual: number | null;
+  actualRaw?: string | null;
+  actualProvider?: SourceProvider | null;
+  actualSeries?: string | null;
   surpriseScore: number | null;
   magnitude: SurpriseMagnitude;
   regime: Pick<MacroRegime, "inflationFocus" | "policyBias" | "risk">;

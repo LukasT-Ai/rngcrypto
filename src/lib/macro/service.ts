@@ -1,6 +1,7 @@
 import type { Alert, EventPhase, EventState, Importance, MacroAsset, MacroRegime, MacroScores, MacroState, MarketSnapshot, ReactionPoint, ScheduledEvent, SnapshotKey, StoredRelease } from "./types";
 import { MACRO_ASSETS, REACTION_SCHEDULE, SNAPSHOT_KEYS } from "./types";
 import { defFor, getMacroEvents } from "./calendar";
+import { formatValue } from "./taxonomy";
 import { fetchRelease, latestCpiYoY, sourceStatus } from "./releases";
 import { computeSurprise, magnitudeFromZ } from "./surprise";
 import { impactForSurprise, preReleaseMap, transmission } from "./impact";
@@ -109,7 +110,17 @@ function newState(event: ScheduledEvent, regime: MacroRegime, now: number): Even
     st.release = {
       eventId: event.id,
       status: "verified",
-      actual: { value: stored.actual, raw: String(stored.actual), period: "", revisionStatus: "unknown", provider: def.source.provider, series: def.source.series ?? "", sourceTimestamp: null, retrievedAt: stored.recordedAt, priorRevised: null },
+      actual: {
+        value: stored.actual,
+        raw: stored.actualRaw ?? formatValue(stored.actual, def.unit, def.decimals),
+        period: stored.eventTime.slice(0, 10),
+        revisionStatus: "unknown",
+        provider: stored.actualProvider ?? (def.source.provider === "NONE" ? "FXSTREET" : def.source.provider),
+        series: stored.actualSeries ?? def.source.series ?? "",
+        sourceTimestamp: null,
+        retrievedAt: stored.recordedAt,
+        priorRevised: null,
+      },
       candidates: [],
       note: "Rehydrated from stored release",
       checkedAt: stored.recordedAt,
@@ -140,6 +151,9 @@ function persist(st: EventState, regime: MacroRegime) {
     forecast: st.event.forecast,
     previous: st.event.previous,
     actual: st.release?.actual?.value ?? null,
+    actualRaw: st.release?.actual?.raw ?? null,
+    actualProvider: st.release?.actual?.provider ?? null,
+    actualSeries: st.release?.actual?.series ?? null,
     surpriseScore: st.surprise?.score ?? null,
     magnitude: st.surprise?.magnitude ?? "inline",
     regime: { inflationFocus: regime.inflationFocus, policyBias: regime.policyBias, risk: regime.risk },

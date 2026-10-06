@@ -68,7 +68,10 @@ export async function fillExpectations(events: ScheduledEvent[]): Promise<Schedu
         ev.previousRaw = eia.previousRaw ?? formatRaw(def, eia.previous);
         ev.previousSource = "EIA prior week (proxy)";
       }
-      ev.expectationNote = "API publishes no consensus. Shown: the EIA crude consensus and prior week for the same reporting week. A draw larger than the EIA consensus is the bullish surprise.";
+      ev.expectationNote =
+        ev.forecast != null
+          ? "API publishes no consensus. Forecast shown is the EIA crude consensus for the same reporting week. A draw larger than that consensus is the bullish surprise for WTI."
+          : "API publishes no consensus and the EIA consensus for this week is not posted yet. The print is judged against last week: a draw (negative) means less crude in storage and leans bullish for WTI; a build (positive) leans bearish.";
       out.push(ev);
       continue;
     }

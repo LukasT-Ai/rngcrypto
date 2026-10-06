@@ -20,10 +20,16 @@ const NUM = /(-?\d+(?:\.\d+)?)\s*(?:million|mln|mn|m\b|mb\b)/i;
 const API_CRUDE = /\bAPI\b[^.]{0,80}\b(crude|oil)\b[^.]{0,80}\b(inventor|stock|supplies|supply)/i;
 
 export function parseApiCrudeHeadline(title: string, description = ""): number | null {
-  const text = `${title}. ${description}`.replace(/\s+/g, " ");
+  // Normalise before matching: "U.S." has periods that would break the sentence/relevance patterns, and wires
+  // often spell out the institute instead of the acronym.
+  const text = `${title}. ${description}`
+    .replace(/\s+/g, " ")
+    .replace(/\bU\.S\.(?=\s|$)/g, "US")
+    .replace(/\bAmerican Petroleum Institute\b/gi, "API");
   if (!API_CRUDE.test(text)) return null;
   // Work on the sentence that mentions API to avoid picking up the EIA forecast in the same article.
-  const sentence = text.split(/(?<=[.!?])\s+/).find((s) => /\bAPI\b/.test(s)) ?? text;
+  // Split on sentence ends followed by a capital so "U.S. crude" does not split.
+  const sentence = text.split(/(?<=[.!?])\s+(?=[A-Z])/).find((s) => /\bAPI\b/.test(s)) ?? text;
   const n = sentence.match(NUM);
   if (!n) return null;
   let v = Math.abs(parseFloat(n[1]));

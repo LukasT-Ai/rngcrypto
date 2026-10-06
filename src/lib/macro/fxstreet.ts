@@ -35,8 +35,9 @@ function iso(ms: number) {
   return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-export async function fetchFxStreet(): Promise<FxItem[]> {
-  if (cache && Date.now() - cache.at < TTL) return cache.items;
+// maxAgeMs lets the release verifier poll faster than the calendar's 10-minute cache during a release window.
+export async function fetchFxStreet(maxAgeMs = TTL): Promise<FxItem[]> {
+  if (cache && Date.now() - cache.at < Math.min(maxAgeMs, TTL)) return cache.items;
   const from = Date.now() - BACK_DAYS * 86400e3;
   const to = Date.now() + AHEAD_DAYS * 86400e3;
   try {

@@ -11,7 +11,9 @@ export async function GET(req: NextRequest) {
   if (blocked) return blocked;
 
   const sp = req.nextUrl.searchParams;
-  const state = await getMacroState();
+  const assetParam = sp.get("asset");
+  const asset: MacroAsset | null = assetParam === "BTC" || assetParam === "GOLD" || assetParam === "WTI" ? assetParam : null;
+  const state = await getMacroState(asset);
 
   const f: AlertFilter = {};
   const assets = sp.get("assets");

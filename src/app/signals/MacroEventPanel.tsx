@@ -10,11 +10,11 @@ import { EventOddsInline, usePredictionState } from "./PredictionOddsPanel"
 
 type MacroApi = MacroState & { serverTime: string }
 
-export function useMacroState() {
+export function useMacroState(asset: MacroAsset | null = null) {
   return useQuery<MacroApi>({
-    queryKey: ["macro"],
+    queryKey: ["macro", asset ?? "all"],
     queryFn: async () => {
-      const r = await fetch("/api/macro")
+      const r = await fetch(asset ? `/api/macro?asset=${asset}` : "/api/macro")
       if (!r.ok) throw new Error(`macro ${r.status}`)
       return r.json()
     },
@@ -315,7 +315,7 @@ export function MacroEventCard({ state, isLoading, asset }: { state: MacroApi | 
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-2">
             {[
-              { k: "Actual", v: verified ? fmt(a.release!.actual!.value) : null, strong: true },
+              { k: "Actual", v: verified ? fmt(a.release!.actual!.value) : null, strong: true, src: verified ? (a.release!.actual!.provider === "NEWS" ? "news-reported, provisional" : a.release!.actual!.provider === "FXSTREET" ? "FXStreet calendar" : a.release!.actual!.provider) : null },
               { k: "Forecast", v: a.event.forecastRaw ?? fmt(a.event.forecast), src: a.event.forecastSource },
               { k: "Previous", v: a.event.previousRaw ?? fmt(a.event.previous), src: a.event.previousSource },
             ].map((x) => (

@@ -23,7 +23,7 @@ export type EventKind =
 
 export type Unit = "pct" | "k" | "m" | "index" | "mb" | "rate" | "text";
 
-export type SourceProvider = "BLS" | "FRED" | "EIA" | "BEA" | "FXSTREET" | "NONE";
+export type SourceProvider = "BLS" | "FRED" | "EIA" | "BEA" | "FXSTREET" | "NEWS" | "NONE";
 export type Transform = "mom_pct" | "yoy_pct" | "diff_k" | "level" | "level_m" | "weekly_change_mb";
 
 export interface MacroEventDef {

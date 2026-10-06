@@ -1,5 +1,6 @@
 import type { MacroEventDef, ReleaseValue, RevisionStatus, ScheduledEvent, SourceProvider, Transform, VerifiedRelease } from "./types";
 import { fetchFxStreet, fxActualFor, fxStatus } from "./fxstreet";
+import { newsApiCrudeActual } from "./news-actual";
 
 // Primary-source adapters. Nothing here invents a number: a release is "verified" only when an authoritative
 // series has published the period the event refers to, after the scheduled release time.
@@ -11,7 +12,7 @@ export function providerEnabled(p: SourceProvider): boolean {
   if (p === "BLS") return true;
   if (p === "FRED") return !!FRED_KEY;
   if (p === "EIA") return !!EIA_KEY;
-  if (p === "FXSTREET") return true;
+  if (p === "FXSTREET" || p === "NEWS") return true;
   return false;
 }
 
@@ -210,10 +211,20 @@ async function fxRelease(def: MacroEventDef, event: ScheduledEvent, checkedAt: s
   if (Date.now() < new Date(event.time).getTime()) {
     return { eventId: event.id, status: "awaiting", actual: null, candidates: [], note: "Not released yet", checkedAt };
   }
-  const items = await fetchFxStreet();
+  const age = Date.now() - new Date(event.time).getTime();
+  // Poll FXStreet every 15s for the first hour after release, then once a minute; the calendar cache is 10 min otherwise.
+  const items = await fetchFxStreet(age < 3600e3 ? 15_000 : 60_000);
   const hit = fxActualFor(items, def.id, event.time);
   if (!hit) {
-    return { eventId: event.id, status: "awaiting", actual: null, candidates: [], note: `${why}; FXStreet has not published the actual yet`, checkedAt };
+    // API crude: calendars lag the wire by many minutes; Reuters/OilPrice headlines carry the number first.
+    if (def.id === "api_crude") {
+      const news = await newsApiCrudeActual(event.time, age < 3600e3 ? 20_000 : 120_000).catch(() => null);
+      if (news) {
+        const actual: ReleaseValue = { value: news.value, raw: news.raw, period: event.time.slice(0, 10), revisionStatus: "preliminary", provider: "NEWS", series: `${news.source}: ${news.headline}`, sourceTimestamp: news.publishedAt, retrievedAt: checkedAt, priorRevised: null };
+        return { eventId: event.id, status: "verified", actual, candidates: [actual], note: `News-reported (${news.source}): "${news.headline}" — replaced by the FXStreet calendar actual when it lands`, checkedAt };
+      }
+    }
+    return { eventId: event.id, status: "awaiting", actual: null, candidates: [], note: `${why}; FXStreet has not published the actual yet${def.id === "api_crude" ? " and no wire headline carries the API number yet" : ""}`, checkedAt };
   }
   const actual: ReleaseValue = { value: hit.value, raw: hit.raw, period: event.time.slice(0, 10), revisionStatus: "unknown", provider: "FXSTREET", series: def.id, sourceTimestamp: hit.updatedAt, retrievedAt: checkedAt, priorRevised: null };
   return { eventId: event.id, status: "verified", actual, candidates: [actual], note: `FXStreet calendar actual (secondary source; ${why})`, checkedAt };

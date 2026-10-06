@@ -25,7 +25,10 @@ export const MACRO_WEIGHTS = {
 const WINDOW_BEFORE = 2 * 3600e3;
 const WINDOW_AFTER = 4 * 3600e3;
 const RECENT_KEEP = 24 * 3600e3;
-const VERIFY_FOR = 45 * 60e3;
+// Keep trying to verify an actual for up to 6h (secondary sources like FXStreet can lag the wire by a long time).
+const VERIFY_FOR = 6 * 3600e3;
+// A news-reported number is provisional: keep polling so the calendar actual replaces it.
+const PROVISIONAL_RECHECK = 60_000;
 
 const rank: Record<Importance, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 
@@ -38,7 +41,7 @@ interface Runtime {
   alerts: Alert[];
   lastTick: number;
   ticking: boolean;
-  stateCache: { state: MacroState; at: number } | null;
+  stateCache: Map<string, { state: MacroState; at: number }>;
 }
 
 const rt: Runtime = {
@@ -50,7 +53,7 @@ const rt: Runtime = {
   alerts: [],
   lastTick: 0,
   ticking: false,
-  stateCache: null,
+  stateCache: new Map(),
 };
 
 function phaseFor(secondsToRelease: number, s: EventState | null): EventPhase {
@@ -156,14 +159,16 @@ async function advance(st: EventState, regime: MacroRegime, now: number): Promis
 
   // 1) Verify the actual number (poll fast for the first minutes, then back off).
   const age = now - t0;
-  if (st.release?.status !== "verified" && st.release?.status !== "unavailable" && age < VERIFY_FOR) {
+  const provisional = st.release?.status === "verified" && st.release.actual?.provider === "NEWS";
+  if ((st.release?.status !== "verified" || provisional) && st.release?.status !== "unavailable" && age < VERIFY_FOR) {
     const last = rt.lastVerifyAttempt.get(st.event.id) ?? 0;
-    const interval = age < 10 * 60e3 ? 10_000 : 60_000;
+    const interval = provisional ? PROVISIONAL_RECHECK : age < 10 * 60e3 ? 10_000 : age < 3600e3 ? 30_000 : 5 * 60e3;
     if (now - last >= interval) {
       rt.lastVerifyAttempt.set(st.event.id, now);
       const rel = await fetchRelease(st.def, st.event);
-      st.release = rel;
-      if (rel.status === "verified" && rel.actual) {
+      // Never downgrade a provisional number back to "awaiting"; only a calendar actual may replace it.
+      if (!(provisional && rel.status !== "verified")) st.release = rel;
+      if (rel.status === "verified" && rel.actual && (!provisional || rel.actual.provider !== "NEWS")) {
         st.surprise = computeSurprise(st.def, rel.actual.value, st.event.forecast, st.event.previous, rollingSurpriseSD(st.def.id));
         st.postImpact = impactForSurprise(st.def, st.surprise.score, st.surprise.magnitude, regime, rel.actual.components);
         st.historical = bestHistoricalStats(st.def.id, st.surprise.score, regime);
@@ -326,14 +331,24 @@ export async function tick(): Promise<void> {
     const fresh = deriveAlerts([...rt.states.values()], now);
     rt.alerts = [...fresh, ...rt.alerts].slice(0, 100);
     rt.lastTick = now;
-    rt.stateCache = null;
+    rt.stateCache.clear();
   } finally {
     rt.ticking = false;
   }
 }
 
-export async function getMacroState(): Promise<MacroState> {
-  if (rt.stateCache && Date.now() - rt.stateCache.at < 5_000) return rt.stateCache.state;
+// Minimum taxonomy relevance for an event to appear on a ticker's page (API crude is 0.0 for BTC, CPI 0.4 for WTI).
+const MIN_RELEVANCE = 0.3;
+
+function relevantTo(asset: MacroAsset | null, defId: string): boolean {
+  if (!asset) return true;
+  return (defFor(defId).relevance[asset] ?? 0) >= MIN_RELEVANCE;
+}
+
+export async function getMacroState(asset: MacroAsset | null = null): Promise<MacroState> {
+  const cacheKey = asset ?? "all";
+  const cached = rt.stateCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < 5_000) return cached.state;
   if (Date.now() - rt.lastTick > 20_000) await tick();
   const now = Date.now();
   const regime = rt.regime ?? (await ensureRegime());
@@ -345,15 +360,15 @@ export async function getMacroState(): Promise<MacroState> {
     s.outcome = summarizeOutcome(s, now);
   }
 
-  const upcomingAll = await getMacroEvents(now, now + 7 * 86400e3);
+  const upcomingAll = (await getMacroEvents(now, now + 7 * 86400e3)).filter((e) => relevantTo(asset, e.defId));
   const upcoming = upcomingAll.filter((e) => rank[e.importance] >= rank.medium).slice(0, 12);
 
-  // Active = what the trader should be looking at right now.
-  const candidates = all.filter((s) => s.secondsToRelease <= WINDOW_BEFORE / 1000 && s.secondsToRelease >= -WINDOW_AFTER / 1000 && rank[s.event.importance] >= rank.medium);
+  // Active = what the trader should be looking at right now, for this ticker.
+  const candidates = all.filter((s) => relevantTo(asset, s.def.id) && s.secondsToRelease <= WINDOW_BEFORE / 1000 && s.secondsToRelease >= -WINDOW_AFTER / 1000 && rank[s.event.importance] >= rank.medium);
   const phaseRank: Record<EventPhase, number> = { releasing: 5, confirming: 4, released: 4, imminent: 3, upcoming: 1, settled: 0 };
   candidates.sort((a, b) => phaseRank[b.phase] - phaseRank[a.phase] || rank[b.event.importance] - rank[a.event.importance] || Math.abs(a.secondsToRelease) - Math.abs(b.secondsToRelease));
   const active = candidates[0] ?? null;
-  const recent = all.filter((s) => s !== active && s.secondsToRelease < 0 && rank[s.event.importance] >= rank.medium).sort((a, b) => b.secondsToRelease - a.secondsToRelease).slice(0, 6);
+  const recent = all.filter((s) => s !== active && relevantTo(asset, s.def.id) && s.secondsToRelease < 0 && rank[s.event.importance] >= rank.medium).sort((a, b) => b.secondsToRelease - a.secondsToRelease).slice(0, 6);
 
   const scores = Object.fromEntries(MACRO_ASSETS.map((a) => [a, scoresFor(a, regime, all, now)])) as Record<MacroAsset, MacroScores>;
   const nextBig = upcomingAll.find((e) => rank[e.importance] >= rank.high && new Date(e.time).getTime() - now <= 15 * 60e3);
@@ -367,17 +382,17 @@ export async function getMacroState(): Promise<MacroState> {
     active,
     recent,
     scores,
-    alerts: rt.alerts.slice(0, 30),
+    alerts: rt.alerts.filter((a) => !asset || a.asset == null || a.asset === asset).slice(0, 30),
     preEventRisk,
     sources: sourceStatus(),
   };
-  rt.stateCache = { state, at: now };
+  rt.stateCache.set(cacheKey, { state, at: now });
   return state;
 }
 
 // Lightweight accessor for the signal engine (avoids blocking a signal request on network if a tick is recent).
 export async function getMacroScores(asset: MacroAsset): Promise<{ scores: MacroScores; preEventRisk: MacroState["preEventRisk"]; active: EventState | null }> {
-  const s = await getMacroState();
+  const s = await getMacroState(asset);
   return { scores: s.scores[asset], preEventRisk: s.preEventRisk, active: s.active };
 }
 
@@ -386,6 +401,14 @@ export function macroAssetFor(symbol: string): MacroAsset | null {
   if (symbol === "GOLD") return "GOLD";
   if (symbol === "OIL") return "WTI";
   return null;
+}
+
+// Which macro lens a ticker's page uses: metals follow gold, energy follows WTI, everything else (crypto, equities,
+// indices) follows the BTC/risk-asset lens.
+export function macroLensFor(symbol: string): MacroAsset {
+  if (symbol === "GOLD" || symbol === "SILVER") return "GOLD";
+  if (symbol === "OIL") return "WTI";
+  return "BTC";
 }
 
 export type { ReactionPoint };

@@ -1008,7 +1008,9 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
     refetchInterval: 60_000,
   })
 
-  const macroQ = useMacroState()
+  // Macro events are filtered to what matters for this ticker (metals -> gold lens, OIL -> WTI, everything else -> BTC/risk lens).
+  const macroLens: MacroAsset = symbol === "GOLD" || symbol === "SILVER" ? "GOLD" : symbol === "OIL" ? "WTI" : "BTC"
+  const macroQ = useMacroState(macroLens)
 
   // Variant pages only surface the tickers they list (hot plays included).
   const hotData = useMemo<HotResponse | undefined>(

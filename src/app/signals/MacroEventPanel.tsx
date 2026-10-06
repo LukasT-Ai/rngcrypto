@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { CalendarClock, CheckCircle2, ChevronDown, Clock, Radio, ShieldAlert, Zap } from "lucide-react"
 import type { AssetImpact, Confidence, Direction, EventState, Importance, MacroAsset, MacroScores, MacroState, ScheduledEvent, SnapshotKey } from "@/lib/macro/types"
+import type { ScenarioGuide as ScenarioGuideData } from "@/lib/macro/scenarios"
 import { formatCompactCountdown, formatCountdown, formatDataAge, formatLocalDateTime, formatLocalTime, formatTimeAgo, urgencyFor } from "@/lib/macro/format"
 import { formatValue } from "@/lib/macro/taxonomy"
 import { EventOddsInline, usePredictionState } from "./PredictionOddsPanel"
@@ -230,6 +231,42 @@ function ImpactRows({ impacts, phaseLabel }: { impacts: AssetImpact[]; phaseLabe
   )
 }
 
+// Scenario guide: what each print range would mean per asset. Shown before the release so the reader knows what to
+// watch for, and after it with the actual's band highlighted. `focus` puts the selected ticker's asset first.
+function ScenarioRows({ guide, released, focus }: { guide: ScenarioGuideData | null; released: boolean; focus: MacroAsset | null }) {
+  if (!guide) return null
+  const assets = ([...(focus ? [focus] : []), ...(["BTC", "GOLD", "WTI"] as MacroAsset[]).filter((a) => a !== focus)]) as MacroAsset[]
+  const arrow = (d: Direction) => (d === "bullish" ? "↑" : d === "bearish" ? "↓" : "↔")
+  return (
+    <div>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-white/40 mb-1.5">
+        {released ? "What each outcome would have meant" : "What each outcome would mean"}
+        <span className="ml-1 normal-case tracking-normal text-white/30">· vs {guide.anchorKind === "consensus" ? "consensus" : "prior print"}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <tbody>
+            {guide.bands.map((b) => (
+              <tr key={b.key} className={b.hit ? "bg-white/[0.06]" : ""} style={b.hit ? { boxShadow: "inset 2px 0 0 var(--brand, #F59E0B)" } : undefined}>
+                <td className="py-1 pl-2 pr-3 font-mono whitespace-nowrap text-white/85">{b.range}</td>
+                <td className="py-1 pr-3 text-white/55">{b.meaning}</td>
+                {assets.map((a) => (
+                  <td key={a} className="py-1 pr-2 whitespace-nowrap font-semibold" style={{ color: dirColor(b.directions[a]) }} title={`${assetLabel[a]}: ${dirText(b.directions[a])}`}>
+                    <span className="mr-1 font-mono text-[10px] text-white/45">{assetLabel[a]}</span>
+                    {arrow(b.directions[a])} {dirText(b.directions[a]).toLowerCase()}
+                  </td>
+                ))}
+                <td className="py-1 pr-2 text-[10px] font-bold whitespace-nowrap" style={{ color: AMBER }}>{b.hit ? "← actual" : ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-1 text-[10px] leading-snug text-white/35">{guide.note}</p>
+    </div>
+  )
+}
+
 const CHECK_THR: Record<SnapshotKey, number> = { dxy: 0.1, us2y: 0.02, us10y: 0.02, spx: 0.15, ndx: 0.2, vix: 2, btc: 0.3, gold: 0.2, wti: 0.4 }
 
 export function MacroEventCard({ state, isLoading, asset }: { state: MacroApi | undefined; isLoading: boolean; asset?: MacroAsset | null }) {
@@ -308,6 +345,7 @@ export function MacroEventCard({ state, isLoading, asset }: { state: MacroApi | 
           <div className="space-y-3">
             <ImpactRows impacts={impacts} phaseLabel={phaseLabel} />
             <p className="text-xs text-white/55 leading-snug">{a.def.logic}</p>
+            <ScenarioRows guide={a.scenarios} released={false} focus={asset ?? null} />
             <EventOddsInline defId={a.def.id} state={predQ.data} asset={asset} />
           </div>
         </div>
@@ -340,6 +378,8 @@ export function MacroEventCard({ state, isLoading, asset }: { state: MacroApi | 
               <span className="font-normal text-white/45 text-xs">· {a.release?.note ?? "checking primary source"}</span>
             </div>
           )}
+
+          <ScenarioRows guide={a.scenarios} released focus={asset ?? null} />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <ImpactRows impacts={impacts} phaseLabel={phaseLabel} />

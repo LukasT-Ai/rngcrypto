@@ -26,6 +26,7 @@ function baseState(defId: string, over: Partial<EventState> = {}): EventState {
     def,
     phase: "released",
     secondsToRelease: -600,
+    scenarios: null,
     preMap: [
       { asset: "BTC", direction: "mixed", score: 0, confidence: "low", horizon: { immediate: "mixed", shortTerm: "mixed", swing: "mixed" }, channel: [], reason: "" },
       { asset: "GOLD", direction: "mixed", score: 0, confidence: "low", horizon: { immediate: "mixed", shortTerm: "mixed", swing: "mixed" }, channel: [], reason: "" },

@@ -17,7 +17,7 @@ export function scoreFromZ(z: number | null): number | null {
   return Math.round(100 * Math.tanh(z / 1.8));
 }
 
-const KIND_WORDS: Record<string, { above: string; below: string }> = {
+export const KIND_WORDS: Record<string, { above: string; below: string }> = {
   inflation: { above: "hotter than expected", below: "cooler than expected" },
   wages: { above: "hotter than expected", below: "softer than expected" },
   growth: { above: "stronger than expected", below: "weaker than expected" },

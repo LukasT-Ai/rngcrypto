@@ -2,6 +2,7 @@ import type { Alert, EventPhase, EventState, Importance, MacroAsset, MacroRegime
 import { MACRO_ASSETS, REACTION_SCHEDULE, SNAPSHOT_KEYS } from "./types";
 import { defFor, getMacroEvents } from "./calendar";
 import { formatValue } from "./taxonomy";
+import { buildScenarios } from "./scenarios";
 import { fetchRelease, latestCpiYoY, sourceStatus } from "./releases";
 import { computeSurprise, magnitudeFromZ } from "./surprise";
 import { impactForSurprise, preReleaseMap, transmission } from "./impact";
@@ -94,6 +95,7 @@ function newState(event: ScheduledEvent, regime: MacroRegime, now: number): Even
     phase: "upcoming",
     secondsToRelease: Math.round((new Date(event.time).getTime() - now) / 1000),
     preMap: preReleaseMap(def, regime),
+    scenarios: buildScenarios(def, event, regime, null, rollingSurpriseSD(def.id)),
     release: null,
     surprise: null,
     postImpact: null,
@@ -127,6 +129,7 @@ function newState(event: ScheduledEvent, regime: MacroRegime, now: number): Even
     };
     st.surprise = computeSurprise(def, stored.actual, event.forecast ?? stored.forecast, event.previous ?? stored.previous, rollingSurpriseSD(def.id));
     st.postImpact = impactForSurprise(def, st.surprise.score, st.surprise.magnitude, regime);
+    st.scenarios = buildScenarios(def, { forecast: event.forecast ?? stored.forecast, previous: event.previous ?? stored.previous }, regime, stored.actual, rollingSurpriseSD(def.id));
   }
   return st;
 }
@@ -185,6 +188,7 @@ async function advance(st: EventState, regime: MacroRegime, now: number): Promis
       if (rel.status === "verified" && rel.actual && (!provisional || rel.actual.provider !== "NEWS")) {
         st.surprise = computeSurprise(st.def, rel.actual.value, st.event.forecast, st.event.previous, rollingSurpriseSD(st.def.id));
         st.postImpact = impactForSurprise(st.def, st.surprise.score, st.surprise.magnitude, regime, rel.actual.components);
+        st.scenarios = buildScenarios(st.def, st.event, regime, rel.actual.value, rollingSurpriseSD(st.def.id));
         st.historical = bestHistoricalStats(st.def.id, st.surprise.score, regime);
         if (!st.releaseSnapshot) st.releaseSnapshot = await snapshotAt(t0);
         persist(st, regime);
@@ -335,6 +339,8 @@ export async function tick(): Promise<void> {
         rt.states.set(e.id, st);
       } else {
         st.event = { ...e, forecast: e.forecast ?? st.event.forecast, previous: e.previous ?? st.event.previous };
+        // A consensus that lands later (or a revised previous) re-anchors the scenario bands; keep the actual's band marked.
+        st.scenarios = buildScenarios(st.def, st.event, regime, st.release?.status === "verified" ? st.release.actual?.value ?? null : null, rollingSurpriseSD(st.def.id));
       }
       await advance(st, regime, now);
     }

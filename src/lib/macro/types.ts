@@ -211,6 +211,8 @@ export interface EventState {
   phase: EventPhase;
   secondsToRelease: number;
   preMap: AssetImpact[];
+  // What print ranges would read bullish / neutral / bearish per asset; kept after release with the actual's band marked.
+  scenarios: import("./scenarios").ScenarioGuide | null;
   release: VerifiedRelease | null;
   surprise: SurpriseResult | null;
   postImpact: AssetImpact[] | null;

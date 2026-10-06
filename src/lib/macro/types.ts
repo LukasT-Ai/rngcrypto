@@ -23,7 +23,7 @@ export type EventKind =
 
 export type Unit = "pct" | "k" | "m" | "index" | "mb" | "rate" | "text";
 
-export type SourceProvider = "BLS" | "FRED" | "EIA" | "BEA" | "NONE";
+export type SourceProvider = "BLS" | "FRED" | "EIA" | "BEA" | "FXSTREET" | "NONE";
 export type Transform = "mom_pct" | "yoy_pct" | "diff_k" | "level" | "level_m" | "weekly_change_mb";
 
 export interface MacroEventDef {
@@ -51,7 +51,7 @@ export interface ScheduledEvent {
   previous: number | null;
   previousRaw: string | null;
   unit: Unit;
-  source: "faireconomy" | "scheduled";
+  source: "fxstreet" | "faireconomy" | "scheduled";
   retrievedAt: string;
   // Where forecast/previous came from when not straight from the calendar feed (e.g. "BLS prior print",
   // "EIA consensus (proxy)"). null = calendar consensus. Lets the UI label proxies honestly.

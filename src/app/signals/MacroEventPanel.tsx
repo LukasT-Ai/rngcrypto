@@ -460,7 +460,7 @@ export function MacroEventCard({ state, isLoading }: { state: MacroApi | undefin
               )}
             </div>
             <div className="text-white/35">
-              Calendar: {a.event.source === "faireconomy" ? "Fair Economy (consensus/previous)" : "scheduled"} · retrieved {formatLocalTime(a.event.retrievedAt)} · event time shown in your local zone
+              Calendar: {a.event.source === "fxstreet" ? "FXStreet (consensus/previous)" : a.event.source === "faireconomy" ? "Fair Economy (consensus/previous)" : "scheduled"} · retrieved {formatLocalTime(a.event.retrievedAt)} · event time shown in your local zone
             </div>
             {state?.sources && (
               <div className="text-white/35">

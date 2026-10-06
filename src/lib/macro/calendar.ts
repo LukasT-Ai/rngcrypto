@@ -2,6 +2,7 @@ import type { Importance, MacroEventDef, ScheduledEvent } from "./types";
 import { EVENT_DEFS, matchEventDef, parseValue } from "./taxonomy";
 import { generateOilEvents, generateScheduledEvents } from "../economic-calendar";
 import { fillExpectations } from "./expectations";
+import { fetchFxStreet, fxToScheduled } from "./fxstreet";
 
 interface FFItem {
   title?: string;
@@ -67,6 +68,14 @@ export async function getMacroEvents(fromMs: number, toMs: number): Promise<Sche
   const out: ScheduledEvent[] = [];
   const seen = new Set<string>();
 
+  // 1) FXStreet first: consensus + previous + actuals, three weeks ahead, reachable from cloud egress.
+  const fx = await fetchFxStreet();
+  for (const e of fxToScheduled(fx, fromMs, toMs, retrievedAt)) {
+    seen.add(e.id);
+    out.push(e);
+  }
+
+  // 2) Fair Economy fills anything FXStreet does not list (rate-limited on shared cloud IPs; may be empty).
   const ff = await fetchFF();
   for (const it of ff) {
     if (!it.title || !it.date || it.country !== "USD") continue;
@@ -78,7 +87,24 @@ export async function getMacroEvents(fromMs: number, toMs: number): Promise<Sche
     const def = matched ?? GENERIC;
     if (!matched && !/high|medium/i.test(it.impact ?? "")) continue;
     const id = `${def.id === "generic_us" ? slug(it.title) : def.id}-${dayKey(time.toISOString())}`;
-    if (seen.has(id)) continue;
+    if (seen.has(id)) {
+      // Same release already listed by FXStreet: fill whatever FXStreet left blank.
+      const ex = out.find((e) => e.id === id);
+      if (ex) {
+        const f = parseValue(it.forecast, def.unit);
+        const pv = parseValue(it.previous, def.unit);
+        if (ex.forecast == null && f != null) {
+          ex.forecast = f;
+          ex.forecastRaw = it.forecast || null;
+          ex.forecastSource = "Fair Economy consensus";
+        }
+        if (ex.previous == null && pv != null) {
+          ex.previous = pv;
+          ex.previousRaw = it.previous || null;
+        }
+      }
+      continue;
+    }
     seen.add(id);
     out.push({
       id,
@@ -96,7 +122,7 @@ export async function getMacroEvents(fromMs: number, toMs: number): Promise<Sche
     });
   }
 
-  // Oil weekly releases + longer-dated scheduled majors that Fair Economy's this-week feed does not cover.
+  // 3) Hardcoded oil weekly schedule + longer-dated majors as the last resort.
   const extra = [...generateOilEvents(), ...generateScheduledEvents()];
   for (const e of extra) {
     const ms = e.time.getTime();
@@ -105,6 +131,8 @@ export async function getMacroEvents(fromMs: number, toMs: number): Promise<Sche
     if (!def) continue;
     const id = `${def.id}-${dayKey(e.time.toISOString())}`;
     if (seen.has(id)) continue;
+    // A feed already lists this release within +/-3 days (holiday shifts): the feed's date wins, drop the guess.
+    if (out.some((x) => x.defId === def.id && x.source !== "scheduled" && Math.abs(new Date(x.time).getTime() - ms) <= 3 * 86400e3)) continue;
     seen.add(id);
     out.push({
       id,

@@ -1,4 +1,5 @@
 import type { MacroEventDef, ReleaseValue, RevisionStatus, ScheduledEvent, SourceProvider, Transform, VerifiedRelease } from "./types";
+import { fetchFxStreet, fxActualFor, fxStatus } from "./fxstreet";
 
 // Primary-source adapters. Nothing here invents a number: a release is "verified" only when an authoritative
 // series has published the period the event refers to, after the scheduled release time.
@@ -10,6 +11,7 @@ export function providerEnabled(p: SourceProvider): boolean {
   if (p === "BLS") return true;
   if (p === "FRED") return !!FRED_KEY;
   if (p === "EIA") return !!EIA_KEY;
+  if (p === "FXSTREET") return true;
   return false;
 }
 
@@ -18,7 +20,8 @@ export function sourceStatus(): { provider: SourceProvider; enabled: boolean; no
     { provider: "BLS", enabled: true, note: "CPI, PPI, payrolls, unemployment, earnings, JOLTS (public API, 25 req/day unregistered)" },
     { provider: "FRED", enabled: !!FRED_KEY, note: FRED_KEY ? "PCE, claims, GDP, retail sales, fed funds" : "Set FRED_API_KEY to verify PCE, claims, GDP, retail sales, fed funds" },
     { provider: "EIA", enabled: !!EIA_KEY, note: EIA_KEY ? "Weekly petroleum status report incl. Cushing, products, production" : "Set EIA_API_KEY to verify EIA inventories and report internals" },
-    { provider: "NONE", enabled: false, note: "ISM, ADP, consumer surveys, Fed speeches: no authoritative machine-readable source — consensus shown, actual awaits verification" },
+    { provider: "FXSTREET", enabled: true, note: `FXStreet calendar: consensus, previous and published actuals for every US release (secondary source for ISM, ADP, API crude, surveys and for keys not set)${fxStatus().ok ? "" : " — feed currently unreachable"}` },
+    { provider: "NONE", enabled: false, note: "Fed speeches, FOMC text: no number — the market reaction is the data" },
   ];
 }
 
@@ -198,14 +201,32 @@ const FRED_MIRRORS: Record<string, { series: string; transform: Transform }> = {
   unemployment: { series: "UNRATE", transform: "level" },
 };
 
+// Secondary source: the FXStreet calendar's published actual. Used when a release has no primary adapter
+// (ISM, ADP, API crude, surveys) or the primary's key is not configured. Text events never get a number.
+async function fxRelease(def: MacroEventDef, event: ScheduledEvent, checkedAt: string, why: string): Promise<VerifiedRelease> {
+  if (def.unit === "text") {
+    return { eventId: event.id, status: "unavailable", actual: null, candidates: [], note: "Text event — the market reaction is the data", checkedAt };
+  }
+  if (Date.now() < new Date(event.time).getTime()) {
+    return { eventId: event.id, status: "awaiting", actual: null, candidates: [], note: "Not released yet", checkedAt };
+  }
+  const items = await fetchFxStreet();
+  const hit = fxActualFor(items, def.id, event.time);
+  if (!hit) {
+    return { eventId: event.id, status: "awaiting", actual: null, candidates: [], note: `${why}; FXStreet has not published the actual yet`, checkedAt };
+  }
+  const actual: ReleaseValue = { value: hit.value, raw: hit.raw, period: event.time.slice(0, 10), revisionStatus: "unknown", provider: "FXSTREET", series: def.id, sourceTimestamp: hit.updatedAt, retrievedAt: checkedAt, priorRevised: null };
+  return { eventId: event.id, status: "verified", actual, candidates: [actual], note: `FXStreet calendar actual (secondary source; ${why})`, checkedAt };
+}
+
 export async function fetchRelease(def: MacroEventDef, event: ScheduledEvent): Promise<VerifiedRelease> {
   const checkedAt = new Date().toISOString();
   const src = def.source;
   if (src.provider === "NONE" || !src.series || !src.transform) {
-    return { eventId: event.id, status: "unavailable", actual: null, candidates: [], note: "No authoritative machine-readable source for this release — awaiting verified data", checkedAt };
+    return fxRelease(def, event, checkedAt, "no primary machine-readable source");
   }
   if (!providerEnabled(src.provider)) {
-    return { eventId: event.id, status: "unavailable", actual: null, candidates: [], note: `${src.provider} adapter not configured (set ${src.provider}_API_KEY)`, checkedAt };
+    return fxRelease(def, event, checkedAt, `${src.provider}_API_KEY not set`);
   }
 
   const candidates: ReleaseValue[] = [];

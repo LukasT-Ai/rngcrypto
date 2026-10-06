@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { useRouter } from "next/navigation"
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { Activity, ArrowDownRight, ArrowUpRight, CheckCircle2, Clock, Flame, Info, Target, Trophy, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -20,6 +21,9 @@ const GREEN = "#00FF88"
 const RED = "#FF3B5C"
 const AMBER = "#F59E0B"
 const GRAY = "#9CA3AF"
+// Every trade links to the live signal page for its ticker; Strike carries the full market set.
+const signalHref = (symbol: string) => `/signals/strike?symbol=${encodeURIComponent(symbol)}`
+
 const CARD = "rounded-2xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.55)] backdrop-blur-xl"
 
 const fmtR = (r: number | null | undefined, dp = 2) => (r == null ? "—" : `${r > 0 ? "+" : ""}${r.toFixed(dp)}R`)
@@ -118,6 +122,7 @@ const TABS = [
 ] as const
 
 export default function PerformanceDashboard() {
+  const router = useRouter()
   const [range, setRange] = useState("30")
   const [assets, setAssets] = useState<string[]>([])
   const [grades, setGrades] = useState<string[]>([])
@@ -281,14 +286,14 @@ export default function PerformanceDashboard() {
                 <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#9CA3AF] mb-2">Open signals — live progress</h2>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   {data.open.map((s) => (
-                    <div key={s.id} className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2 text-xs">
+                    <a key={s.id} href={signalHref(s.symbol)} title={`Open ${s.symbol} signal page`} className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2 text-xs transition-colors hover:border-white/20 hover:bg-white/[0.04]">
                       <span className="font-mono font-bold text-white w-14">{s.symbol}</span>
                       <span className="font-bold" style={{ color: s.bias === "LONG" ? GREEN : RED }}>{s.bias}</span>
                       <span className="text-[#9CA3AF]">{ago(s.timestamp)}</span>
                       <span className="ml-auto font-mono" style={{ color: (s.unrealizedR ?? 0) >= 0 ? GREEN : RED }}>{fmtR(s.unrealizedR)}</span>
                       <span className="font-mono text-[#9CA3AF]" title="Distance to next target / to stop, in R">→TP {s.distToNextTpR == null ? "—" : s.distToNextTpR.toFixed(2)} · SL {s.distToSlR == null ? "—" : s.distToSlR.toFixed(2)}</span>
                       {s.highestTp > 0 && <span className="rounded px-1 text-[10px] font-bold" style={{ color: GREEN, backgroundColor: `${GREEN}18` }}>TP{s.highestTp} ✓</span>}
-                    </div>
+                    </a>
                   ))}
                 </div>
               </div>
@@ -315,9 +320,9 @@ export default function PerformanceDashboard() {
                   </thead>
                   <tbody>
                     {rows.map((s) => (
-                      <tr key={s.id} className="border-t border-white/[0.05] hover:bg-white/[0.03]">
+                      <tr key={s.id} onClick={() => router.push(signalHref(s.symbol))} title={`Open ${s.symbol} signal page`} className="cursor-pointer border-t border-white/[0.05] hover:bg-white/[0.04]">
                         <td className="py-2 text-[#9CA3AF] whitespace-nowrap">{ago(s.timestamp)}</td>
-                        <td className="font-mono font-bold text-white">{s.symbol}</td>
+                        <td className="font-mono font-bold text-white"><a href={signalHref(s.symbol)} onClick={(e) => e.stopPropagation()} className="hover:underline" style={{ textDecorationColor: "var(--brand)" }}>{s.symbol}</a></td>
                         <td className="font-bold" style={{ color: s.bias === "LONG" ? GREEN : RED }}>{s.bias}</td>
                         <td className="text-right font-mono text-white/85">${fmtPrice(s.entry)}</td>
                         <td className="text-right font-mono text-[#9CA3AF]">{s.confidence} <span className="opacity-70">{s.grade}</span></td>
@@ -331,7 +336,7 @@ export default function PerformanceDashboard() {
               </div>
               <div className="md:hidden space-y-2">
                 {rows.map((s) => (
-                  <div key={s.id} className="rounded-lg border border-white/[0.06] bg-black/20 p-3 text-xs space-y-1.5">
+                  <a key={s.id} href={signalHref(s.symbol)} title={`Open ${s.symbol} signal page`} className="block rounded-lg border border-white/[0.06] bg-black/20 p-3 text-xs space-y-1.5 transition-colors hover:border-white/20 hover:bg-white/[0.04]">
                     <div className="flex items-center gap-2">
                       <span className="font-mono font-bold text-white">{s.symbol}</span>
                       <span className="font-bold" style={{ color: s.bias === "LONG" ? GREEN : RED }}>{s.bias}</span>
@@ -340,7 +345,7 @@ export default function PerformanceDashboard() {
                     </div>
                     <div className="text-[#9CA3AF]">Entry ${fmtPrice(s.entry)} · conf {s.confidence} {s.grade}</div>
                     <TpBadges s={s} />
-                  </div>
+                  </a>
                 ))}
               </div>
               {data.signals.length > 40 && (

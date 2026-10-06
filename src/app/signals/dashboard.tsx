@@ -950,6 +950,12 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
   const tickers = useMemo(() => (theme.tickers ? TICKERS.filter((t) => theme.tickers!.includes(t.symbol)) : TICKERS), [theme.tickers])
   const allowed = useMemo(() => new Set(tickers.map((t) => t.symbol)), [tickers])
   const [symbol, setSymbol] = useState(theme.defaultSymbol)
+  // Deep links from the performance log (/signals/strike?symbol=ETH) land on that ticker; unknown symbols are ignored.
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get("symbol")?.toUpperCase()
+    if (want && allowed.has(want)) setSymbol(want)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // Prediction-market asset for the selected ticker (Kalshi/Polymarket list BTC, gold and WTI price markets).
   const predAsset: MacroAsset | null = symbol === "BTC" ? "BTC" : symbol === "GOLD" ? "GOLD" : symbol === "OIL" ? "WTI" : null
   const [fetchTs, setFetchTs] = useState(Date.now())

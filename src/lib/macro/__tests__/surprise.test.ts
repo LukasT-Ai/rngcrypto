@@ -27,7 +27,10 @@ describe("surprise engine", () => {
   });
   it("never invents a surprise when actual or consensus is missing", () => {
     expect(computeSurprise(def("cpi_mom"), null, 0.3, 0.2).score).toBeNull();
-    expect(computeSurprise(def("cpi_mom"), 0.3, null, 0.2).score).toBeNull();
+    // No consensus and no previous: nothing to judge against.
+    expect(computeSurprise(def("cpi_mom"), 0.3, null, null).score).toBeNull();
+    // No consensus but a previous print: judged against previous and labelled as such.
+    expect(computeSurprise(def("cpi_mom"), 0.3, null, 0.2).label).toContain("vs previous, no consensus");
     expect(computeSurprise(def("cpi_mom"), null, 0.3, 0.2).label).toMatch(/awaiting/i);
   });
   it("honours a rolling SD override", () => {
@@ -41,5 +44,21 @@ describe("surprise engine", () => {
     expect(scoreFromZ(-10)).toBeGreaterThanOrEqual(-100);
     expect(magnitudeFromZ(0.3)).toBe("inline");
     expect(magnitudeFromZ(2)).toBe("large");
+  });
+});
+
+describe("no-consensus fallback", () => {
+  it("judges against previous with a wider band and says so", async () => {
+    const { computeSurprise } = await import("../surprise");
+    const { EVENT_DEFS } = await import("../taxonomy");
+    const def = EVENT_DEFS.find((d) => d.id === "api_crude")!;
+    const r = computeSurprise(def, -5.0, null, 0.9);
+    expect(r.score).not.toBeNull();
+    expect(r.score! < 0).toBe(true);
+    expect(r.label).toContain("vs previous, no consensus");
+    expect(r.vsPrevious).toBeCloseTo(-5.9, 3);
+    // Same delta vs consensus should score stronger than vs previous (1.5x SD).
+    const c = computeSurprise(def, -5.0, 0.9, null);
+    expect(Math.abs(c.score!)).toBeGreaterThan(Math.abs(r.score!));
   });
 });

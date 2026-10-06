@@ -38,7 +38,11 @@ export function computeSurprise(
   sdOverride?: number | null
 ): SurpriseResult {
   const unit = def.unit;
-  if (actual == null || forecast == null) {
+  // No consensus but a previous print: judge the change versus previous with a wider band (a move versus the
+  // prior print is noisier than a miss versus consensus), and say so in the label.
+  const vsPrev = forecast == null && actual != null && previous != null;
+  const anchor = forecast ?? (vsPrev ? previous : null);
+  if (actual == null || anchor == null) {
     return {
       delta: null,
       unit,
@@ -49,8 +53,9 @@ export function computeSurprise(
       vsPrevious: actual != null && previous != null ? round(actual - previous, 3) : null,
     };
   }
-  const sd = sdOverride ?? def.typicalSurpriseSD;
-  const delta = round(actual - forecast, 4);
+  const baseSd = sdOverride ?? def.typicalSurpriseSD;
+  const sd = baseSd != null && vsPrev ? baseSd * 1.5 : baseSd;
+  const delta = round(actual - anchor, 4);
   const z = sd && sd > 0 ? delta / sd : null;
   const magnitude = magnitudeFromZ(z);
   const words = KIND_WORDS[def.kind] ?? { above: "above expectations", below: "below expectations" };
@@ -65,7 +70,7 @@ export function computeSurprise(
     zScore: z == null ? null : round(z, 2),
     score: scoreFromZ(z),
     magnitude,
-    label: `${label} (${delta > 0 ? "+" : ""}${formatValue(delta, unit, def.decimals)} vs consensus)`,
+    label: `${label} (${delta > 0 ? "+" : ""}${formatValue(delta, unit, def.decimals)} vs ${vsPrev ? "previous, no consensus" : "consensus"})`,
     vsPrevious: previous != null ? round(actual - previous, 4) : null,
   };
 }

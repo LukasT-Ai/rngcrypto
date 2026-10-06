@@ -176,7 +176,7 @@ export const EVENT_DEFS: MacroEventDef[] = [
     logic: "A larger-than-expected crude draw signals tighter near-term supply and supports WTI; a build weighs on it, subject to products, Cushing and production details.",
   },
   {
-    id: "api_crude", title: "API Weekly Crude Stocks", aliases: /^api weekly crude (oil )?stock/i, kind: "oil_inventory", importance: "medium", unit: "mb", decimals: 1,
+    id: "api_crude", title: "API Weekly Crude Stocks", aliases: /^api weekly crude (oil )?stock|^api weekly statistical bulletin$/i, kind: "oil_inventory", importance: "medium", unit: "mb", decimals: 1,
     typicalSurpriseSD: 2.5, relevance: { BTC: 0.0, GOLD: 0.1, WTI: 0.7 },
     source: { provider: "NONE" },
     logic: "The API estimate previews EIA; a big draw primes a bullish Wednesday unless EIA contradicts it.",

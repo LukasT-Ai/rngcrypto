@@ -53,6 +53,12 @@ export interface ScheduledEvent {
   unit: Unit;
   source: "faireconomy" | "scheduled";
   retrievedAt: string;
+  // Where forecast/previous came from when not straight from the calendar feed (e.g. "BLS prior print",
+  // "EIA consensus (proxy)"). null = calendar consensus. Lets the UI label proxies honestly.
+  forecastSource?: string | null;
+  previousSource?: string | null;
+  // One line explaining a missing or proxied expectation ("No consensus: text event; market read via 2Y/DXY").
+  expectationNote?: string | null;
 }
 
 export type RevisionStatus = "preliminary" | "revised" | "final" | "unknown";

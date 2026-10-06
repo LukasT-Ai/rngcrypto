@@ -6,6 +6,7 @@ import { CalendarClock, CheckCircle2, ChevronDown, Clock, Radio, ShieldAlert, Za
 import type { AssetImpact, Confidence, Direction, EventState, Importance, MacroAsset, MacroScores, MacroState, ScheduledEvent, SnapshotKey } from "@/lib/macro/types"
 import { formatCompactCountdown, formatCountdown, formatDataAge, formatLocalDateTime, formatLocalTime, formatTimeAgo, urgencyFor } from "@/lib/macro/format"
 import { formatValue } from "@/lib/macro/taxonomy"
+import { EventOddsInline, usePredictionState } from "./PredictionOddsPanel"
 
 type MacroApi = MacroState & { serverTime: string }
 
@@ -94,13 +95,19 @@ export function NextEventsStrip({ events }: { events: ScheduledEvent[] | undefin
         return (
           <span
             key={e.id}
-            title={`${formatLocalDateTime(e.time)} · ${impLabel[e.importance]}${e.forecastRaw ? ` · forecast ${e.forecastRaw}` : ""}`}
+            title={`${formatLocalDateTime(e.time)} · ${impLabel[e.importance]}${e.forecastRaw ? ` · forecast ${e.forecastRaw}${e.forecastSource ? ` (${e.forecastSource})` : ""}` : ""}${e.previousRaw ? ` · previous ${e.previousRaw}` : ""}${e.expectationNote ? ` · ${e.expectationNote}` : ""}`}
             className={`shrink-0 inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] ${tone}`}
             style={{ borderColor: `${c}${u === "normal" ? "25" : "55"}`, backgroundColor: u === "urgent" || u === "now" ? `${c}14` : "transparent" }}
           >
             <span className="size-1.5 rounded-full" style={{ backgroundColor: c }} />
             {e.title}
             <span className="font-mono">{s <= 0 ? "now" : formatCompactCountdown(s)}</span>
+            {(e.forecastRaw || e.previousRaw) && (
+              <span className="font-mono text-[10px] text-white/45">
+                {e.forecastRaw ? `f ${e.forecastRaw}${e.forecastSource ? "*" : ""}` : "f —"}
+                {e.previousRaw ? ` · p ${e.previousRaw}` : ""}
+              </span>
+            )}
           </span>
         )
       })}
@@ -187,6 +194,11 @@ export function MacroAlerts({ alerts }: { alerts: MacroState["alerts"] | undefin
   )
 }
 
+function ExpectationNote({ event }: { event: ScheduledEvent }) {
+  if (!event.expectationNote) return null
+  return <p className="mt-1.5 text-[10px] leading-snug text-white/40">{event.expectationNote}</p>
+}
+
 // ── Event card ──────────────────────────────────────────────────────────────
 
 function ImpactRows({ impacts, phaseLabel }: { impacts: AssetImpact[]; phaseLabel: string }) {
@@ -222,6 +234,7 @@ const CHECK_THR: Record<SnapshotKey, number> = { dxy: 0.1, us2y: 0.02, us10y: 0.
 
 export function MacroEventCard({ state, isLoading }: { state: MacroApi | undefined; isLoading: boolean }) {
   const now = useNow(1000)
+  const predQ = usePredictionState()
   if (isLoading && !state) {
     return <div id="sec-macro" className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 animate-pulse h-40" />
   }
@@ -235,6 +248,12 @@ export function MacroEventCard({ state, isLoading }: { state: MacroApi | undefin
         {next && (
           <span className="text-white/70">
             Next: <span className="font-semibold">{next.title}</span> <span className="text-white/40">{formatLocalDateTime(next.time)}</span> · <LiveCountdown iso={next.time} compact className="font-mono" />
+            {(next.forecastRaw || next.previousRaw) && (
+              <span className="ml-2 font-mono text-[11px] text-white/50">
+                {next.forecastRaw ? `forecast ${next.forecastRaw}${next.forecastSource ? "*" : ""}` : "no consensus"}
+                {next.previousRaw ? ` · prev ${next.previousRaw}` : ""}
+              </span>
+            )}
           </span>
         )}
         {state?.regime && <span className="ml-auto text-[11px] text-white/35">{state.regime.summary}</span>}
@@ -274,14 +293,22 @@ export function MacroEventCard({ state, isLoading }: { state: MacroApi | undefin
             <LiveCountdown iso={a.event.time} className="font-mono text-4xl font-black tabular-nums text-white" />
             <div className="mt-2 grid grid-cols-2 gap-x-4 text-xs">
               <span className="text-white/40">Forecast</span>
-              <span className="font-mono text-white/85">{a.event.forecastRaw ?? "—"}</span>
+              <span className="font-mono text-white/85">
+                {a.event.forecastRaw ?? "—"}
+                {a.event.forecastSource && <span className="ml-1 text-[9px] font-sans text-white/35">{a.event.forecastSource}</span>}
+              </span>
               <span className="text-white/40">Previous</span>
-              <span className="font-mono text-white/85">{a.event.previousRaw ?? "—"}</span>
+              <span className="font-mono text-white/85">
+                {a.event.previousRaw ?? "—"}
+                {a.event.previousSource && <span className="ml-1 text-[9px] font-sans text-white/35">{a.event.previousSource}</span>}
+              </span>
             </div>
+            <ExpectationNote event={a.event} />
           </div>
           <div className="space-y-3">
             <ImpactRows impacts={impacts} phaseLabel={phaseLabel} />
             <p className="text-xs text-white/55 leading-snug">{a.def.logic}</p>
+            <EventOddsInline defId={a.def.id} state={predQ.data} />
           </div>
         </div>
       ) : (
@@ -289,15 +316,18 @@ export function MacroEventCard({ state, isLoading }: { state: MacroApi | undefin
           <div className="grid grid-cols-3 gap-2">
             {[
               { k: "Actual", v: verified ? fmt(a.release!.actual!.value) : null, strong: true },
-              { k: "Forecast", v: a.event.forecastRaw ?? fmt(a.event.forecast) },
-              { k: "Previous", v: a.event.previousRaw ?? fmt(a.event.previous) },
+              { k: "Forecast", v: a.event.forecastRaw ?? fmt(a.event.forecast), src: a.event.forecastSource },
+              { k: "Previous", v: a.event.previousRaw ?? fmt(a.event.previous), src: a.event.previousSource },
             ].map((x) => (
               <div key={x.k} className="rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2">
                 <div className="text-[10px] uppercase tracking-wide text-white/35">{x.k}</div>
                 <div className={`font-mono font-bold ${x.strong ? "text-lg text-white" : "text-sm text-white/75"}`}>{x.v ?? (x.strong ? "…" : "—")}</div>
+                {"src" in x && x.src && <div className="text-[9px] text-white/35">{x.src}</div>}
               </div>
             ))}
           </div>
+          <ExpectationNote event={a.event} />
+          <EventOddsInline defId={a.def.id} state={predQ.data} />
 
           {verified ? (
             <div className="text-sm font-semibold" style={{ color: (a.surprise?.score ?? 0) === 0 ? AMBER : "white" }}>

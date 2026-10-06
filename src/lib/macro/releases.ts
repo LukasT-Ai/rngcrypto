@@ -44,7 +44,7 @@ export function referencePeriod(def: MacroEventDef, eventTime: Date): { year: nu
   return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
 }
 
-interface Obs {
+export interface Obs {
   period: string;
   year: number;
   month: number;
@@ -52,7 +52,7 @@ interface Obs {
   footnote: string;
 }
 
-function applyTransform(obs: Obs[], transform: Transform): number | null {
+export function applyTransform(obs: Obs[], transform: Transform): number | null {
   const v0 = obs[0]?.value;
   const v1 = obs[1]?.value;
   const v12 = obs[12]?.value;
@@ -150,7 +150,7 @@ export async function eiaWeekly(series: string, maxAgeMs = 20_000): Promise<Obs[
 
 // ── Validator ──────────────────────────────────────────────────────────────
 
-function periodMatches(def: MacroEventDef, obs: Obs, eventTime: Date): boolean {
+export function periodMatches(def: MacroEventDef, obs: Obs, eventTime: Date): boolean {
   if (def.source.provider === "EIA") {
     // Weekly: the report published on event day covers the week ending the previous Friday.
     const d = new Date(obs.period).getTime();
@@ -247,4 +247,14 @@ export async function latestCpiYoY(): Promise<number | null> {
   if (!obs || obs.length < 13) return null;
   const v = applyTransform(obs, "yoy_pct");
   return v == null ? null : Math.round(v * 10) / 10;
+}
+
+// Latest observations for a def's primary series (null when the provider is not configured).
+export async function primaryObservations(def: MacroEventDef, maxAgeMs = 10 * 60e3): Promise<Obs[] | null> {
+  const src = def.source;
+  if (src.provider === "NONE" || !src.series || !providerEnabled(src.provider)) return null;
+  if (src.provider === "BLS") return blsSeries(src.series, maxAgeMs);
+  if (src.provider === "FRED") return fredSeries(src.series, maxAgeMs);
+  if (src.provider === "EIA") return eiaWeekly(src.series, maxAgeMs);
+  return null;
 }

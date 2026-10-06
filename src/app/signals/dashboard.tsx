@@ -5,6 +5,7 @@ import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import { buildRecommendation } from "./recommendation"
 import { RecommendationCard } from "./RecommendationCard"
 import { MacroAlerts, MacroEventCard, MacroScoreStrip, NextEventsStrip, RecentResults, useMacroState } from "./MacroEventPanel"
+import { PredictionOddsPanel } from "./PredictionOddsPanel"
 import { THEMES, themeStyle, type SignalsVariant } from "./themes"
 import type { AssetImpact, MacroScores } from "@/lib/macro/types"
 import { motion } from "framer-motion"
@@ -1318,6 +1319,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
             {/* ── 1b2. Macro Event Intelligence ───────────────────────── */}
             <MacroEventCard state={macroQ.data} isLoading={macroQ.isLoading} />
             {d?.macroEvent && <MacroScoreStrip scores={d.macroEvent.scores} confidence={call?.confidence ?? 50} bias={call?.bias ?? "WAIT"} />}
+            <PredictionOddsPanel asset={symbol === "BTC" ? "BTC" : symbol === "GOLD" ? "GOLD" : symbol === "OIL" ? "WTI" : null} />
 
             {/* ── 1c. Active Setups (horizon trades; below the verdict so the recommendation is seen first) ── */}
             <motion.div {...fadeUp} className="space-y-4" id="sec-active-setups">

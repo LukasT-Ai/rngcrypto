@@ -44,3 +44,4 @@ data/signal-history.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+data/macro/

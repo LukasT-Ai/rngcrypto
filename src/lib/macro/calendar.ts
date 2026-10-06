@@ -1,6 +1,7 @@
 import type { Importance, MacroEventDef, ScheduledEvent } from "./types";
 import { EVENT_DEFS, matchEventDef, parseValue } from "./taxonomy";
 import { generateOilEvents, generateScheduledEvents } from "../economic-calendar";
+import { fillExpectations } from "./expectations";
 
 interface FFItem {
   title?: string;
@@ -121,7 +122,8 @@ export async function getMacroEvents(fromMs: number, toMs: number): Promise<Sche
     });
   }
 
-  return out.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+  const sorted = out.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+  return fillExpectations(sorted);
 }
 
 function matchScheduledName(name: string): MacroEventDef | null {

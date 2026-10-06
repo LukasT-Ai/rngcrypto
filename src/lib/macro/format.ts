@@ -51,3 +51,15 @@ export function formatDataAge(ms: number | null): string {
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)} sec`;
   return `${Math.round(ms / 60_000)} min`;
 }
+
+// "3m ago", "2h ago", "1d ago" for released events.
+export function formatTimeAgo(secondsAgo: number): string {
+  const s = Math.max(0, Math.floor(secondsAgo));
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h ago`;
+}

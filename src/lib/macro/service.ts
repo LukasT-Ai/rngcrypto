@@ -9,6 +9,7 @@ import { classifyRegime } from "./regime";
 import { fiveDayChanges, getSnapshot, priceAt, setMarketTtl } from "./market";
 import { bestHistoricalStats, findRelease, rollingSurpriseSD, upsertRelease } from "./history";
 import { deriveAlerts } from "./alerts";
+import { summarizeOutcome } from "./outcome";
 
 // Configurable blend (also surfaced in the API so the UI can show it).
 export const MACRO_WEIGHTS = {
@@ -98,6 +99,7 @@ function newState(event: ScheduledEvent, regime: MacroRegime, now: number): Even
     historical: null,
     dataAgeMs: null,
     alerts: [],
+    outcome: null,
   };
   // Rehydrate a verified release after a restart so reactions keep accumulating.
   if (stored?.actual != null) {
@@ -311,6 +313,7 @@ export async function getMacroState(): Promise<MacroState> {
   for (const s of all) {
     s.secondsToRelease = Math.round((new Date(s.event.time).getTime() - now) / 1000);
     s.phase = phaseFor(s.secondsToRelease, s);
+    s.outcome = summarizeOutcome(s, now);
   }
 
   const upcomingAll = await getMacroEvents(now, now + 7 * 86400e3);

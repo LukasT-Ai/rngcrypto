@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react"
 import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import { buildRecommendation } from "./recommendation"
 import { RecommendationCard } from "./RecommendationCard"
-import { MacroAlerts, MacroEventCard, MacroScoreStrip, NextEventsStrip, useMacroState } from "./MacroEventPanel"
+import { MacroAlerts, MacroEventCard, MacroScoreStrip, NextEventsStrip, RecentResults, useMacroState } from "./MacroEventPanel"
 import { THEMES, themeStyle, type SignalsVariant } from "./themes"
 import type { AssetImpact, MacroScores } from "@/lib/macro/types"
 import { motion } from "framer-motion"
@@ -1227,6 +1227,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
           <>
             {/* ── 0b. Macro event strip + fresh alerts ─────────────────── */}
             <NextEventsStrip events={macroQ.data?.upcoming} />
+            <RecentResults recent={macroQ.data?.recent} active={macroQ.data?.active} />
             <MacroAlerts alerts={macroQ.data?.alerts} />
 
             {/* ── 1. Header ───────────────────────────────────────────── */}

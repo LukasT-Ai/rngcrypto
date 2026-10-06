@@ -185,6 +185,20 @@ export interface Alert {
   direction?: Direction;
 }
 
+export interface EventOutcome {
+  status: "verified" | "awaiting" | "unverified" | "conflict";
+  // One line: actual vs forecast and the surprise read, or why no number exists.
+  headline: string;
+  // One line: what the market did at the latest reaction sample and whether it confirmed the expected move.
+  impact: string;
+  // e.g. "Expected reaction confirmed (75%) @15m"; null until the first sample is judged.
+  confirmationNote: string | null;
+  direction: Direction;
+  perAsset: { asset: MacroAsset; expected: Direction; observed: Direction | null; movePct: number | null; status: ConfirmationStatus | null }[];
+  basedOn: ReactionLabel | null;
+  asOf: string;
+}
+
 export interface EventState {
   event: ScheduledEvent;
   def: MacroEventDef;
@@ -200,6 +214,8 @@ export interface EventState {
   historical: HistoricalStats | null;
   dataAgeMs: number | null;
   alerts: Alert[];
+  // Filled once the event time has passed; persists in `recent` so results stay visible after the live card moves on.
+  outcome: EventOutcome | null;
 }
 
 export interface HistoricalStats {

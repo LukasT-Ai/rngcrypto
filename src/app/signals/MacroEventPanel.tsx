@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { CalendarClock, ChevronDown, Radio, ShieldAlert, Zap } from "lucide-react"
+import { CalendarClock, CheckCircle2, ChevronDown, Clock, Radio, ShieldAlert, Zap } from "lucide-react"
 import type { AssetImpact, Confidence, Direction, EventState, Importance, MacroAsset, MacroScores, MacroState, ScheduledEvent, SnapshotKey } from "@/lib/macro/types"
-import { formatCompactCountdown, formatCountdown, formatDataAge, formatLocalDateTime, formatLocalTime, urgencyFor } from "@/lib/macro/format"
+import { formatCompactCountdown, formatCountdown, formatDataAge, formatLocalDateTime, formatLocalTime, formatTimeAgo, urgencyFor } from "@/lib/macro/format"
 import { formatValue } from "@/lib/macro/taxonomy"
 
 type MacroApi = MacroState & { serverTime: string }
@@ -104,6 +104,62 @@ export function NextEventsStrip({ events }: { events: ScheduledEvent[] | undefin
           </span>
         )
       })}
+    </div>
+  )
+}
+
+// ── Recent results: released events stay visible with their outcome ─────────
+
+const outcomeStatusColor: Record<NonNullable<EventState["outcome"]>["status"], string> = { verified: GREEN, awaiting: AMBER, unverified: GRAY, conflict: RED }
+
+export function RecentResults({ recent, active }: { recent: EventState[] | undefined; active: EventState | null | undefined }) {
+  const now = useNow(15_000)
+  const list = [...(active && active.secondsToRelease <= 0 ? [active] : []), ...(recent ?? [])]
+    .filter((s) => s.outcome && new Date(s.event.time).getTime() <= now)
+    .sort((a, b) => new Date(b.event.time).getTime() - new Date(a.event.time).getTime())
+    .slice(0, 6)
+  if (list.length === 0) return null
+  return (
+    <div id="sec-macro-results" className="rounded-xl border border-white/[0.07] bg-[rgb(var(--surface-rgb,10_14_23)/0.45)] backdrop-blur-md px-3 py-2">
+      <div className="flex items-center gap-2 mb-1.5">
+        <CheckCircle2 className="size-3.5" style={{ color: "var(--brand, #9CA3AF)" }} />
+        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--brand, #9CA3AF)" }}>Recent results</span>
+        <span className="text-[10px] text-white/30">last 24h · impact at latest market sample</span>
+      </div>
+      <div className="divide-y divide-white/[0.05]">
+        {list.map((s) => {
+          const o = s.outcome!
+          const c = impColor[s.event.importance]
+          const sc = outcomeStatusColor[o.status]
+          const ago = Math.round((now - new Date(s.event.time).getTime()) / 1000)
+          return (
+            <div key={s.event.id} className="py-1.5 text-[11px] leading-snug">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: c }} />
+                <span className="font-semibold text-white/85">{s.event.title}</span>
+                <span className="inline-flex items-center gap-1 font-mono text-white/40" title={formatLocalDateTime(s.event.time)}>
+                  <Clock className="size-3" />
+                  {formatTimeAgo(ago)}
+                </span>
+                <span className="rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide" style={{ color: sc, backgroundColor: `${sc}18` }}>
+                  {o.status === "verified" ? "verified" : o.status === "awaiting" ? "awaiting data" : o.status === "conflict" ? "data conflict" : "unverified"}
+                </span>
+                <span className="text-white/75">{o.headline}</span>
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 pl-3.5 text-white/60">
+                <span>{glyph(o.direction)}</span>
+                {o.perAsset.map((p) => (
+                  <span key={p.asset} className="font-mono" title={`expected ${p.expected}${p.status ? ` · ${p.status}` : ""}`} style={{ color: p.movePct == null ? GRAY : p.movePct > 0 ? GREEN : p.movePct < 0 ? RED : GRAY }}>
+                    {assetLabel[p.asset]} {p.movePct == null ? "—" : `${p.movePct >= 0 ? "+" : ""}${p.movePct.toFixed(2)}%`}
+                  </span>
+                ))}
+                {o.basedOn ? <span className="text-white/30">@{o.basedOn}</span> : <span className="text-white/40">{o.impact}</span>}
+                {o.confirmationNote && <span className="text-white/45">· {o.confirmationNote}</span>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

@@ -14,7 +14,7 @@ import { MacroAlerts, MacroEventCard, NextEventsStrip, RecentResults, useMacroSt
 import { PredictionOddsPanel } from "./PredictionOddsPanel"
 import type { MacroAsset } from "@/lib/macro/types"
 import { THEMES, themeStyle, type SignalsVariant } from "./themes"
-import Link from "next/link"
+import { HotBoardState, HotPlayCard, HotStamp, hotStatus, useHotPlays } from "./HotBoard"
 import { motion } from "framer-motion"
 import {
   Activity,
@@ -311,6 +311,15 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
   const accent = tickers.find((t) => t.symbol === symbol)?.color ?? theme.brand
 
+  // "On the board right now": published calls across the tickers this venue page carries. Tapping one switches the ticker in place.
+  const hotQ = useHotPlays()
+  const hotPlays = useMemo(() => (hotQ.data?.hot ?? []).filter((p) => p.bias !== "WAIT" && allowed.has(p.symbol)).slice(0, 6), [hotQ.data, allowed])
+  const hotState = hotStatus(hotQ, hotPlays)
+  const pickHot = useCallback((sym: string) => {
+    setSymbol(sym)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }, [])
+
   const { data, isLoading, dataUpdatedAt } = useQuery<SignalsResponse>({
     queryKey: ["signals", symbol],
     queryFn: async () => {
@@ -418,10 +427,34 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
             <span className="font-mono rounded px-1.5 py-0.5 bg-black/30 border border-white/10">
               refresh <Countdown lastFetch={fetchTs} color="var(--brand)" />
             </span>
-            <Link href="/#live" className="rounded-md border border-white/10 px-2 py-0.5 hover:border-white/25 hover:text-white transition-colors">Hot right now</Link>
+            <a href="#hot" className="rounded-md border border-white/10 px-2 py-0.5 hover:border-white/25 hover:text-white transition-colors">Hot right now</a>
             <a href="/signals/performance" className="rounded-md border border-white/10 px-2 py-0.5 hover:border-white/25 hover:text-white transition-colors">Performance</a>
           </div>
         </div>
+
+        {/* ── On the board right now: the venue's published calls, always above the ticker rails ── */}
+        <section id="hot" className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex size-full animate-ping rounded-full opacity-60" style={{ backgroundColor: "var(--brand)" }} />
+                <span className="relative inline-flex size-2 rounded-full" style={{ backgroundColor: "var(--brand)" }} />
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: "var(--brand)" }}>On the board right now</span>
+              <span className="hidden text-xs text-[#9CA3AF] sm:inline">· highest-conviction calls on {theme.name.replace(" Signals", "")}. Tap one to load its breakdown.</span>
+            </div>
+            <HotStamp ts={hotQ.data?.timestamp} />
+          </div>
+          {hotState !== "ready" ? (
+            <HotBoardState status={hotState} compact count={3} />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {hotPlays.map((p) => (
+                <HotPlayCard key={p.symbol} p={p} onSelect={pickHot} compact />
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* ── Ticker rails: grouped by asset class; snap strip on phones, wrapping from sm up ── */}
         <div className="flex flex-nowrap items-center gap-2 overflow-x-auto snap-x snap-mandatory -mx-4 px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible">

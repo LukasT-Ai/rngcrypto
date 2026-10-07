@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
-import { computeSignal } from "@/lib/signals/engine";
+import { computeSignal, getTuning } from "@/lib/signals/engine";
 
 export const dynamic = "force-dynamic";
 
@@ -113,8 +113,11 @@ export async function GET(req: NextRequest) {
     .map((r) => (r.status === "fulfilled" ? r.value : null))
     .filter((r): r is NonNullable<typeof r> => r !== null);
 
+  // "Hot" = every published call. The engine already gates on minPublishConfidence (60 after the Oct 2026 sweep);
+  // a hard-coded 75 here left the board empty for days at a time.
+  const minConf = getTuning().minPublishConfidence;
   const hot = all
-    .filter((r) => r.confidence >= 75 && r.bias !== "WAIT")
+    .filter((r) => r.confidence >= minConf && r.bias !== "WAIT")
     .sort((a, b) => b.confidence - a.confidence);
 
   const response = {

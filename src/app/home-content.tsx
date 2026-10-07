@@ -8,6 +8,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from "recharts"
 import { Activity, ArrowRight, ArrowUpRight, CalendarClock, CheckCircle2, Crosshair, ExternalLink, Flame, Layers, Radar, ShieldCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { PerformanceStats } from "@/app/api/signals/history/performance"
+import { HotBoardState, HotPlayCard, HotStamp, hotStatus, useHotPlays } from "@/app/signals/HotBoard"
 
 export type HomePost = { slug: string; title: string; description: string; date: string; category: string; readTime: string }
 
@@ -36,32 +37,6 @@ function usePerformance(range: "30" | "all") {
   })
 }
 
-interface HotPlay {
-  symbol: string
-  label: string
-  color: string
-  price: number
-  change24h: number
-  bias: "LONG" | "SHORT" | "WAIT"
-  confidence: number
-  grade: string
-  riskReward: number
-  regime: string
-}
-type HotResp = { timestamp: number; hot: HotPlay[]; all: HotPlay[] }
-
-function useHot() {
-  return useQuery<HotResp>({
-    queryKey: ["home-hot"],
-    queryFn: async () => {
-      const r = await fetch("/api/signals/hot")
-      if (!r.ok) throw new Error(`hot ${r.status}`)
-      return r.json()
-    },
-    refetchInterval: 60_000,
-    retry: false,
-  })
-}
 
 // ---------------------------------------------------------------------------
 // Bits
@@ -69,7 +44,6 @@ function useHot() {
 
 const fmtR = (r: number | null | undefined, dp = 2) => (r == null ? "—" : `${r > 0 ? "+" : ""}${r.toFixed(dp)}R`)
 const fmtPct = (p: number | null | undefined) => (p == null ? "—" : `${Math.round(p)}%`)
-const fmtPrice = (n: number) => (n >= 1000 ? n.toLocaleString("en-US", { maximumFractionDigits: 0 }) : n >= 1 ? n.toFixed(2) : n >= 0.01 ? n.toFixed(4) : n.toFixed(6))
 const fmtDate = (d: string) => {
   const t = new Date(d)
   return Number.isNaN(t.getTime()) ? d : t.toLocaleDateString("en-US", { month: "short", year: "numeric" })
@@ -139,7 +113,7 @@ function Kpi({ label, value, sub, tone = "white", big = false }: { label: string
 function Hero() {
   const m = useMotion()
   const perf = usePerformance("30")
-  const hot = useHot()
+  const hot = useHotPlays()
   const k = perf.data?.stats.kpis
   const markets = hot.data?.all.length ?? 31
 
@@ -237,9 +211,9 @@ function Hero() {
 
 function LiveBoard() {
   const m = useMotion()
-  const hot = useHot()
+  const hot = useHotPlays()
   const plays = (hot.data?.hot ?? []).filter((p) => p.bias !== "WAIT").slice(0, 6)
-  const stamp = hot.data?.timestamp ? new Date(hot.data.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : null
+  const status = hotStatus(hot, plays)
 
   return (
     <section id="live" className="relative py-20 sm:py-24">
@@ -249,56 +223,18 @@ function LiveBoard() {
           pulse
           title={<>The hottest setups, <span className="text-[#00FF88]">live</span></>}
           blurb="Highest-conviction calls across crypto, metals, oil, stocks and indices. Tap one to open the full breakdown."
-          right={stamp ? <span className="font-mono text-xs text-white/35">refreshed {stamp}</span> : undefined}
+          right={<HotStamp ts={hot.data?.timestamp} />}
         />
 
-        {plays.length === 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="skeleton h-36 rounded-2xl" />
-            ))}
-          </div>
+        {status !== "ready" ? (
+          <HotBoardState status={status} />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {plays.map((p, i) => {
-              const long = p.bias === "LONG"
-              const c = long ? GREEN : RED
-              return (
-                <motion.div key={p.symbol} {...m.fade(i * 0.06)}>
-                  <Link href={`/signals/strike?symbol=${encodeURIComponent(p.symbol)}`} className="group relative block overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-white/[0.18] hover:bg-white/[0.045]">
-                    <div className="pointer-events-none absolute -right-10 -top-10 size-32 rounded-full opacity-0 blur-2xl transition-opacity duration-300 group-hover:opacity-100" style={{ backgroundColor: `${c}33` }} />
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <span className="flex size-10 items-center justify-center rounded-xl font-mono text-sm font-black text-[#06080F]" style={{ backgroundColor: p.color || "#fff" }}>{p.symbol.slice(0, 3)}</span>
-                        <div>
-                          <p className="font-mono text-base font-bold text-white">{p.symbol}</p>
-                          <p className="text-xs text-white/40">{p.label}</p>
-                        </div>
-                      </div>
-                      <span className="rounded-md px-2 py-1 text-[11px] font-black tracking-wider" style={{ color: c, backgroundColor: `${c}1a` }}>{p.bias}</span>
-                    </div>
-                    <div className="mt-5 grid grid-cols-3 gap-3 text-xs">
-                      <div>
-                        <p className="text-white/35">Price</p>
-                        <p className="mt-0.5 font-mono font-semibold text-white/90">${fmtPrice(p.price)}</p>
-                      </div>
-                      <div>
-                        <p className="text-white/35">24h</p>
-                        <p className="mt-0.5 font-mono font-semibold" style={{ color: p.change24h >= 0 ? GREEN : RED }}>{p.change24h >= 0 ? "+" : ""}{p.change24h.toFixed(1)}%</p>
-                      </div>
-                      <div>
-                        <p className="text-white/35">Conviction</p>
-                        <p className="mt-0.5 font-mono font-semibold text-white/90">{p.confidence} <span className="text-white/45">{p.grade}</span></p>
-                      </div>
-                    </div>
-                    <div className="mt-4 flex items-center justify-between text-[11px] text-white/35">
-                      <span>R:R {p.riskReward.toFixed(1)} · {p.regime}</span>
-                      <span className="flex items-center gap-1 transition-colors group-hover:text-white/70">breakdown <ArrowUpRight className="size-3" /></span>
-                    </div>
-                  </Link>
-                </motion.div>
-              )
-            })}
+            {plays.map((p, i) => (
+              <motion.div key={p.symbol} {...m.fade(i * 0.06)}>
+                <HotPlayCard p={p} href={`/signals/strike?symbol=${encodeURIComponent(p.symbol)}`} />
+              </motion.div>
+            ))}
           </div>
         )}
       </div>

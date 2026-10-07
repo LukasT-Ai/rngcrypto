@@ -11,7 +11,40 @@ import { appendSignal } from "../../app/api/signals/history/logger";
 import { FACTOR } from "./factors";
 
 // Bump whenever scoring behaviour changes; every logged signal carries it so history can be bucketed.
-export const ENGINE_VERSION = "2026.10.07-closed-candle";
+export const ENGINE_VERSION = "2026.10.07-tuned";
+
+/**
+ * Strategy tuning. Defaults come from a 36-configuration sweep of the walk-forward backtest (scripts/backtest.ts,
+ * 2026-10-07, 60 days, 8 crypto symbols, one position per symbol) checked out of sample on 120 days:
+ *  - publish threshold 60: 55 added only churn; 65 cut the sample to ~170 trades with no per-trade gain;
+ *  - shorts only with the higher timeframes already trending down: unconditional shorts lost money;
+ *  - a 1-hour cooldown after each closed signal (logger.ts): the engine re-fired on the next bar otherwise;
+ *  - stops unchanged: wider stops raised the TP1 rate but lowered net R in every configuration.
+ * Honest caveat: Jun-Aug 2026 was about -0.18R net for EVERY configuration and Aug-Oct about +0.18R, so the
+ * edge is regime-dependent. These defaults are the least-bad choice, not a proven edge; the performance page
+ * stays provisional until 100 filled closed live signals exist. The backtest can override any value.
+ */
+export interface Tuning {
+  /** Below this confidence a directional lean is published as WAIT. */
+  minPublishConfidence: number;
+  /** SHORT calls require the 4h trend to be "bear" (1h "bear" also accepted when 4h is "mixed"). */
+  shortNeedsHtfBear: boolean;
+  /** ATR buffer placed beyond the level the stop hides behind. */
+  stopBufferAtr: number;
+  /** Minimum stop distance in ATR and the fallback stop when a level is too close. */
+  minStopAtr: number;
+  /** Multiplier on the per-asset-class percentage stop floor. */
+  stopFloorScale: number;
+}
+export const DEFAULT_TUNING: Tuning = { minPublishConfidence: 60, shortNeedsHtfBear: true, stopBufferAtr: 0.5, minStopAtr: 0.8, stopFloorScale: 1.0 };
+let TUNING: Tuning = { ...DEFAULT_TUNING };
+export function setTuning(partial: Partial<Tuning>): Tuning {
+  TUNING = { ...TUNING, ...partial };
+  return TUNING;
+}
+export function getTuning(): Tuning {
+  return TUNING;
+}
 
 export type EngineResult =
   | { status: 200; body: Record<string, unknown>; cached: boolean }
@@ -3378,15 +3411,23 @@ function computeMultiFactorCall(
   // A directional call needs tradeable conviction AFTER event and catalyst haircuts; below the logging
   // threshold it is a lean, not a trade. Same bar for both sides.
   const isWait =
-    confidence < 55 ||
+    confidence < TUNING.minPublishConfidence ||
     (squeeze === "volatility_compression" && adx < 20) ||
     (trend1h !== trend4h && adx < 20);
 
   let bias: "LONG" | "SHORT" | "WAIT";
+  const gateNotes: string[] = [];
   if (isWait) {
     bias = "WAIT";
+    if (confidence >= 55 && confidence < TUNING.minPublishConfidence) {
+      gateNotes.push(`${weightedScore > 0 ? "Long" : "Short"} lean at ${confidence} confidence is below the ${TUNING.minPublishConfidence} publish threshold: watch, do not trade`);
+    }
   } else if (weightedScore > 0) {
     bias = "LONG";
+  } else if (TUNING.shortNeedsHtfBear && !(trend4h === "bear" || (trend4h === "mixed" && trend1h === "bear"))) {
+    // Shorts against a higher-timeframe uptrend lost money in testing; publish them as WAIT.
+    bias = "WAIT";
+    gateNotes.push(`Short lean at ${confidence} confidence, but the higher timeframes are not trending down (4h ${trend4h}, 1h ${trend1h}): standing aside`);
   } else {
     bias = "SHORT";
   }
@@ -3438,7 +3479,7 @@ function computeMultiFactorCall(
     const side = bias.toLowerCase();
     confidence = clamp(confidence + macroBonus, 0, 100);
     macroNotes.push(`Macro regime ${macroState!.bias.replace(/_/g, " ")} ${macroBonus > 0 ? "supports" : "opposes"} the ${side} (${macroBonus > 0 ? "+" : ""}${macroBonus})`);
-    if (confidence < 55 && bias !== "WAIT") {
+    if (confidence < TUNING.minPublishConfidence && bias !== "WAIT") {
       macroNotes.unshift(`Stand aside: the ${side} lean is fighting the macro regime and drops below tradeable conviction`);
       bias = "WAIT";
     }
@@ -3456,7 +3497,9 @@ function computeMultiFactorCall(
   const ta = tradeATR * stopMult;
   // Stop floor as % of price so low-vol indices are not stopped by noise and thin tokens get room
   const STOP_FLOOR_PCT: Record<string, number> = { index: 0.0035, commodity: 0.005, stock: 0.005, crypto: 0.004, thin: 0.015 };
-  const minDist = Math.max(ta * 0.8, price * (STOP_FLOOR_PCT[assetClass] ?? 0.005));
+  const minDist = Math.max(ta * TUNING.minStopAtr, price * (STOP_FLOOR_PCT[assetClass] ?? 0.005) * TUNING.stopFloorScale);
+  const buf = TUNING.stopBufferAtr * ta;
+  const minStop = TUNING.minStopAtr * ta;
 
   const nearestSupport = supports[0] ?? price - 1.5 * ta;
   const nearestResistance = resistances[0] ?? price + 1.5 * ta;
@@ -3479,14 +3522,14 @@ function computeMultiFactorCall(
         : price;
     secondaryEntry =
       secondSupport !== entry ? round(secondSupport, dec) : null;
-    stopLoss = nearestSupport - 0.5 * ta;
-    if (Math.abs(entry - stopLoss) < minDist) stopLoss = entry - ta;
+    stopLoss = nearestSupport - buf;
+    if (Math.abs(entry - stopLoss) < minDist) stopLoss = entry - Math.max(minStop, minDist);
 
     if (secondaryEntry != null) {
       const thirdSupport = supports[2] ?? secondaryEntry - 1.5 * ta;
-      secondaryStopLoss = thirdSupport - 0.5 * ta;
-      if (secondaryStopLoss >= secondaryEntry) secondaryStopLoss = secondaryEntry - ta;
-      if (Math.abs(secondaryEntry - secondaryStopLoss) < minDist) secondaryStopLoss = secondaryEntry - ta;
+      secondaryStopLoss = thirdSupport - buf;
+      if (secondaryStopLoss >= secondaryEntry) secondaryStopLoss = secondaryEntry - minStop;
+      if (Math.abs(secondaryEntry - secondaryStopLoss) < minDist) secondaryStopLoss = secondaryEntry - Math.max(minStop, minDist);
     } else {
       secondaryStopLoss = null;
     }
@@ -3506,14 +3549,14 @@ function computeMultiFactorCall(
         : price;
     secondaryEntry =
       secondResistance !== entry ? round(secondResistance, dec) : null;
-    stopLoss = nearestResistance + 0.5 * ta;
-    if (Math.abs(stopLoss - entry) < minDist) stopLoss = entry + ta;
+    stopLoss = nearestResistance + buf;
+    if (Math.abs(stopLoss - entry) < minDist) stopLoss = entry + Math.max(minStop, minDist);
 
     if (secondaryEntry != null) {
       const thirdResistance = resistances[2] ?? secondaryEntry + 1.5 * ta;
-      secondaryStopLoss = thirdResistance + 0.5 * ta;
-      if (secondaryStopLoss <= secondaryEntry) secondaryStopLoss = secondaryEntry + ta;
-      if (Math.abs(secondaryStopLoss - secondaryEntry) < minDist) secondaryStopLoss = secondaryEntry + ta;
+      secondaryStopLoss = thirdResistance + buf;
+      if (secondaryStopLoss <= secondaryEntry) secondaryStopLoss = secondaryEntry + minStop;
+      if (Math.abs(secondaryStopLoss - secondaryEntry) < minDist) secondaryStopLoss = secondaryEntry + Math.max(minStop, minDist);
     } else {
       secondaryStopLoss = null;
     }
@@ -3574,7 +3617,7 @@ function computeMultiFactorCall(
   const ewNotes = elliott && elliott.consensus.direction && Math.abs(ewScore) >= 10 ? elliott.consensus.notes.slice(0, 2).map((n) => `Elliott ${n}`) : [];
   const taNotes = taSystem ? taSystem.notes.slice(0, 1) : [];
   const reasoning = [
-    ...macroNotes,
+    ...gateNotes, ...macroNotes,
     ...ms.notes,
     ...mom.notes,
     ...taNotes,

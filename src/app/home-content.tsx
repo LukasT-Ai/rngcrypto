@@ -385,8 +385,17 @@ function Performance() {
 
           {/* KPIs */}
           <motion.div {...m.fade(0.08)} className="grid grid-cols-2 gap-4 lg:col-span-2">
-            <Kpi label="Expectancy" value={fmtR(k?.expectancyR)} sub="per call, in R" tone={(k?.expectancyR ?? 0) >= 0 ? "green" : "red"} />
-            <Kpi label="Profit factor" value={k?.profitFactor == null ? "—" : k.profitFactor.toFixed(2)} sub="gross wins ÷ gross losses" tone={(k?.profitFactor ?? 1) >= 1 ? "green" : "red"} />
+            {perf.data?.meta.provisional ?? true ? (
+              <>
+                <Kpi label="Expectancy" value="Provisional" sub={perf.data ? `${perf.data.meta.filledN} of ${perf.data.meta.provisionalTarget} filled closed signals` : "waiting for data"} tone="amber" />
+                <Kpi label="Profit factor" value="Provisional" sub="quoted once 100 signals have verifiably filled and closed" tone="amber" />
+              </>
+            ) : (
+              <>
+                <Kpi label="Expectancy" value={fmtR(k?.expectancyR)} sub={k?.expectancyConservativeR != null ? `${fmtR(k.expectancyConservativeR)} conservative` : "per call, in R"} tone={(k?.expectancyR ?? 0) >= 0 ? "green" : "red"} />
+                <Kpi label="Profit factor" value={k?.profitFactor == null ? "—" : k.profitFactor.toFixed(2)} sub="gross wins ÷ gross losses" tone={(k?.profitFactor ?? 1) >= 1 ? "green" : "red"} />
+              </>
+            )}
             <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 backdrop-blur-sm">
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">Target ladder</p>
               <div className="mt-2 grid grid-cols-3 gap-2">

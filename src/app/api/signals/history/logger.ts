@@ -157,7 +157,7 @@ export async function appendSignal(entry: {
   engineVersion?: string;
 }): Promise<boolean> {
   const signals = loadFromDisk();
-  if (!shouldAppend(signals, entry.symbol, entry.bias)) return false;
+  if (!shouldAppend(signals, entry.symbol, entry.bias, entry.timestamp)) return false;
   if (signals.some((s) => s.id === `${entry.symbol}-${entry.timestamp}`)) return false;
 
   const log: SignalLog = {
@@ -212,8 +212,17 @@ export function isOpenRecord(s: SignalLog): boolean {
 // Dedupe rule: one open record per symbol and bias. A new log is only appended when the symbol has no
 // open record, or when the open record carries the opposite bias (a flip). Time since the last log is
 // irrelevant, so the same call re-rendered every 15 minutes is logged once and followed to its close.
-export function shouldAppend(signals: SignalLog[], symbol: string, bias: "LONG" | "SHORT"): boolean {
-  return !signals.some((s) => s.symbol === symbol && s.bias === bias && isOpenRecord(s));
+// Cooldown: after a symbol's last record closes, wait before logging the next call. In testing the engine
+// re-fired on the very next bar after every close (~46 signals per symbol per day), which is churn, not edge.
+export const COOLDOWN_MS = 60 * 60_000;
+
+export function shouldAppend(signals: SignalLog[], symbol: string, bias: "LONG" | "SHORT", now = Date.now()): boolean {
+  if (signals.some((s) => s.symbol === symbol && s.bias === bias && isOpenRecord(s))) return false;
+  const lastClosed = signals
+    .filter((s) => s.symbol === symbol && !isOpenRecord(s))
+    .map((s) => s.outcomeTimestamp ?? s.lastCheckedAt ?? s.timestamp)
+    .reduce((a, b) => Math.max(a, b), 0);
+  return now - lastClosed >= COOLDOWN_MS;
 }
 
 export const isExcluded = (s: SignalLog): boolean => s.closedReason === "unfilled" || s.closedReason === "unverifiable";

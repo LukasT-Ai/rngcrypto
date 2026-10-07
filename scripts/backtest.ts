@@ -14,9 +14,9 @@
  * Candles come from Binance.US (public, no key): 5m bars for the window plus a warm-up, aggregated locally to
  * 15m / 1h / 4h; daily bars fetched separately. Only symbols with a Binance.US market are testable.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ENGINE_VERSION, scoreFromCandles, type Candle } from "../src/lib/signals/engine";
+import { DEFAULT_TUNING, ENGINE_VERSION, getTuning, scoreFromCandles, setTuning, type Candle } from "../src/lib/signals/engine";
 
 const BINANCE: Record<string, string> = { BTC: "BTCUSDT", ETH: "ETHUSDT", BNB: "BNBUSDT", ADA: "ADAUSDT", XRP: "XRPUSDT", SOL: "SOLUSDT", NEAR: "NEARUSDT", ZEC: "ZECUSDT" };
 const M5 = 300e3, M15 = 900e3, H1 = 3600e3, H4 = 14400e3, D1 = 86400e3;
@@ -34,6 +34,18 @@ const SYMBOLS = arg("symbols", Object.keys(BINANCE).join(",")).split(",").map((s
 const SLIP = parseFloat(arg("slippage", "0.0005"));
 const FEE = parseFloat(arg("fee", "0.0005"));
 const OUT = arg("out", "data/backtests");
+const LABEL = arg("label", "");
+// Strategy knobs (defaults = the live engine). Baseline before tuning:
+//   --min-conf 55 --short-gate 0 --stop-buffer 0.5 --min-stop-atr 0.8 --stop-floor-scale 1 --cooldown-min 0
+setTuning({
+  minPublishConfidence: parseFloat(arg("min-conf", String(DEFAULT_TUNING.minPublishConfidence))),
+  shortNeedsHtfBear: arg("short-gate", DEFAULT_TUNING.shortNeedsHtfBear ? "1" : "0") !== "0",
+  stopBufferAtr: parseFloat(arg("stop-buffer", String(DEFAULT_TUNING.stopBufferAtr))),
+  minStopAtr: parseFloat(arg("min-stop-atr", String(DEFAULT_TUNING.minStopAtr))),
+  stopFloorScale: parseFloat(arg("stop-floor-scale", String(DEFAULT_TUNING.stopFloorScale))),
+});
+const COOLDOWN_MS = parseFloat(arg("cooldown-min", "60")) * 60e3;
+const MIN_CONF = getTuning().minPublishConfidence;
 
 async function get(url: string): Promise<unknown> {
   const r = await fetch(url, { headers: { "User-Agent": "rngcrypto-backtest" } });
@@ -42,6 +54,17 @@ async function get(url: string): Promise<unknown> {
 }
 
 async function klines(sym: string, interval: string, start: number, end: number): Promise<Candle[]> {
+  // Cache per symbol/interval/day so a parameter sweep does not refetch the same candles.
+  const cacheDir = join("data", "backtests", "cache");
+  mkdirSync(cacheDir, { recursive: true });
+  const key = join(cacheDir, `${sym}-${interval}-${Math.floor(start / D1)}-${Math.floor(end / 3600e3)}.json`);
+  if (existsSync(key)) return JSON.parse(readFileSync(key, "utf-8")) as Candle[];
+  const fetched = await klinesFetch(sym, interval, start, end);
+  writeFileSync(key, JSON.stringify(fetched));
+  return fetched;
+}
+
+async function klinesFetch(sym: string, interval: string, start: number, end: number): Promise<Candle[]> {
   const out: Candle[] = [];
   let cur = start;
   while (cur < end) {
@@ -163,7 +186,7 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
     console.log(`${symbol}: no Binance.US market, skipped`);
     return [];
   }
-  const end = Date.now();
+  const end = Math.floor(Date.now() / 3600e3) * 3600e3;
   const start = end - DAYS * D1 - WARMUP_15M * M15 - 2 * D1;
   console.log(`${symbol}: fetching ${DAYS}d of 5m candles…`);
   const c5 = await klines(b, "5m", start, end);
@@ -175,6 +198,7 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
 
   const trades: Trade[] = [];
   let open: Trade | null = null;
+  let lastClosedAt = 0;
   let i5 = 0;
   const testStart = end - DAYS * D1;
   let decisions = 0;
@@ -187,9 +211,13 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
       // Re-run the walk cheaply: simulate() is deterministic from the signal time; recompute on each pass only
       // when the trade is still open. (Cost is bounded by the horizon.)
       simulate(open, c5, Math.max(0, i5 - Math.ceil((now - open.t) / M5) - 2));
-      if (open.reason !== "open") open = null;
+      if (open.reason !== "open") {
+        lastClosedAt = open.closedAt ?? now;
+        open = null;
+      }
     }
     if (open) continue;
+    if (now - lastClosedAt < COOLDOWN_MS) continue;
     const win = (arr: Candle[], ms: number, n: number) => {
       // bars whose open < now (the engine drops the one still forming)
       let k = arr.length;
@@ -207,7 +235,7 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
       now,
     });
     decisions++;
-    if (!r || r.bias === "WAIT" || r.confidence < 55) continue;
+    if (!r || r.bias === "WAIT" || r.confidence < MIN_CONF) continue;
     const entryType: "market" | "limit" = Math.abs(r.entry - bar.close) / bar.close > MARKET_TOL ? "limit" : "market";
     const tr: Trade = {
       symbol,
@@ -229,6 +257,7 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
     simulate(tr, c5, i5);
     trades.push(tr);
     if (tr.reason === "open") open = tr;
+    else lastClosedAt = tr.closedAt ?? now;
   }
   console.log(`${symbol}: ${decisions} decisions, ${trades.length} signals`);
   return trades;
@@ -279,7 +308,7 @@ async function main() {
   const report = {
     engineVersion: ENGINE_VERSION,
     generatedAt: new Date().toISOString(),
-    params: { days: DAYS, symbols: SYMBOLS, slippage: SLIP, fee: FEE, horizonHours: HORIZON_MS / H1, fillWindowCandles: FILL_WINDOW },
+    params: { days: DAYS, symbols: SYMBOLS, slippage: SLIP, fee: FEE, horizonHours: HORIZON_MS / H1, fillWindowCandles: FILL_WINDOW, cooldownMin: COOLDOWN_MS / 60e3, tuning: getTuning() },
     caveats: [
       "Candles only: funding, open interest, sentiment, news, catalysts, ETF flows, liquidations and the macro regime are null, exactly as the live engine treats a feed that is down.",
       "Binance.US spot candles stand in for Strike's perp feed; wicks differ slightly.",
@@ -307,6 +336,8 @@ async function main() {
   console.log("\n=== BY ENTRY TYPE ===");
   for (const [k, v] of Object.entries(report.byEntryType)) console.log(k.padEnd(7), `signals=${v.signals}`.padEnd(13), `unfilled ${v.unfilled}`.padEnd(13), `netR ${v.expectancyNetR}`);
   console.log(`\nwritten ${file}`);
+  const t = getTuning();
+  console.log(`SUMMARY ${LABEL || "run"} | conf>=${t.minPublishConfidence} shortGate=${t.shortNeedsHtfBear ? 1 : 0} stopBuf=${t.stopBufferAtr} minStopAtr=${t.minStopAtr} floorX=${t.stopFloorScale} cooldown=${COOLDOWN_MS / 60e3}m | signals=${o.signals} unfilled=${o.unfilled} closed=${o.closed} TP1=${o.tp1Rate}% gross=${o.expectancyGrossR} net=${o.expectancyNetR} PF=${o.profitFactorNet} sum=${o.sumNetR} long=${o.longShare}%`);
 }
 
 main().catch((e) => {

@@ -16,8 +16,10 @@ export function rateLimit(
   req: NextRequest,
   maxPerMinute = 60
 ): NextResponse | null {
-  // Server-to-server scans (hot plays) share the container IP; never throttle them against user limits
-  if (req.headers.get("x-internal-scan") === "1") return null;
+  // Server-to-server callers may bypass the limiter only with the shared secret. With no secret configured
+  // there is no bypass at all (the hot scanner and scheduler now call the engine in-process anyway).
+  const secret = process.env.INTERNAL_SCAN_SECRET;
+  if (secret && req.headers.get("x-internal-scan") === secret) return null;
 
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??

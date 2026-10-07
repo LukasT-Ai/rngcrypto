@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
+import { computeSignal } from "@/lib/signals/engine";
 
 export const dynamic = "force-dynamic";
 
@@ -59,48 +60,38 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const proto = req.headers.get("x-forwarded-proto") ?? "https";
-  const host = req.headers.get("host") ?? req.nextUrl.host;
-  const baseUrl = `${proto}://${host}`;
-
-  // Bounded concurrency: 31 simultaneous engine runs raced upstream rate limits and our own limiter
+  // Bounded concurrency: 31 simultaneous engine runs raced upstream rate limits
   const POOL = 4;
   const queue = [...SYMBOLS];
   const settled: PromiseSettledResult<Awaited<ReturnType<typeof scanOne>> | null>[] = [];
 
   async function scanOne(sym: string) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
     try {
-      const res = await fetch(`${baseUrl}/api/signals?symbol=${sym}&log=0`, {
-        signal: controller.signal,
-        cache: "no-store",
-        headers: { "User-Agent": "signals-hot-scanner", "x-internal-scan": "1" },
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
+      // Scanner runs never log; the 15-minute scheduler in instrumentation.ts owns history.
+      const r = await computeSignal(sym, { log: false });
+      if (r.status !== 200) return null;
+      const data = r.body as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
       return {
-          symbol: sym,
-          label: TICKER_META[sym]?.label ?? sym,
-          color: TICKER_META[sym]?.color ?? "#F59E0B",
-          price: data.price?.mark ?? 0,
-          change24h: data.price?.change24h ?? 0,
-          bias: data.call?.bias ?? "WAIT",
-          confidence: data.call?.confidence ?? 0,
-          grade: data.call?.grade ?? "NO TRADE",
-          entry: data.call?.entry ?? 0,
-          stopLoss: data.call?.stopLoss ?? 0,
-          tp1: data.call?.tp1 ?? 0,
-          riskReward: data.call?.riskReward ?? 0,
-          regime: data.call?.regime ?? "unknown",
-          reasoning: (data.call?.reasoning ?? []).slice(0, 3),
-          volSpikeRatio: data.volume?.spikeRatio ?? null,
-          volSpikeLabel: data.volume?.spikeLabel ?? null,
-        };
+        symbol: sym,
+        label: TICKER_META[sym]?.label ?? sym,
+        color: TICKER_META[sym]?.color ?? "#F59E0B",
+        price: data.price?.mark ?? 0,
+        change24h: data.price?.change24h ?? 0,
+        bias: data.call?.bias ?? "WAIT",
+        confidence: data.call?.confidence ?? 0,
+        grade: data.call?.grade ?? "NO TRADE",
+        entry: data.call?.entry ?? 0,
+        stopLoss: data.call?.stopLoss ?? 0,
+        tp1: data.call?.tp1 ?? 0,
+        riskReward: data.call?.riskReward ?? 0,
+        regime: data.call?.regime ?? "unknown",
+        reasoning: (data.call?.reasoning ?? []).slice(0, 3),
+        volSpikeRatio: data.volume?.spikeRatio ?? null,
+        volSpikeLabel: data.volume?.spikeLabel ?? null,
+        entryType: data.entryType ?? null,
+      };
     } catch {
       return null;
-    } finally {
-      clearTimeout(timeout);
     }
   }
 

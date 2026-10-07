@@ -1,4 +1,5 @@
 import type { SignalsResponse, MarketMapResponse, HistoryResponse } from "./dashboard"
+import { FACTOR } from "@/lib/signals/factors"
 
 export type SectionId =
   | "sec-call"
@@ -104,12 +105,12 @@ function factorReason(d: SignalsResponse, category: string, assessment: string, 
         text: `Volume ${v.ratio.toFixed(1)}× average (${v.spikeLabel.toLowerCase()}), CVD says ${v.cvd > 0 ? "buyers" : "sellers"} in control${abs}`,
       }
     }
-    case "HTF Alignment": {
+    case FACTOR.HTF: {
       const h = d.htf
       const daily = h.trendDaily ? ` · daily ${h.trendDaily}` : ""
       return { ...base, anchor: "sec-htf", text: `Higher timeframes: 1h ${h.trend1h} · 4h ${h.trend4h}${daily}` }
     }
-    case "Bollinger Bands": {
+    case FACTOR.BOLLINGER: {
       const bb = ind.bb
       const pos = px >= bb.upper ? "pressing the upper Bollinger band" : px <= bb.lower ? "pressing the lower Bollinger band" : px > bb.middle ? "in the upper half of the Bollinger range" : "in the lower half of the Bollinger range"
       const sq = d.patterns.squeeze === "volatility_compression" ? "; a volatility squeeze is building" : ""

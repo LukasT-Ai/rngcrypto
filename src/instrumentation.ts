@@ -2,6 +2,7 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   const { runOutcomeCheck } = await import("./app/api/signals/history/check/core");
   const { SCAN_SYMBOLS } = await import("./app/api/signals/history/logger");
+  const { computeSignal } = await import("./lib/signals/engine");
   const { tick } = await import("./lib/macro/service");
 
   let busy = false;
@@ -26,23 +27,13 @@ export async function register() {
     const SLOT_MS = 15 * 60_000;
     const OFFSET_MS = 20_000;
     const POOL = 4;
-    const port = process.env.PORT ?? "3000";
-    const baseUrl = process.env.INTERNAL_BASE_URL ?? `http://127.0.0.1:${port}`;
     let scanBusy = false;
 
     const logOne = async (sym: string) => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 25_000);
       try {
-        await fetch(`${baseUrl}/api/signals?symbol=${sym}&log=1`, {
-          signal: controller.signal,
-          cache: "no-store",
-          headers: { "User-Agent": "signals-scheduler", "x-internal-scan": "1" },
-        });
+        await computeSignal(sym, { log: true });
       } catch {
         /* symbol skipped this slot */
-      } finally {
-        clearTimeout(timeout);
       }
     };
 

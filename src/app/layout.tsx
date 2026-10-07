@@ -25,11 +25,11 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   metadataBase: new URL("https://rngcrypto.com"),
   title: {
-    default: "RnGcrYptO | Web3, DeFi & Autonomous Trading",
+    default: "RnGcrYptO | Verified Trading Signals, Cardano DeFi",
     template: "%s | RnGcrYptO",
   },
   description:
-    "Web3 creator, DeFi degen, and builder of autonomous trading agents across Cardano, Ethereum, Midnight, and Bitcoin. Follow the journey through Ascend Market, Good Vibes Club, Arbiter, Liqwid Finance, and Midnight.",
+    "Plain-English trade calls across 31 markets, every one logged and verified against the tape. Built around Ascend Market and Liqwid Finance on Cardano.",
   keywords: [
     "RnGcrYptO",
     "Cardano",
@@ -37,19 +37,19 @@ export const metadata: Metadata = {
     "DeFi",
     "Web3",
     "NFT",
-    "trading agent",
+    "trading signals",
     "Ascend Market",
     "Good Vibes Club",
     "Arbiter",
     "Midnight",
     "Liqwid Finance",
     "Bitcoin",
-    "autonomous trading",
+    "signal performance",
   ],
   openGraph: {
-    title: "RnGcrYptO | Web3, DeFi & Autonomous Trading",
+    title: "RnGcrYptO | Verified Trading Signals, Cardano DeFi",
     description:
-      "Web3 creator, DeFi degen, and builder of autonomous trading agents. Live agent performance, NFT collections, and the Web3 journey.",
+      "Plain-English trade calls across 31 markets with a verified track record. Ascend Market and Liqwid Finance at the core.",
     url: "https://rngcrypto.com",
     siteName: "RnGcrYptO",
     images: [
@@ -57,16 +57,16 @@ export const metadata: Metadata = {
         url: "/og-image.svg",
         width: 1200,
         height: 630,
-        alt: "RnGcrYptO — Web3, DeFi & Autonomous Trading",
+        alt: "RnGcrYptO — Verified Trading Signals",
       },
     ],
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "RnGcrYptO | Web3, DeFi & Autonomous Trading",
+    title: "RnGcrYptO | Verified Trading Signals, Cardano DeFi",
     description:
-      "Autonomous trading agents, NFTs, DeFi, and the Web3 journey. Live agent stats on-site.",
+      "Verified trading signals across crypto, metals, oil and stocks. Cardano DeFi with Ascend and Liqwid.",
     creator: "@RnGcrYptO",
     images: ["/og-image.svg"],
   },
@@ -94,10 +94,10 @@ export default function RootLayout({
                 "https://www.youtube.com/@RnGcrYptO",
               ],
               description:
-                "Web3 builder, DeFi degen, and autonomous trading agent developer across Cardano, Ethereum, Midnight, and Bitcoin.",
+                "DeFi degen publishing verified trading signals and building around Cardano DeFi: Ascend Market and Liqwid Finance.",
               knowsAbout: [
                 "DeFi",
-                "Autonomous Trading",
+                "Trading Signals",
                 "Cardano",
                 "Ethereum",
                 "NFTs",

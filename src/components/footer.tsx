@@ -32,7 +32,7 @@ export function Footer() {
               <span className="text-foreground">crYptO</span>
             </Link>
             <p className="mt-3 max-w-xs text-sm leading-relaxed text-muted-foreground">
-              Web3 creator, DeFi degen, and builder of autonomous trading agents.
+              DeFi degen. Verified trade calls, Cardano DeFi, no highlight reels.
             </p>
             <div className="mt-4 flex items-center gap-4">
               <a
@@ -102,7 +102,7 @@ export function Footer() {
               Stay in the loop
             </h3>
             <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
-              Trading agent updates, DeFi alpha, and Web3 insights.
+              Signal recaps, Cardano DeFi alpha, and the occasional cope.
             </p>
             <form
               onSubmit={(e) => {

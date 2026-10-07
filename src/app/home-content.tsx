@@ -171,17 +171,44 @@ function Hero() {
 
         {/* Live proof strip */}
         <motion.div {...m.rise(0.45)} className="mt-9 grid w-full max-w-3xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-4">
-          {[
-            { l: "30d expectancy", v: fmtR(k?.expectancyR), c: (k?.expectancyR ?? 0) >= 0 ? GREEN : RED },
-            { l: "TP1 hit rate", v: fmtPct(k?.tp1Rate), c: "#F9FAFB" },
-            { l: "Profit factor", v: k?.profitFactor == null ? "—" : k.profitFactor.toFixed(2), c: (k?.profitFactor ?? 1) >= 1 ? GREEN : RED },
-            { l: "Calls verified", v: k ? String(k.closedN) : "—", c: "#F9FAFB" },
-          ].map((s) => (
-            <div key={s.l} className="bg-[#06080F]/90 px-4 py-4">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">{s.l}</p>
-              <p className={cn("mt-1 font-mono text-2xl font-bold tabular-nums", perf.isLoading && "skeleton rounded")} style={{ color: s.c }}>{s.v}</p>
-            </div>
-          ))}
+          {(() => {
+            const meta = perf.data?.meta
+            // Until 100 filled closed signals exist the expectancy and profit factor are previews, so the
+            // strip says so instead of quoting them. TP1 rate and the verified count stay.
+            const provisional = meta?.provisional ?? true
+            const verified = meta ? `${meta.filledN}/${meta.provisionalTarget} verified` : "—"
+            const tiles = provisional
+              ? [
+                  { l: "Expectancy", v: "Provisional", sub: verified, c: AMBER, href: "/signals/performance" },
+                  { l: "TP1 hit rate", v: fmtPct(k?.tp1Rate), c: "#F9FAFB" },
+                  { l: "Profit factor", v: "Provisional", sub: verified, c: AMBER, href: "/signals/performance" },
+                  { l: "Calls verified", v: k ? String(k.closedN) : "—", c: "#F9FAFB" },
+                ]
+              : [
+                  { l: "30d expectancy", v: fmtR(k?.expectancyR), c: (k?.expectancyR ?? 0) >= 0 ? GREEN : RED },
+                  { l: "TP1 hit rate", v: fmtPct(k?.tp1Rate), c: "#F9FAFB" },
+                  { l: "Profit factor", v: k?.profitFactor == null ? "—" : k.profitFactor.toFixed(2), c: (k?.profitFactor ?? 1) >= 1 ? GREEN : RED },
+                  { l: "Calls verified", v: k ? String(k.closedN) : "—", c: "#F9FAFB" },
+                ]
+            return tiles.map((s) => {
+              const body = (
+                <>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">{s.l}</p>
+                  <p className={cn("mt-1 font-mono font-bold tabular-nums", "sub" in s && s.sub ? "text-lg" : "text-2xl", perf.isLoading && "skeleton rounded")} style={{ color: s.c }}>{s.v}</p>
+                  {"sub" in s && s.sub && <p className="text-[11px] text-white/45">{s.sub}</p>}
+                </>
+              )
+              return "href" in s && s.href ? (
+                <Link key={s.l} href={s.href} title="Open the performance page" className="block bg-[#06080F]/90 px-4 py-4 transition-colors hover:bg-[#0A0E17]">
+                  {body}
+                </Link>
+              ) : (
+                <div key={s.l} className="bg-[#06080F]/90 px-4 py-4">
+                  {body}
+                </div>
+              )
+            })
+          })()}
         </motion.div>
 
         <motion.div {...m.rise(0.6)} className="mt-9 flex flex-col gap-3 sm:flex-row">

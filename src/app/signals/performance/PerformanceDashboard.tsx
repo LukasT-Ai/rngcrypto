@@ -72,7 +72,8 @@ function TpBadges({ s }: { s: NormalizedSignal }) {
         </span>
       )}
       {!s.open && s.closedReason === "horizon" && s.highestTp === 0 && <span className="rounded px-1.5 py-px font-mono text-[10px] text-[#9CA3AF] border border-white/10">EXPIRED</span>}
-      {s.open && <span className="rounded px-1.5 py-px font-mono text-[10px] border" style={{ color: "var(--brand)", borderColor: "color-mix(in srgb, var(--brand) 40%, transparent)" }}>OPEN</span>}
+      {s.excluded && <span title="Entry never filled or could not be verified; not counted" className="rounded px-1.5 py-px font-mono text-[10px] text-[#9CA3AF] border border-dashed border-white/20">{s.closedReason === "unfilled" ? "UNFILLED" : "UNVERIFIABLE"}</span>}
+      {s.open && <span className="rounded px-1.5 py-px font-mono text-[10px] border" style={{ color: "var(--brand)", borderColor: "color-mix(in srgb, var(--brand) 40%, transparent)" }}>{s.fillStatus === "pending" ? "PENDING FILL" : "OPEN"}</span>}
       {s.duplicatesMerged > 0 && <span className="text-[10px] text-[#9CA3AF]" title="Near-identical logs merged">+{s.duplicatesMerged} dup</span>}
     </div>
   )
@@ -214,16 +215,35 @@ export default function PerformanceDashboard() {
 
         {data && (
           <>
-            {early && (
-              <div className="flex items-start gap-2 rounded-xl border border-[#F59E0B]/40 bg-[#F59E0B]/10 px-4 py-3 text-xs text-white/80">
+            {data.meta.provisional && (
+              <div className="flex items-start gap-2 rounded-xl border border-[#F59E0B]/50 bg-[#F59E0B]/10 px-4 py-3 text-xs text-white/85">
                 <Info className="mt-0.5 size-4 shrink-0 text-[#F59E0B]" />
-                <span>{data.meta.sampleNote} History began persisting on {new Date(data.stats.equity[0]?.t ?? Date.now()).toLocaleDateString()} — the numbers firm up as closed signals accumulate.</span>
+                <span>
+                  <span className="font-bold text-[#F59E0B]">Provisional: {data.meta.filledN} of {data.meta.provisionalTarget} filled closed signals.</span>{" "}
+                  Every rate below is a preview until {data.meta.provisionalTarget} signals have verifiably filled and closed.
+                  {early ? ` ${data.meta.sampleNote}` : ""}
+                </span>
               </div>
             )}
 
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#9CA3AF]">
+              <span className="font-semibold uppercase tracking-[0.14em]">Fill audit</span>
+              <span><span className="font-mono text-white">{data.meta.filledN}</span> filled &amp; closed</span>
+              <span><span className="font-mono text-white">{data.meta.pendingFillN}</span> awaiting fill</span>
+              <span title="Entry never traded within the fill window; excluded from every rate"><span className="font-mono text-white">{data.meta.unfilledN}</span> unfilled</span>
+              <span title="Candles needed to verify the fill are no longer available; excluded"><span className="font-mono text-white">{data.meta.unverifiableN}</span> unverifiable</span>
+            </div>
+
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-              <Kpi label="TP1 hit rate" value={fmtPct(k!.tp1Rate)} sub={`${k!.closedN} closed`} color={k!.tp1Rate == null ? undefined : k!.tp1Rate >= 55 ? GREEN : k!.tp1Rate <= 40 ? RED : undefined} icon={Target} />
-              <Kpi label="Expectancy" value={k!.expectancyR == null ? (early ? "n<20" : "—") : fmtR(k!.expectancyR)} sub={k!.sumR != null ? `${fmtR(k!.sumR)} total` : undefined} color={k!.expectancyR == null ? GRAY : k!.expectancyR > 0 ? GREEN : RED} icon={Activity} dim={k!.expectancyR == null} />
+              <Kpi label="TP1 hit rate" value={fmtPct(k!.tp1Rate)} sub={`${k!.closedN} filled & closed`} color={k!.tp1Rate == null ? undefined : k!.tp1Rate >= 55 ? GREEN : k!.tp1Rate <= 40 ? RED : undefined} icon={Target} />
+              <Kpi
+                label="Expectancy"
+                value={k!.expectancyR == null ? (early ? "n<20" : "—") : fmtR(k!.expectancyR)}
+                sub={k!.expectancyConservativeR != null ? `${fmtR(k!.expectancyConservativeR)} conservative · 50% at TP1, stop to BE` : k!.sumR != null ? `${fmtR(k!.sumR)} total` : undefined}
+                color={k!.expectancyR == null ? GRAY : k!.expectancyR > 0 ? GREEN : RED}
+                icon={Activity}
+                dim={k!.expectancyR == null}
+              />
               <Kpi label="Profit factor" value={k!.profitFactor == null ? (early ? "n<20" : k!.closedN ? "no losses" : "—") : k!.profitFactor.toFixed(2)} sub="ΣR⁺ / |ΣR⁻|" color={k!.profitFactor == null ? GRAY : k!.profitFactor >= 1.5 ? GREEN : k!.profitFactor < 1 ? RED : undefined} icon={Flame} dim={k!.profitFactor == null} />
               <Kpi label="Stopped before TP1" value={fmtPct(k!.stopBeforeTpRate)} sub={k!.stopAfterTpRate != null ? `${fmtPct(k!.stopAfterTpRate)} of winners stopped later` : undefined} color={k!.stopBeforeTpRate == null ? undefined : k!.stopBeforeTpRate >= 50 ? RED : undefined} icon={XCircle} />
               <Kpi label="Median time to TP1" value={dur(k!.medianTimeToTp1Min)} sub={k!.ladder.n1 >= 5 ? `${k!.ladder.n1} winners` : "needs 5 winners"} icon={Clock} dim={k!.medianTimeToTp1Min == null} />
@@ -327,7 +347,7 @@ export default function PerformanceDashboard() {
                         <td className="text-right font-mono text-white/85">${fmtPrice(s.entry)}</td>
                         <td className="text-right font-mono text-[#9CA3AF]">{s.confidence} <span className="opacity-70">{s.grade}</span></td>
                         <td className="pl-4"><TpBadges s={s} /></td>
-                        <td className="text-right font-mono" style={{ color: s.realizedR == null ? GRAY : s.realizedR > 0 ? GREEN : s.realizedR < 0 ? RED : "#F9FAFB" }}>{s.open ? "open" : fmtR(s.realizedR)}</td>
+                        <td className="text-right font-mono" style={{ color: s.realizedR == null ? GRAY : s.realizedR > 0 ? GREEN : s.realizedR < 0 ? RED : "#F9FAFB" }}>{s.open ? (s.fillStatus === "pending" ? "pending fill" : "open") : s.excluded ? "n/a" : fmtR(s.realizedR)}</td>
                         <td className="text-right font-mono text-[#9CA3AF]">{s.mfeR == null ? "—" : `+${s.mfeR.toFixed(2)}`} / {s.maeR == null ? "—" : `-${s.maeR.toFixed(2)}`}</td>
                       </tr>
                     ))}
@@ -341,7 +361,7 @@ export default function PerformanceDashboard() {
                       <span className="font-mono font-bold text-white">{s.symbol}</span>
                       <span className="font-bold" style={{ color: s.bias === "LONG" ? GREEN : RED }}>{s.bias}</span>
                       <span className="text-[#9CA3AF]">{ago(s.timestamp)}</span>
-                      <span className="ml-auto font-mono" style={{ color: s.realizedR == null ? GRAY : s.realizedR > 0 ? GREEN : RED }}>{s.open ? "open" : fmtR(s.realizedR)}</span>
+                      <span className="ml-auto font-mono" style={{ color: s.realizedR == null ? GRAY : s.realizedR > 0 ? GREEN : RED }}>{s.open ? (s.fillStatus === "pending" ? "pending fill" : "open") : s.excluded ? "n/a" : fmtR(s.realizedR)}</span>
                     </div>
                     <div className="text-[#9CA3AF]">Entry ${fmtPrice(s.entry)} · conf {s.confidence} {s.grade}</div>
                     <TpBadges s={s} />

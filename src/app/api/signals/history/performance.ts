@@ -45,6 +45,14 @@ export interface NormalizedSignal {
   timeToTp1Min: number | null;
   outcomeLabel: string;
   duplicatesMerged: number;
+  // Fill model. Legacy records without fillStatus are assumed filled (their entry sat at the market).
+  fillStatus: "filled" | "pending" | "unfilled";
+  filledAt: number | null;
+  // Unfilled / unverifiable records are shown in the log but never enter a rate, R sum or equity curve.
+  excluded: boolean;
+  // Half the position out at TP1, stop to breakeven on the rest; see conservativeR().
+  conservativeR: number | null;
+  engineVersion: string;
 }
 
 export interface PerformanceStats {
@@ -58,6 +66,7 @@ export interface PerformanceStats {
     stopBeforeTpRate: number | null;
     stopAfterTpRate: number | null;
     expectancyR: number | null;
+    expectancyConservativeR: number | null;
     medianR: number | null;
     profitFactor: number | null;
     medianTimeToTp1Min: number | null;
@@ -77,8 +86,24 @@ export interface PerformanceStats {
   };
   excursion: { medianMfeR: number | null; medianMaeR: number | null; winnersOvershootR: number | null; losersNearMissR: number | null; n: number };
   streaks: { current: { type: "win" | "loss" | null; length: number }; maxWin: number; maxLoss: number };
-  meta: { duplicatesMerged: number; totalRaw: number; sampleNote: string; generatedAt: string; assumptions: string };
+  meta: {
+    duplicatesMerged: number;
+    totalRaw: number;
+    sampleNote: string;
+    generatedAt: string;
+    assumptions: string;
+    // Closed signals whose entry was verified as filled (the only ones that count).
+    filledN: number;
+    unfilledN: number;
+    unverifiableN: number;
+    pendingFillN: number;
+    // True until 100 filled closed signals exist; every rate above is a preview until then.
+    provisional: boolean;
+    provisionalTarget: number;
+  };
 }
+
+export const PROVISIONAL_TARGET = 100;
 
 const INDEX = new Set(["SP500", "NAS100"]);
 const COMMODITY = new Set(["OIL", "GOLD", "SILVER"]);
@@ -101,9 +126,26 @@ function legacyRealizedR(s: SignalLog): number | null {
   return Math.round((move / risk) * 10000) / 10000;
 }
 
+// Conservative execution model: half the position exits at TP1 and the stop moves to breakeven.
+// If the signal never reached TP1 it is the full realized R (a stop or a horizon exit). After TP1 the
+// remaining half earns 0 when stopped (breakeven) and the highest TP reached otherwise.
+export function conservativeR(s: { bias: "LONG" | "SHORT"; entry: number; stopLoss: number; tp1: number; tp2: number; tp3: number; highestTp: 0 | 1 | 2 | 3; stoppedAfterTp: 0 | 1 | 2 | 3 | null; realizedR: number | null }): number | null {
+  const risk = Math.abs(s.entry - s.stopLoss);
+  if (risk <= 0) return null;
+  if (s.highestTp === 0) return s.realizedR;
+  const dir = s.bias === "LONG" ? 1 : -1;
+  const rOf = (p: number) => ((p - s.entry) * dir) / risk;
+  const first = 0.5 * rOf(s.tp1);
+  const highest = s.highestTp === 3 ? s.tp3 : s.highestTp === 2 ? s.tp2 : s.tp1;
+  const rest = (s.stoppedAfterTp ?? 0) >= 1 ? 0 : 0.5 * rOf(highest);
+  return Math.round((first + rest) * 10000) / 10000;
+}
+
 export function normalize(s: SignalLog): NormalizedSignal {
   const open = isOpenSig(s);
   const risk = Math.abs(s.entry - s.stopLoss);
+  const excluded = s.closedReason === "unfilled" || s.closedReason === "unverifiable";
+  const fillStatus: NormalizedSignal["fillStatus"] = s.fillStatus ?? (s.closedReason === "unfilled" ? "unfilled" : "filled");
   let tpLevels: NormalizedSignal["tpLevels"] = [];
   let highest: 0 | 1 | 2 | 3 = 0;
   if (s.tpHits && s.tpHits.length) {
@@ -116,11 +158,17 @@ export function normalize(s: SignalLog): NormalizedSignal {
   }
   const stoppedAfterTp = s.stoppedAfterTp ?? (s.outcome === "stopped" ? 0 : null);
   const closedReason = s.closedReason ?? (open ? null : s.outcome === "stopped" ? "stop_before_tp" : s.outcome === "expired" ? "horizon" : s.outcome === "tp3" ? "tp3" : "legacy_first_touch");
-  const realized = open ? null : (s.realizedR ?? legacyRealizedR(s));
+  const realized = open || excluded ? null : (s.realizedR ?? legacyRealizedR(s));
   const label = open
     ? highest > 0
       ? `TP${highest} hit · open`
-      : "Pending"
+      : fillStatus === "pending"
+        ? "Pending fill"
+        : "Pending"
+    : s.closedReason === "unfilled"
+      ? "Unfilled"
+      : s.closedReason === "unverifiable"
+        ? "Unverifiable"
     : stoppedAfterTp === 0
       ? "Stopped out"
       : highest > 0
@@ -153,6 +201,11 @@ export function normalize(s: SignalLog): NormalizedSignal {
     timeToTp1Min: s.timeToTp1Min ?? null,
     outcomeLabel: label,
     duplicatesMerged: 0,
+    fillStatus,
+    filledAt: s.filledAt ?? null,
+    excluded,
+    conservativeR: open || excluded ? null : conservativeR({ bias: s.bias, entry: s.entry, stopLoss: s.stopLoss, tp1: s.tp1, tp2: s.tp2, tp3: s.tp3, highestTp: highest, stoppedAfterTp, realizedR: realized }),
+    engineVersion: s.engineVersion ?? "unversioned",
   };
 }
 
@@ -220,9 +273,14 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
   }
   rows.sort((a, b) => b.timestamp - a.timestamp);
 
-  const closed = rows.filter((s) => !s.open);
+  // Only verified fills count. Unfilled and unverifiable records stay in the log for transparency.
+  const closed = rows.filter((s) => !s.open && !s.excluded);
   const open = rows.filter((s) => s.open);
+  const unfilledN = rows.filter((s) => s.closedReason === "unfilled").length;
+  const unverifiableN = rows.filter((s) => s.closedReason === "unverifiable").length;
+  const pendingFillN = open.filter((s) => s.fillStatus === "pending").length;
   const closedN = closed.length;
+  const crs = closed.map((s) => s.conservativeR).filter((x): x is number => x != null);
   const tp1 = closed.filter((s) => s.highestTp >= 1);
   const tp2 = closed.filter((s) => s.highestTp >= 2);
   const tp3 = closed.filter((s) => s.highestTp >= 3);
@@ -294,6 +352,7 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
       stopBeforeTpRate: closedN >= 1 ? pct(stopBefore.length, closedN) : null,
       stopAfterTpRate: tp1.length >= 1 ? pct(stopAfter.length, tp1.length) : null,
       expectancyR: closedN >= 20 ? r2(mean(rs)) : null,
+      expectancyConservativeR: closedN >= 20 ? r2(mean(crs)) : null,
       medianR: closedN >= 10 ? r2(median(rs)) : null,
       profitFactor: closedN >= 20 ? (neg > 0 ? Math.round((pos / neg) * 100) / 100 : pos > 0 ? null : 0) : null,
       medianTimeToTp1Min: tp1.length >= 5 ? median(tp1.map((s) => s.timeToTp1Min).filter((x): x is number => x != null)) : null,
@@ -321,7 +380,13 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
       totalRaw,
       sampleNote,
       generatedAt: new Date(now).toISOString(),
-      assumptions: "Realized R assumes fills at the exact TP/SL touch on 5-minute candles with no slippage or fees; a stop after TP exits at the last TP reached; same-candle SL+TP resolves as the stop; open signals never count toward rates.",
+      assumptions: "A signal counts only after a 5-minute candle opened after the call trades through its entry (entries within 0.1% of the signal price fill at the next open). Realized R assumes fills at the exact TP/SL touch with no slippage or fees; a stop after TP exits at the last TP reached; a horizon exit uses the last close; same-candle SL+TP resolves as the stop. Unfilled, unverifiable and open signals never count toward rates.",
+      filledN: closedN,
+      unfilledN,
+      unverifiableN,
+      pendingFillN,
+      provisional: closedN < PROVISIONAL_TARGET,
+      provisionalTarget: PROVISIONAL_TARGET,
     },
   };
 

@@ -1,27 +1,6 @@
-import type { Metadata } from "next"
-import StrikeDashboard from "./dashboard"
+import { permanentRedirect } from "next/navigation"
 
-export const metadata: Metadata = {
-  title: "Live Trading | Strike Finance Agent Performance",
-  description:
-    "Real-time performance dashboard for the Strike Finance autonomous trading agent. Agent P&L, open positions, trade history, and asset breakdowns on Cardano perpetuals.",
-  openGraph: {
-    title: "Live Strike Agent Trading | RnGcrypto",
-    description:
-      "Autonomous perpetual futures trading on Cardano via Strike Finance. Agent P&L, win rate, open positions, and full trade history.",
-    url: "https://www.rngcrypto.com/strike",
-    siteName: "RnGcrypto",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Live Strike Agent Trading | RnGcrypto",
-    description:
-      "Autonomous perpetual futures trading on Cardano via Strike Finance. Agent P&L, win rate, open positions, and full trade history.",
-    creator: "@rngcrypto",
-  },
-}
-
-export default function StrikePage() {
-  return <StrikeDashboard />
+// The Strike agent dashboard was retired; its signals live on the Strike signals page.
+export default function Page() {
+  permanentRedirect("/signals/strike")
 }

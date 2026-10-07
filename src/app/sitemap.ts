@@ -1,44 +1,30 @@
 import { MetadataRoute } from "next"
 import { getAllPosts } from "@/lib/blog"
 
-const CONTENT_UPDATED = new Date("2026-10-05T00:00:00Z")
+const CONTENT_UPDATED = new Date("2026-10-07T00:00:00Z")
+const BASE = "https://www.rngcrypto.com"
 
+// Every entry is a real, linked page. Redirect-only routes (/strike, /ascend, /hype, /bot, /macro, /news) are
+// deliberately absent.
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = "https://www.rngcrypto.com"
-
-  const livePages: MetadataRoute.Sitemap = [
-    { url: `${baseUrl}`, lastModified: new Date(), changeFrequency: "hourly", priority: 1 },
-    { url: `${baseUrl}/signals/strike`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.9 },
-    { url: `${baseUrl}/signals/ascend`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.9 },
-    { url: `${baseUrl}/signals/performance`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.85 },
-    { url: `${baseUrl}/markets`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.8 },
-    { url: `${baseUrl}/news`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.7 },
+  const live: MetadataRoute.Sitemap = [
+    { url: BASE, lastModified: new Date(), changeFrequency: "hourly", priority: 1 },
+    { url: `${BASE}/signals/strike`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.9 },
+    { url: `${BASE}/signals/ascend`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.9 },
+    { url: `${BASE}/signals/performance`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.85 },
+    { url: `${BASE}/markets`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.6 },
   ]
-
-  const staticPages: MetadataRoute.Sitemap = [
-    "/blog",
-    "/macro",
-    "/web3",
-    "/ascend",
-    "/strike",
-    "/hype",
-    "/about",
-    "/projects",
-    "/proposals",
-    "/subscribe",
-  ].map((route) => ({
-    url: `${baseUrl}${route}`,
+  const fixed: MetadataRoute.Sitemap = ["/blog", "/projects", "/proposals", "/about", "/subscribe", "/defi", "/web3", "/youtube"].map((route) => ({
+    url: `${BASE}${route}`,
     lastModified: CONTENT_UPDATED,
     changeFrequency: "weekly" as const,
-    priority: 0.6,
+    priority: 0.5,
   }))
-
-  const blogPosts: MetadataRoute.Sitemap = getAllPosts().map((post) => ({
-    url: `${baseUrl}/blog/${post.slug}`,
+  const posts: MetadataRoute.Sitemap = getAllPosts().map((post) => ({
+    url: `${BASE}/blog/${post.slug}`,
     lastModified: new Date(post.date),
     changeFrequency: "monthly" as const,
     priority: 0.6,
   }))
-
-  return [...livePages, ...staticPages, ...blogPosts]
+  return [...live, ...fixed, ...posts]
 }

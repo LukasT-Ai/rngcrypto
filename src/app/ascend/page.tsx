@@ -1,27 +1,6 @@
-import type { Metadata } from "next"
-import AscendDashboard from "./dashboard"
+import { permanentRedirect } from "next/navigation"
 
-export const metadata: Metadata = {
-  title: "Live Trading | Ascend Agent Performance",
-  description:
-    "Real-time performance dashboard for the Ascend autonomous trading agent. Agent P&L, open positions, trade history, and asset breakdowns.",
-  openGraph: {
-    title: "Live Ascend Agent Trading | RnGcrypto",
-    description:
-      "Autonomous event perpetuals trading on Cardano. Agent P&L, win rate, open positions, and full trade history.",
-    url: "https://www.rngcrypto.com/ascend",
-    siteName: "RnGcrypto",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Live Ascend Agent Trading | RnGcrypto",
-    description:
-      "Autonomous event perpetuals trading on Cardano. Agent P&L, win rate, open positions, and full trade history.",
-    creator: "@rngcrypto",
-  },
-}
-
-export default function AscendPage() {
-  return <AscendDashboard />
+// The Ascend agent dashboard was retired; its signals live on the Ascend signals page.
+export default function Page() {
+  permanentRedirect("/signals/ascend")
 }

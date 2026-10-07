@@ -15,7 +15,7 @@ const tiers = [
       "Weekly macro recap",
       "Blog post notifications",
       "YouTube video alerts",
-      "RnG Bot summary (weekly)",
+      "Weekly signal recap",
     ],
     cta: "Subscribe Free",
     highlighted: false,
@@ -23,11 +23,11 @@ const tiers = [
   {
     name: "Pro",
     price: "$15/mo",
-    description: "Trading signals, bot data, and community access.",
+    description: "Full signal access, verified performance, and community.",
     features: [
       "Everything in Free",
       "Trading signals (daily)",
-      "Full RnG Bot trade data",
+      "Every signal with entry, stop and targets as it fires",
       "Deep dive analysis",
       "Discord community access",
       "Priority email support",
@@ -55,7 +55,7 @@ const tiers = [
 const contentPillars = [
   { icon: Newspaper, label: "Daily Market Brief", freq: "5x/week" },
   { icon: BarChart3, label: "Macro Monday Analysis", freq: "Weekly" },
-  { icon: Bot, label: "RnG Bot Recap", freq: "Daily" },
+  { icon: Bot, label: "Signal Recap", freq: "Daily" },
   { icon: Mail, label: "Weekly Deep Dive", freq: "Sunday" },
 ]
 
@@ -72,9 +72,7 @@ export default function SubscribePage() {
           Stay Ahead of the Market
         </h1>
         <p className="mx-auto max-w-xl text-muted-foreground">
-          Weekly market analysis, trading signals, macro insights, and RnG Bot
-          performance delivered to your inbox. Free.
-        </p>
+          Weekly market analysis, trading signals, macro insights, and the verified signal track record delivered to your inbox.</p>
       </div>
 
       {/* Subscribe form */}

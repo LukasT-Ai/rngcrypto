@@ -13,6 +13,14 @@ const exploreLinks = [
   { href: "/about", label: "About" },
 ]
 
+const moreLinks = [
+  { href: "/markets", label: "Markets" },
+  { href: "/defi", label: "DeFi" },
+  { href: "/web3", label: "Web3" },
+  { href: "/youtube", label: "YouTube" },
+  { href: "/subscribe", label: "Subscribe" },
+]
+
 const ecosystemLinks = [
   { href: "https://ascend.market", label: "Ascend Market" },
   { href: "https://liqwid.finance", label: "Liqwid Finance" },
@@ -69,6 +77,16 @@ export function Footer() {
                     href={link.href}
                     className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                   >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <h3 className="mb-3 mt-6 text-sm font-semibold text-foreground">More</h3>
+            <ul className="space-y-2.5">
+              {moreLinks.map((link) => (
+                <li key={link.href}>
+                  <Link href={link.href} className="text-sm text-muted-foreground transition-colors hover:text-foreground">
                     {link.label}
                   </Link>
                 </li>

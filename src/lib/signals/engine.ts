@@ -9,6 +9,7 @@
  */
 import { appendSignal } from "../../app/api/signals/history/logger";
 import { FACTOR } from "./factors";
+import { fetchOrderFlowRaw, summarizeOrderFlow, type LiquidationSummary, type OrderBookSummary, type OrderFlowRaw } from "./orderflow";
 
 // Bump whenever scoring behaviour changes; every logged signal carries it so history can be bucketed.
 export const ENGINE_VERSION = "2026.10.07-tuned";
@@ -3972,12 +3973,9 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
           "https://api.coinglass.com/api/v3/etf/bitcoin/flow-total"
         ).catch(() => null)
       : Promise.resolve(null),
-    // 12: Liquidations (all crypto)
-    isCrypto
-      ? fetchJSON(
-          `https://api.coinglass.com/api/v3/futures/liquidation/info?symbol=${symbol}`
-        ).catch(() => null)
-      : Promise.resolve(null),
+    // 12: Order flow: OKX liquidation tape + full order book (crypto with an OKX swap). Replaces Coinglass,
+    // which needs a paid key and had returned null for months.
+    isCrypto ? fetchOrderFlowRaw(config.okx) : Promise.resolve(null),
     // 13: News sentiment (crypto only)
     isCrypto
       ? getNewsSentiment(symbol).catch(() => null)
@@ -4142,30 +4140,14 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
     }
   }
 
-  // Liquidations
-  let liquidations: {
-    longLiqs24h: number | null;
-    shortLiqs24h: number | null;
-  } | null = null;
-  const liqRaw = getResult(12);
-  if (liqRaw != null) {
-    try {
-      const liq = liqRaw as {
-        data?: {
-          longLiquidationUsd?: number;
-          shortLiquidationUsd?: number;
-        };
-      };
-      if (liq?.data) {
-        liquidations = {
-          longLiqs24h: liq.data.longLiquidationUsd ?? null,
-          shortLiqs24h: liq.data.shortLiquidationUsd ?? null,
-        };
-      }
-    } catch {
-      /* graceful degradation */
-    }
-  }
+  // Liquidations + order book walls, summarized against the mark price
+  const orderFlow = summarizeOrderFlow(getResult(12) as OrderFlowRaw | null, markPrice ?? 0);
+  const liqSummary: LiquidationSummary | null = orderFlow.liquidations;
+  const orderBook: OrderBookSummary | null = orderFlow.orderBook;
+  // Scoring keeps the long/short split it was designed around; the window is whatever OKX returned (<= 24h).
+  const liquidations = liqSummary
+    ? { longLiqs24h: liqSummary.window.longUsd, shortLiqs24h: liqSummary.window.shortUsd, ...liqSummary }
+    : null;
 
   // News sentiment
   const newsSentimentData = getResult(13) as NewsSentimentResult | null;
@@ -4600,6 +4582,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       longShortRatio,
       topTraderLongRatio,
     },
+    orderBook,
     positioning: isCrypto ? {
       longShortRatio,
       longShortChange: longShortChange != null ? Math.round(longShortChange * 100) / 100 : null,

@@ -4,14 +4,17 @@ import React from "react"
 import { Activity, AlertTriangle, ArrowUpRight, BarChart3, Eye, GitBranch, Hash, Layers, Zap } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { SignalsResponse } from "../types"
-import { AMBER, GRAY, GREEN, RED, SectionTitle, StatCard, dirColor, fmt, fmtCompact } from "../shared"
+import { AMBER, GRAY, GREEN, RED, SectionTitle, StatCard, dirColor, fmt, fmtCompact, priceDp } from "../shared"
+import { LiquidationsPanel, OrderBookPanel } from "../OrderFlowPanels"
 
 export function FlowTab({ d }: { d: SignalsResponse }) {
   const vol = d.volume
   const m = d.market
   const pos = d.positioning
   const liq = m.liquidations
-  const hasLiq = liq && liq.longLiqs24h != null && liq.shortLiqs24h != null
+  const book = d.orderBook ?? null
+  const price = d.price.mark
+  const dp = price > 0 ? priceDp(price) : 2
   const spikeNotable = vol.spikeLabel && !["NORMAL", "no data", "ELEVATED", "DRY"].includes(vol.spikeLabel)
   const abs = vol.absorption
 
@@ -87,18 +90,13 @@ export function FlowTab({ d }: { d: SignalsResponse }) {
             {pos.takerBuySellRatio != null && (
               <StatCard label="Taker buy/sell" value={pos.takerBuySellRatio.toFixed(2)} sub={pos.takerBuySellRatio > 1.3 ? "Aggressive buying" : pos.takerBuySellRatio < 0.7 ? "Aggressive selling" : "Balanced"} color={pos.takerBuySellRatio > 1.3 ? GREEN : pos.takerBuySellRatio < 0.7 ? RED : undefined} icon={Activity} />
             )}
-            {hasLiq && (
-              <StatCard
-                label="Liquidations 24h"
-                value={`L $${fmtCompact(liq.longLiqs24h)} / S $${fmtCompact(liq.shortLiqs24h)}`}
-                sub={liq.longLiqs24h! > liq.shortLiqs24h! ? "Longs getting flushed" : "Shorts getting squeezed"}
-                color={liq.longLiqs24h! > liq.shortLiqs24h! ? RED : GREEN}
-                icon={AlertTriangle}
-              />
-            )}
           </div>
         </div>
       )}
+
+      {/* Order flow: realized liquidations and resting walls, each with a plain-English read */}
+      {liq && <LiquidationsPanel liq={liq} dp={dp} price={price} />}
+      {book && <OrderBookPanel book={book} dp={dp} price={price} call={d.call} />}
 
       {/* Market data */}
       <div id="sec-market-data">

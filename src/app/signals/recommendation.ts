@@ -16,6 +16,8 @@ export type SectionId =
   | "sec-calendar"
   | "sec-track-record"
   | "sec-positioning"
+  | "sec-liquidations"
+  | "sec-orderbook"
   | "sec-market-data"
   | "sec-news"
   | "sec-setups"
@@ -162,11 +164,18 @@ function factorReason(d: SignalsResponse, category: string, assessment: string, 
     }
     case "Liquidation/Positioning": {
       const p = d.positioning
-      if (!p) return null
-      const ls = p.longShortRatio != null ? `long/short ${p.longShortRatio.toFixed(2)}` : ""
-      const sq = p.squeezeRisk ? `${ls ? ", " : ""}${p.squeezeRisk}` : ""
-      if (!ls && !sq) return null
-      return { ...base, anchor: "sec-positioning", text: `Positioning: ${ls}${sq}` }
+      const lq = d.market.liquidations
+      const ls = p?.longShortRatio != null ? `long/short ${p.longShortRatio.toFixed(2)}` : ""
+      const sq = p?.squeezeRisk ? `${ls ? ", " : ""}${p.squeezeRisk.replace(/_/g, " ")}` : ""
+      const liqTxt =
+        lq && lq.dominant && lq.longPct != null
+          ? lq.dominant === "long"
+            ? `${Math.round(lq.longPct * 100)}% of liquidations were longs (flush)`
+            : `${Math.round((1 - lq.longPct) * 100)}% of liquidations were shorts (squeeze)`
+          : ""
+      if (!ls && !sq && !liqTxt) return null
+      const parts = [ls + sq, liqTxt].filter(Boolean)
+      return { ...base, anchor: liqTxt && !ls ? "sec-liquidations" : "sec-positioning", text: `Positioning: ${parts.join("; ")}` }
     }
     case "Patterns": {
       if (!d.patterns.candlestick) return null
@@ -287,6 +296,23 @@ export function buildRecommendation(
     })
   }
 
+  // Order book: a wall between price and the stop is cover for the plan; a lopsided book is evidence either way.
+  const book = d.orderBook
+  const fmtUsd = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${(n / 1e3).toFixed(0)}K`)
+  if (book && action !== "WAIT") {
+    const long = action === "LONG"
+    const shield = long ? book.bidWalls.find((w) => w.price < px && w.price > call.stopLoss) : book.askWalls.find((w) => w.price > px && w.price < call.stopLoss)
+    if (shield) {
+      reasons.push({ text: `${fmtUsd(shield.usd)} ${long ? "buy" : "sell"} wall at $${fmtN(shield.price, dp)} sits between price and the stop`, anchor: "sec-orderbook", tone: long ? "pos" : "neg", weight: 8 })
+    }
+    const d2 = book.depth[book.depth.length - 1]
+    if (d2 && Math.abs(d2.imbalance) >= 0.2) {
+      const bidHeavy = d2.imbalance > 0
+      const band = d2.band * 100 < 1 ? (d2.band * 100).toFixed(2) : (d2.band * 100).toFixed(0)
+      reasons.push({ text: `Resting book is ${bidHeavy ? "bid" : "ask"}-heavy within ${band}% (${fmtUsd(d2.bidUsd)} vs ${fmtUsd(d2.askUsd)})`, anchor: "sec-orderbook", tone: bidHeavy ? "pos" : "neg", weight: 6 })
+    }
+  }
+
   const sign = action === "LONG" ? 1 : action === "SHORT" ? -1 : 0
   const byWeight = (a: RecoLink, b: RecoLink) => b.weight - a.weight
   const pos = reasons.filter((r) => r.tone === "pos").sort(byWeight)
@@ -316,6 +342,23 @@ export function buildRecommendation(
   }
   if (call.geoOverride && action !== "WAIT") {
     butWatch.unshift({ text: call.geoOverride, anchor: "sec-geo", tone: "neg", weight: 25 })
+  }
+  if (book && action !== "WAIT") {
+    const long = action === "LONG"
+    const blocking = long ? book.askWalls.find((w) => w.price > px && w.price < call.tp1) : book.bidWalls.find((w) => w.price < px && w.price > call.tp1)
+    if (blocking) {
+      butWatch.unshift({ text: `${fmtUsd(blocking.usd)} ${long ? "sell" : "buy"} wall at $${fmtN(blocking.price, dp)} sits before the first target; bank part of the position in front of it`, anchor: "sec-orderbook", tone: "neg", weight: 14 })
+    }
+  }
+  const lqw = d.market.liquidations
+  const againstUs = lqw?.dominant && ((action === "LONG" && lqw.dominant === "short") || (action === "SHORT" && lqw.dominant === "long"))
+  if (lqw && againstUs && lqw.h1.longUsd + lqw.h1.shortUsd > 0) {
+    butWatch.unshift({
+      text: action === "LONG" ? "Shorts are being squeezed right now; entering mid-squeeze is late, wait for it to stall" : "Longs are being flushed right now; entering mid-cascade is late, wait for the flush to stall",
+      anchor: "sec-liquidations",
+      tone: "neg",
+      weight: 12,
+    })
   }
   if (d.macroEvent?.preEventRisk) {
     const p = d.macroEvent.preEventRisk

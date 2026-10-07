@@ -277,7 +277,7 @@ type TabKey = (typeof TABS)[number]["key"]
 const ANCHOR_TAB: Record<string, TabKey> = {
   "sec-active-setups": "levels", "sec-levels": "levels", "sec-fib": "levels",
   "sec-indicators": "momentum", "sec-divergences": "momentum", "sec-htf": "momentum", "sec-tf-alignment": "momentum",
-  "sec-volume": "flow", "sec-market-data": "flow", "sec-positioning": "flow",
+  "sec-volume": "flow", "sec-market-data": "flow", "sec-positioning": "flow", "sec-liquidations": "flow", "sec-orderbook": "flow",
   "sec-calendar": "macro", "sec-geo": "macro", "sec-news": "macro", "sec-macro": "macro",
   "sec-confluence": "models", "sec-market-map": "models", "sec-setups": "models", "sec-forecast": "models",
 }

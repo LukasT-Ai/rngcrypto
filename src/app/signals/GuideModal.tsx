@@ -34,6 +34,16 @@ const SECTIONS = [
     ],
   },
   {
+    title: "Order flow (Flow tab)",
+    color: AMBER,
+    items: [
+      { label: "Liquidations", desc: "Forced closes on OKX perps, split long vs short over 1h, 4h and the covered window. Mostly longs = buyers being flushed, which removes fuel for further downside and often precedes a bounce. Mostly shorts = a squeeze; chasing it is late." },
+      { label: "Flush zones", desc: "Price buckets where the most positions were liquidated. A long-flush zone below price often becomes support; a short-flush zone above often becomes resistance." },
+      { label: "Buy / sell walls", desc: "Resting orders at least 3x the median level. Buy walls below price are bounce points and cover for a stop; sell walls above are where to bank partial profit. Walls can be pulled, so treat them as intent." },
+      { label: "Book imbalance", desc: "Bids vs asks inside the covered band. A book leaning against your direction is a reason to size down, not a reason to flip." },
+    ],
+  },
+  {
     title: "What to look at first",
     color: RED,
     items: [

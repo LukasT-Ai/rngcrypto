@@ -45,6 +45,38 @@ export interface OilGeo {
   nextScheduled: { name: string; time: string; impact: "high" | "medium" | "low" } | null
 }
 
+// Order flow (OKX sample). Mirrors LiquidationSummary / OrderBookSummary in lib/signals/orderflow.ts.
+export type LiqSide = "long" | "short"
+export interface LiqEventInfo { ts: number; side: LiqSide; price: number; usd: number }
+export interface LiqBucketInfo { longUsd: number; shortUsd: number; longN: number; shortN: number }
+export interface LiquidationInfo {
+  longLiqs24h: number | null
+  shortLiqs24h: number | null
+  venue: "OKX"
+  windowHours: number
+  truncated: boolean
+  h1: LiqBucketInfo
+  h4: LiqBucketInfo
+  window: LiqBucketInfo
+  largest: LiqEventInfo | null
+  clusters: { price: number; usd: number; side: LiqSide; longUsd: number; shortUsd: number; distancePct: number }[]
+  tape: LiqEventInfo[]
+  dominant: LiqSide | null
+  longPct: number | null
+  read: string
+}
+export interface WallInfo { price: number; usd: number; distancePct: number; share: number; strength: number }
+export interface OrderBookInfo {
+  venue: "OKX" | "Hyperliquid"
+  mid: number
+  spreadPct: number
+  coveragePct: number
+  depth: { band: number; bidUsd: number; askUsd: number; imbalance: number }[]
+  bidWalls: WallInfo[]
+  askWalls: WallInfo[]
+  read: string
+}
+
 export interface SignalsResponse {
   // Added by the 2026-10 engine: scoring version and whether the entry is a market or resting limit order.
   engineVersion?: string
@@ -114,8 +146,9 @@ export interface SignalsResponse {
     putCallRatio: number | null
     hashRate: number | null
     etfFlow: { net: number; description: string } | null
-    liquidations: { longLiqs24h: number | null; shortLiqs24h: number | null } | null
+    liquidations: LiquidationInfo | null
   }
+  orderBook?: OrderBookInfo | null
   divergences: {
     rsiDivergence15m: string | null
     rsiDivergence1h: string | null

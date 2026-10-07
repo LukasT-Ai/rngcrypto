@@ -6,15 +6,19 @@ import { cn } from "@/lib/utils"
 import type { SignalsResponse } from "../types"
 import { AMBER, GREEN, RED, SURFACE, SectionTitle, TD, TH, TableScroll, dirColor, dirLabel, fmt, pctFrom } from "../shared"
 
-type LevelRow = { kind: "Support" | "Resistance" | "Fib" | "Daily high" | "Daily low" | "Weekly high" | "Weekly low"; label: string; price: number }
+type LevelRow = { kind: "Support" | "Resistance" | "Fib" | "Daily high" | "Daily low" | "Weekly high" | "Weekly low" | "Buy wall" | "Sell wall"; label: string; price: number }
 
 export function LevelsTab({ d, dp, accent }: { d: SignalsResponse; dp: number; accent: string }) {
   const price = d.price.mark
   const setups = d.activeSetups ?? []
   const align = d.setupAlignment
   const lv = d.levels
+  const book = d.orderBook ?? null
+  const fmtUsd = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${(n / 1e3).toFixed(0)}K`)
 
   const rows: LevelRow[] = [
+    ...(book?.bidWalls ?? []).map((w) => ({ kind: "Buy wall" as const, label: `Buy wall ${fmtUsd(w.usd)}`, price: w.price })),
+    ...(book?.askWalls ?? []).map((w) => ({ kind: "Sell wall" as const, label: `Sell wall ${fmtUsd(w.usd)}`, price: w.price })),
     ...lv.supports.map((p) => ({ kind: "Support" as const, label: "Support", price: p })),
     ...lv.resistances.map((p) => ({ kind: "Resistance" as const, label: "Resistance", price: p })),
     ...(lv.fibonacci ?? []).map((f) => ({ kind: "Fib" as const, label: `Fib ${f.level}`, price: f.price })),
@@ -25,7 +29,7 @@ export function LevelsTab({ d, dp, accent }: { d: SignalsResponse; dp: number; a
   ].sort((a, b) => b.price - a.price)
   const firstBelow = rows.findIndex((r) => r.price < price)
 
-  const rowColor = (r: LevelRow) => (r.kind === "Support" ? GREEN : r.kind === "Resistance" ? RED : "rgba(255,255,255,0.75)")
+  const rowColor = (r: LevelRow) => (r.kind === "Support" || r.kind === "Buy wall" ? GREEN : r.kind === "Resistance" || r.kind === "Sell wall" ? RED : "rgba(255,255,255,0.75)")
 
   // Ladder: supports, resistances and price on one axis.
   const core = [...lv.supports, ...lv.resistances, price]
@@ -103,7 +107,7 @@ export function LevelsTab({ d, dp, accent }: { d: SignalsResponse; dp: number; a
       {/* Levels ladder + table */}
       {rows.length > 0 && (
         <div id="sec-levels">
-          <SectionTitle right={<span className="text-[10px] text-[#9CA3AF]/80">Supports, resistances, Fibonacci and session extremes, nearest first</span>}>Key price levels</SectionTitle>
+          <SectionTitle right={<span className="text-[10px] text-[#9CA3AF]/80">Supports, resistances, Fibonacci, session extremes{book ? " and live order-book walls" : ""}, nearest first</span>}>Key price levels</SectionTitle>
           <div className={cn(SURFACE, "p-4 mb-3")}>
             <div className="relative h-10">
               <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
@@ -115,6 +119,11 @@ export function LevelsTab({ d, dp, accent }: { d: SignalsResponse; dp: number; a
               {lv.resistances.map((p, i) => (
                 <div key={`r-${i}`} className="absolute top-0 bottom-0" style={{ left: `${pct(p)}%` }}>
                   <div className="h-full w-px" style={{ backgroundColor: `${RED}55` }} />
+                </div>
+              ))}
+              {[...(book?.bidWalls ?? []), ...(book?.askWalls ?? [])].filter((w) => w.price >= min && w.price <= max).map((w, i) => (
+                <div key={`w-${i}`} className="absolute top-1/4 bottom-1/4" style={{ left: `${pct(w.price)}%` }} title={`${w.price < price ? "Buy" : "Sell"} wall ${fmtUsd(w.usd)}`}>
+                  <div className="h-full w-1 rounded-sm" style={{ backgroundColor: w.price < price ? GREEN : RED, opacity: 0.8 }} />
                 </div>
               ))}
               {(lv.fibonacci ?? []).filter((f) => f.price >= min && f.price <= max).map((f, i) => (

@@ -111,6 +111,9 @@ export const HINTS: Record<string, string> = {
   Absorption: "Large volume with little price movement: one side is absorbing the other's orders, which often precedes a reversal.",
   "Open interest": "Total value of open perpetual contracts. Rising OI with rising price means new money is entering.",
   "Funding rate": "Periodic payment between longs and shorts on perpetuals. Positive means longs pay shorts (crowded long).",
+  Liquidations: "Forced closes of leveraged positions. Mostly longs means buyers are being flushed (fuel for a bounce once it slows); mostly shorts means a squeeze is running.",
+  "Buy wall": "A cluster of resting bids far larger than its neighbours. Price tends to bounce there; a stop just below it has cover. Walls can be pulled.",
+  "Sell wall": "A cluster of resting asks far larger than its neighbours. Price tends to stall there; take partial profit in front of it rather than through it.",
   Whipsaw: "Headline regime where bullish and bearish catalysts are landing in quick succession, so price keeps reversing.",
 }
 

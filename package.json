@@ -9,6 +9,7 @@
     "lint": "eslint",
     "sync-stats": "cp C:/Users/Lukas/ascend-agent/ascend.db data/ascend.db && echo 'Ascend DB synced'",
     "test": "vitest run",
+    "backtest": "tsx scripts/backtest.ts",
     "test:watch": "vitest"
   },
   "dependencies": {

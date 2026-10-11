@@ -22,6 +22,10 @@ export interface CatalystForce {
   avgScore: number;
   avgReactionPct: number | null;
   topHeadline: string;
+  /** Recency-weighted sum of this category's scores (what actually feeds the net). */
+  weightedTotal: number;
+  /** Share of total absolute recency-weighted score across all categories, 0-100. */
+  weightShare: number;
 }
 
 export interface CatalystVerdict {
@@ -31,6 +35,8 @@ export interface CatalystVerdict {
   priceFollowing: string | null;
   summary: string;
   flipCondition: string;
+  /** Plain-English description of how the net score was derived. */
+  netBasis: string;
 }
 
 export interface CatalystResult {
@@ -42,7 +48,7 @@ export interface CatalystResult {
   eventCount: number;
   events: CatalystEvent[];
   lastUpdated: string;
-  categoryBreakdown: { category: string; count: number; scoredCount: number; avgScore: number; avgReactionPct: number | null }[];
+  categoryBreakdown: { category: string; count: number; scoredCount: number; avgScore: number; avgReactionPct: number | null; weightedTotal: number; weightShare: number }[];
   priceContext: { current: number; change24h: number; changePct24h: number; weekHigh: number; weekLow: number } | null;
   verdict: CatalystVerdict | null;
   sourcesUsed: string[];
@@ -860,7 +866,14 @@ function attachReactions(events: CatalystEvent[], intraday: Candle[], current: n
 
 // ── Verdict ─────────────────────────────────────────────────────────────────
 
-function buildVerdict(cfg: AssetConfig, events: CatalystEvent[], breakdown: CatalystResult["categoryBreakdown"], netScore: number): CatalystVerdict | null {
+function buildVerdict(
+  cfg: AssetConfig,
+  events: CatalystEvent[],
+  breakdown: CatalystResult["categoryBreakdown"],
+  netScore: number,
+  scoredCount: number,
+  hiBlend: boolean,
+): CatalystVerdict | null {
   const scored = breakdown.filter((b) => b.category !== "GENERAL" && b.scoredCount >= 2 && Math.abs(b.avgScore) >= 10);
   if (scored.length === 0) return null;
 
@@ -869,10 +882,20 @@ function buildVerdict(cfg: AssetConfig, events: CatalystEvent[], breakdown: Cata
     events.filter((e) => e.category === cat && Math.sign(e.score) === sign).sort((a, b) => Math.abs(b.score) - Math.abs(a.score))[0]?.title ??
     "";
 
-  const bulls = scored.filter((b) => b.avgScore > 0).sort((a, b) => b.avgScore * b.scoredCount - a.avgScore * a.scoredCount);
-  const bears = scored.filter((b) => b.avgScore < 0).sort((a, b) => a.avgScore * a.scoredCount - b.avgScore * b.scoredCount);
+  const bulls = scored.filter((b) => b.avgScore > 0).sort((a, b) => b.weightedTotal - a.weightedTotal);
+  const bears = scored.filter((b) => b.avgScore < 0).sort((a, b) => a.weightedTotal - b.weightedTotal);
   const toForce = (b: CatalystResult["categoryBreakdown"][number] | undefined, sign: 1 | -1): CatalystForce | null =>
-    b ? { category: b.category, count: b.scoredCount, avgScore: b.avgScore, avgReactionPct: b.avgReactionPct, topHeadline: topHeadlineFor(b.category, sign) } : null;
+    b
+      ? {
+          category: b.category,
+          count: b.scoredCount,
+          avgScore: b.avgScore,
+          avgReactionPct: b.avgReactionPct,
+          topHeadline: topHeadlineFor(b.category, sign),
+          weightedTotal: b.weightedTotal,
+          weightShare: b.weightShare,
+        }
+      : null;
 
   const bullForce = toForce(bulls[0], 1);
   const bearForce = toForce(bears[0], -1);
@@ -892,7 +915,7 @@ function buildVerdict(cfg: AssetConfig, events: CatalystEvent[], breakdown: Cata
   let summary: string;
   if (bullForce && bearForce) {
     summary =
-      `${label(bullForce.category)} (${bullForce.count} headlines, avg +${bullForce.avgScore}) vs ${label(bearForce.category)} (${bearForce.count}, avg ${bearForce.avgScore}). ` +
+      `${label(bullForce.category)} (${bullForce.count} headlines, avg +${bullForce.avgScore}, ${bullForce.weightShare}% of weight) vs ${label(bearForce.category)} (${bearForce.count}, avg ${bearForce.avgScore}, ${bearForce.weightShare}% of weight). ` +
       `Net lean ${netLean}. ${name} since ${label(bullForce.category).toLowerCase()} headlines ${fmtPct(bullForce.avgReactionPct)}, since ${label(bearForce.category).toLowerCase()} headlines ${fmtPct(bearForce.avgReactionPct)}` +
       (priceFollowing ? ` — price is following ${label(priceFollowing)}.` : " — price undecided.");
   } else if (bullForce) {
@@ -905,7 +928,12 @@ function buildVerdict(cfg: AssetConfig, events: CatalystEvent[], breakdown: Cata
   const flip = dominant ? cfg.flip[dominant.category] : undefined;
   const flipCondition = dominant && flip ? (netLean === "bearish" ? flip.bear : flip.bull) : "";
 
-  return { bullForce, bearForce, netLean, priceFollowing, summary, flipCondition };
+  const netBasis =
+    `Recency-weighted average of all ${scoredCount} scored headlines (last 6h count 2x, last 24h 1.25x)` +
+    (hiBlend ? ", blended 60/40 with the last 12h of high-impact headlines" : "") +
+    ". Card scores are per-headline averages; weight share is what moves NET.";
+
+  return { bullForce, bearForce, netLean, priceFollowing, summary, flipCondition, netBasis };
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -942,6 +970,9 @@ export async function getCatalystNews(asset: CatalystAsset): Promise<CatalystRes
   const now = Date.now();
   const scored = events.filter((e) => e.score !== 0);
   let netScore = 0;
+  let hiBlend = false;
+  const catWeighted = new Map<string, number>();
+  let absWeightedTotal = 0;
   if (scored.length > 0) {
     let ws = 0;
     let wt = 0;
@@ -950,10 +981,13 @@ export async function getCatalystNews(asset: CatalystAsset): Promise<CatalystRes
       const w = age < 6 * 3600e3 ? 2 : age < 24 * 3600e3 ? 1.25 : 1;
       ws += e.score * w;
       wt += w;
+      catWeighted.set(e.category, (catWeighted.get(e.category) ?? 0) + e.score * w);
     }
+    for (const v of catWeighted.values()) absWeightedTotal += Math.abs(v);
     netScore = Math.round(ws / wt);
     const recentHi = scored.filter((e) => e.impact === "high" && now - new Date(e.publishedAt).getTime() < 12 * 3600e3);
     if (recentHi.length >= 3) {
+      hiBlend = true;
       const hiAvg = Math.round(recentHi.reduce((s, e) => s + e.score, 0) / recentHi.length);
       netScore = Math.round(netScore * 0.4 + hiAvg * 0.6);
     }
@@ -980,6 +1014,8 @@ export async function getCatalystNews(asset: CatalystAsset): Promise<CatalystRes
       scoredCount: c.scored,
       avgScore: c.scored > 0 ? Math.round(c.total / c.scored) : 0,
       avgReactionPct: c.rN > 0 ? Math.round((c.rSum / c.rN) * 100) / 100 : null,
+      weightedTotal: Math.round(catWeighted.get(category) ?? 0),
+      weightShare: absWeightedTotal > 0 ? Math.round((Math.abs(catWeighted.get(category) ?? 0) / absWeightedTotal) * 100) : 0,
     }))
     .sort((a, b) => b.scoredCount - a.scoredCount || b.count - a.count);
 
@@ -994,7 +1030,7 @@ export async function getCatalystNews(asset: CatalystAsset): Promise<CatalystRes
     lastUpdated: new Date().toISOString(),
     categoryBreakdown,
     priceContext: price.context,
-    verdict: buildVerdict(cfg, events, categoryBreakdown, netScore),
+    verdict: buildVerdict(cfg, events, categoryBreakdown, netScore, scored.length, hiBlend),
     sourcesUsed: [...sourcesUsed],
     triggers: cfg.triggers,
   };

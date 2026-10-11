@@ -9,6 +9,8 @@ export interface OilGeoForce {
   avgScore: number
   avgReactionPct: number | null
   topHeadline: string
+  weightedTotal: number
+  weightShare: number
 }
 
 export interface OilGeo {
@@ -36,6 +38,7 @@ export interface OilGeo {
     priceFollowing: string | null
     summary: string
     flipCondition: string
+    netBasis: string
   } | null
   sourcesUsed: string[]
   asset: string

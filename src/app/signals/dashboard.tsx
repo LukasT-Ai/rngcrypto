@@ -657,7 +657,6 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 if (m <= 0) return "now"
                 return m < 60 ? `in ${m}m` : m < 1440 ? `in ${Math.floor(m / 60)}h ${m % 60}m` : `in ${Math.floor(m / 1440)}d`
               }
-              const bar = (score: number) => Math.min(100, Math.round(Math.abs(score) * 1.25))
               const shown = showAllGeo ? g.events : g.events.slice(0, 5)
               const v = g.verdict
               const pc = g.priceContext
@@ -696,12 +695,12 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                                 <span className="font-semibold">{v.bullForce.category.replace(/_/g, " ")}</span>
                                 <span className="text-white/45"> · {v.bullForce.topHeadline}</span>
                               </span>
-                              <span className="font-mono text-[10px] text-white/40 shrink-0">
-                                {v.bullForce.count} ev · +{v.bullForce.avgScore} · {pct(v.bullForce.avgReactionPct)}
+                              <span className="font-mono text-[10px] text-white/40 shrink-0" title="headlines · avg score per headline · share of net weight · price since">
+                                {v.bullForce.count} ev · avg +{v.bullForce.avgScore} · <span className="text-[#00FF88]/80">{v.bullForce.weightShare}% wt</span> · {pct(v.bullForce.avgReactionPct)}
                               </span>
                             </div>
                             <div className="mt-1.5 h-1 rounded bg-white/[0.05]">
-                              <div className="h-1 rounded" style={{ width: `${bar(v.bullForce.avgScore)}%`, backgroundColor: "#00FF88" }} />
+                              <div className="h-1 rounded" style={{ width: `${v.bullForce.weightShare}%`, backgroundColor: "#00FF88" }} />
                             </div>
                           </div>
                         </div>
@@ -715,12 +714,12 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                                 <span className="font-semibold">{v.bearForce.category.replace(/_/g, " ")}</span>
                                 <span className="text-white/45"> · {v.bearForce.topHeadline}</span>
                               </span>
-                              <span className="font-mono text-[10px] text-white/40 shrink-0">
-                                {v.bearForce.count} ev · {v.bearForce.avgScore} · {pct(v.bearForce.avgReactionPct)}
+                              <span className="font-mono text-[10px] text-white/40 shrink-0" title="headlines · avg score per headline · share of net weight · price since">
+                                {v.bearForce.count} ev · avg {v.bearForce.avgScore} · <span className="text-[#FF3B5C]/80">{v.bearForce.weightShare}% wt</span> · {pct(v.bearForce.avgReactionPct)}
                               </span>
                             </div>
                             <div className="mt-1.5 h-1 rounded bg-white/[0.05]">
-                              <div className="h-1 rounded" style={{ width: `${bar(v.bearForce.avgScore)}%`, backgroundColor: "#FF3B5C" }} />
+                              <div className="h-1 rounded" style={{ width: `${v.bearForce.weightShare}%`, backgroundColor: "#FF3B5C" }} />
                             </div>
                           </div>
                         </div>
@@ -734,6 +733,12 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                           · {v.priceFollowing ? `price is following ${v.priceFollowing.replace("_", " ")}` : "price undecided"}
                         </span>
                       </div>
+                      {v.netBasis && (
+                        <div className="flex items-start gap-3 -mt-1">
+                          <span className="w-9 shrink-0" />
+                          <span className="text-[10px] text-white/35 leading-snug">{v.netBasis}</span>
+                        </div>
+                      )}
                       {v.flipCondition && (
                         <div className="flex items-start gap-3">
                           <span className="w-9 shrink-0 text-[10px] font-bold text-[#F59E0B] mt-0.5">FLIP</span>

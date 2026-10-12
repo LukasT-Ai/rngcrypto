@@ -9,7 +9,8 @@ import { impactForSurprise, preReleaseMap, transmission } from "./impact";
 import { evaluateConfirmation } from "./confirmation";
 import { classifyRegime } from "./regime";
 import { fiveDayChanges, getSnapshot, priceAt, setMarketTtl } from "./market";
-import { bestHistoricalStats, findRelease, rollingSurpriseSD, upsertRelease } from "./history";
+import { bestHistoricalStats, findRelease, getStoredReleases, rollingSurpriseSD, upsertRelease } from "./history";
+import { buildWeeklyOil } from "./oil-weekly";
 import { deriveAlerts } from "./alerts";
 import { summarizeOutcome } from "./outcome";
 
@@ -380,7 +381,11 @@ export async function getMacroState(asset: MacroAsset | null = null): Promise<Ma
     s.outcome = summarizeOutcome(s, now);
   }
 
-  const upcomingAll = (await getMacroEvents(now, now + 7 * 86400e3)).filter((e) => relevantTo(asset, e.defId));
+  // The WTI lens needs the next weekly inventory release even right after one landed, so look two weeks out.
+  const horizonDays = asset === "WTI" ? 14 : 7;
+  const fortnight = await getMacroEvents(now, now + horizonDays * 86400e3);
+  const upcomingAll = fortnight.filter((e) => new Date(e.time).getTime() <= now + 7 * 86400e3 && relevantTo(asset, e.defId));
+  const oilWeekly = asset === "WTI" ? buildWeeklyOil(fortnight, getStoredReleases(), now) : undefined;
   const upcoming = upcomingAll.filter((e) => rank[e.importance] >= rank.medium).slice(0, 12);
 
   // Active = what the trader should be looking at right now, for this ticker.
@@ -405,6 +410,7 @@ export async function getMacroState(asset: MacroAsset | null = null): Promise<Ma
     alerts: rt.alerts.filter((a) => !asset || a.asset == null || a.asset === asset).slice(0, 30),
     preEventRisk,
     sources: sourceStatus(),
+    ...(oilWeekly ? { oilWeekly } : {}),
   };
   rt.stateCache.set(cacheKey, { state, at: now });
   return state;

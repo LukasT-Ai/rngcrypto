@@ -2,9 +2,10 @@
 
 import React, { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { CalendarClock, CheckCircle2, ChevronDown, Clock, Radio, ShieldAlert, Zap } from "lucide-react"
+import { CalendarClock, CheckCircle2, ChevronDown, Clock, Droplets, Radio, ShieldAlert, Zap } from "lucide-react"
 import type { AssetImpact, Confidence, Direction, EventState, Importance, MacroAsset, MacroScores, MacroState, ScheduledEvent, SnapshotKey } from "@/lib/macro/types"
 import type { ScenarioGuide as ScenarioGuideData } from "@/lib/macro/scenarios"
+import type { WeeklyOilRelease } from "@/lib/macro/oil-weekly"
 import { formatCompactCountdown, formatCountdown, formatDataAge, formatLocalDateTime, formatLocalTime, formatTimeAgo, urgencyFor } from "@/lib/macro/format"
 import { formatValue } from "@/lib/macro/taxonomy"
 import { EventOddsInline, usePredictionState } from "./PredictionOddsPanel"
@@ -540,3 +541,93 @@ export function MacroScoreStrip({ scores, confidence, bias }: { scores: MacroSco
 }
 
 export type { EventState }
+
+// ── Weekly oil inventories (WTI lens): latest print + countdown to the next ──
+
+function inventoryTone(v: number) {
+  // EIA sign convention: negative = draw (less crude in storage, bullish WTI); positive = build (bearish).
+  return v < 0 ? { color: GREEN, label: "DRAW" } : v > 0 ? { color: RED, label: "BUILD" } : { color: AMBER, label: "FLAT" }
+}
+
+const magnitudeLabel: Record<string, string> = { inline: "in line", small: "small surprise", large: "big surprise", extreme: "extreme surprise" }
+
+function WeeklyOilRow({ r, primary, now }: { r: WeeklyOilRelease; primary: boolean; now: number }) {
+  const last = r.last
+  const next = r.next
+  const secs = next ? Math.round((new Date(next.time).getTime() - now) / 1000) : null
+  const u = secs == null ? "normal" : urgencyFor(secs)
+  const cdTone = u === "now" || u === "urgent" ? RED : u === "strong" ? AMBER : u === "highlight" ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.75)"
+  const tone = last ? inventoryTone(last.actual) : null
+  const surprise = last && last.forecast != null ? last.actual - last.forecast : null
+  return (
+    <div className={`grid gap-3 sm:grid-cols-2 ${primary ? "py-3" : "py-2.5"}`}>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: impColor[r.importance] }} />
+          <span className={`font-semibold text-white/85 ${primary ? "text-sm" : "text-xs"}`}>{r.title}</span>
+          <span className="text-[10px] text-white/35">{r.cadence}</span>
+        </div>
+        {last && tone ? (
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className={`font-mono font-black ${primary ? "text-2xl" : "text-lg"}`} style={{ color: tone.color }}>{last.actualRaw}</span>
+            <span className="rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide" style={{ color: tone.color, backgroundColor: `${tone.color}18` }}>{tone.label}</span>
+            <span className="inline-flex items-center gap-1 font-mono text-[11px] text-white/45" title={formatLocalDateTime(last.eventTime)}>
+              <Clock className="size-3" />
+              {formatTimeAgo((now - new Date(last.eventTime).getTime()) / 1000)}
+            </span>
+            {last.source === "calendar" && <span className="text-[10px] text-white/30" title="Taken from the calendar's previous field; release time inferred from the weekly cadence">(prior per calendar)</span>}
+          </div>
+        ) : (
+          <div className="mt-1 text-xs text-white/40">No print recorded yet.</div>
+        )}
+        {last && (last.forecast != null || last.previous != null) && (
+          <div className="mt-0.5 font-mono text-[10px] text-white/45">
+            {last.forecast != null && <span>vs forecast {formatValue(last.forecast, "mb", 1)}</span>}
+            {surprise != null && <span style={{ color: surprise < 0 ? GREEN : surprise > 0 ? RED : GRAY }}> ({surprise < 0 ? "" : "+"}{surprise.toFixed(1)}M{last.magnitude ? `, ${magnitudeLabel[last.magnitude] ?? last.magnitude}` : ""})</span>}
+            {last.previous != null && <span> · prior {formatValue(last.previous, "mb", 1)}</span>}
+          </div>
+        )}
+      </div>
+      <div className="sm:text-right">
+        {next && secs != null ? (
+          <>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-white/35">Next release</div>
+            <div className={`font-mono font-black tabular-nums ${primary ? "text-2xl" : "text-lg"}`} style={{ color: cdTone }}>
+              {secs <= 0 ? "releasing now" : formatCountdown(secs)}
+            </div>
+            <div className="text-[11px] text-white/55">{formatLocalDateTime(next.time)} · {formatLocalTime(next.time)}</div>
+            {(next.forecastRaw || next.previousRaw) && (
+              <div className="font-mono text-[10px] text-white/45" title={next.expectationNote ?? undefined}>
+                {next.forecastRaw ? `forecast ${next.forecastRaw}${next.forecastSource ? "*" : ""}` : "no consensus yet"}
+                {next.previousRaw ? ` · prior ${next.previousRaw}` : ""}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-xs text-white/40">Next release not on the calendar yet.</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function WeeklyOilCard({ releases }: { releases: WeeklyOilRelease[] | undefined }) {
+  const now = useNow(1000)
+  if (!releases || releases.length === 0) return null
+  const eia = releases.find((r) => r.defId === "eia_crude")
+  const api = releases.find((r) => r.defId === "api_crude")
+  if (!eia && !api) return null
+  return (
+    <div id="sec-oil-weekly" className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb,10_14_23)/0.5)] backdrop-blur-md px-4 py-2">
+      <div className="flex items-center gap-2 mb-1">
+        <Droplets className="size-3.5" style={{ color: "var(--brand, #9CA3AF)" }} />
+        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--brand, #9CA3AF)" }}>Weekly US crude inventories</span>
+        <span className="text-[10px] text-white/30">draw = bullish WTI · build = bearish</span>
+      </div>
+      <div className="divide-y divide-white/[0.06]">
+        {eia && <WeeklyOilRow r={eia} primary now={now} />}
+        {api && <WeeklyOilRow r={api} primary={false} now={now} />}
+      </div>
+    </div>
+  )
+}

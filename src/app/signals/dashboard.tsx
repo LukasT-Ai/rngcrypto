@@ -10,7 +10,7 @@ import { LevelsTab } from "./tabs/LevelsTab"
 import { MomentumTab } from "./tabs/MomentumTab"
 import { FlowTab } from "./tabs/FlowTab"
 import type { HistoryResponse, MarketMapResponse, SignalsResponse } from "./types"
-import { MacroAlerts, MacroEventCard, NextEventsStrip, RecentResults, useMacroState } from "./MacroEventPanel"
+import { MacroAlerts, MacroEventCard, NextEventsStrip, RecentResults, WeeklyOilCard, useMacroState } from "./MacroEventPanel"
 import { PredictionOddsPanel } from "./PredictionOddsPanel"
 import type { MacroAsset } from "@/lib/macro/types"
 import { THEMES, themeStyle, type SignalsVariant } from "./themes"
@@ -570,6 +570,8 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
                 {tab === "flow" && <FlowTab d={d} />}
                 {tab === "macro" && (
                   <div className="space-y-5">
+            {/* ── 0a. OIL only: latest weekly inventory print + countdown to the next one ── */}
+            {macroLens === "WTI" && <WeeklyOilCard releases={macroQ.data?.oilWeekly} />}
             {/* ── 0b. Macro event strip + fresh alerts ─────────────────── */}
             <NextEventsStrip events={macroQ.data?.upcoming} />
             <RecentResults recent={macroQ.data?.recent} active={macroQ.data?.active} />

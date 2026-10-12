@@ -272,4 +272,6 @@ export interface MacroState {
   alerts: Alert[];
   preEventRisk: { event: ScheduledEvent; minutes: number; importance: Importance } | null;
   sources: { provider: SourceProvider; enabled: boolean; note: string }[];
+  // WTI lens only: latest EIA / API crude inventory prints paired with the next scheduled release.
+  oilWeekly?: import("./oil-weekly").WeeklyOilRelease[];
 }

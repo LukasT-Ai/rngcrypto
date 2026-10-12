@@ -60,6 +60,9 @@ export interface NormalizedSignal {
 export interface PerformanceStats {
   kpis: {
     closedN: number;
+    // Closed signals that reached a verdict (TP1 or stop). Expired-without-touch signals are excluded from every rate.
+    decidedN: number;
+    expiredN: number;
     openN: number;
     tp1Rate: number | null;
     tp2Rate: number | null;
@@ -102,6 +105,8 @@ export interface PerformanceStats {
     unfilledN: number;
     unverifiableN: number;
     pendingFillN: number;
+    // Filled signals that hit the horizon with neither TP1 nor the stop touched: real P&L (counted in R), no verdict (not in rates).
+    expiredN: number;
     // True until 100 filled closed signals exist; every rate above is a preview until then.
     provisional: boolean;
     provisionalTarget: number;
@@ -258,7 +263,8 @@ function bucketize(rows: NormalizedSignal[], keyOf: (s: NormalizedSignal) => str
   const out: Bucket[] = [...map.entries()].map(([key, list]) => {
     const wins = list.filter((s) => s.highestTp >= 1).length;
     const losses = list.filter((s) => s.stoppedAfterTp === 0).length;
-    return { key, n: list.length, tp1Rate: pct(wins, list.length), expectancyR: r2(mean(list.map((s) => s.realizedR).filter((x): x is number => x != null))), wins, losses };
+    // Win rate is over decided signals only; an expired signal that touched neither TP1 nor the stop is not a loss.
+    return { key, n: list.length, tp1Rate: wins + losses > 0 ? pct(wins, wins + losses) : null, expectancyR: r2(mean(list.map((s) => s.realizedR).filter((x): x is number => x != null))), wins, losses };
   });
   if (order) out.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
   else out.sort((a, b) => b.n - a.n);
@@ -305,6 +311,11 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
   const tp2 = closed.filter((s) => s.highestTp >= 2);
   const tp3 = closed.filter((s) => s.highestTp >= 3);
   const stopBefore = closed.filter((s) => s.stoppedAfterTp === 0);
+  // Expired = filled, horizon reached, neither TP1 nor stop touched. Real money (in R), but no verdict:
+  // excluded from every hit/stop rate so it cannot drag the win rate down or up.
+  const expired = closed.filter((s) => s.highestTp === 0 && s.stoppedAfterTp !== 0);
+  const expiredN = expired.length;
+  const decidedN = closedN - expiredN;
   const stopAfter = closed.filter((s) => (s.stoppedAfterTp ?? 0) >= 1);
   const rs = closed.map((s) => s.realizedR).filter((x): x is number => x != null);
   const pos = rs.filter((r) => r > 0).reduce((a, b) => a + b, 0);
@@ -364,12 +375,14 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
   const stats: PerformanceStats = {
     kpis: {
       closedN,
+      decidedN,
+      expiredN,
       openN: open.length,
-      tp1Rate: closedN >= 1 ? pct(tp1.length, closedN) : null,
-      tp2Rate: closedN >= 1 ? pct(tp2.length, closedN) : null,
-      tp3Rate: closedN >= 1 ? pct(tp3.length, closedN) : null,
+      tp1Rate: decidedN >= 1 ? pct(tp1.length, decidedN) : null,
+      tp2Rate: decidedN >= 1 ? pct(tp2.length, decidedN) : null,
+      tp3Rate: decidedN >= 1 ? pct(tp3.length, decidedN) : null,
       ladder: { tp2GivenTp1: pct(tp2.length, tp1.length), tp3GivenTp2: pct(tp3.length, tp2.length), n1: tp1.length, n2: tp2.length },
-      stopBeforeTpRate: closedN >= 1 ? pct(stopBefore.length, closedN) : null,
+      stopBeforeTpRate: decidedN >= 1 ? pct(stopBefore.length, decidedN) : null,
       stopAfterTpRate: tp1.length >= 1 ? pct(stopAfter.length, tp1.length) : null,
       expectancyR: closedN >= 20 ? r2(mean(rs)) : null,
       expectancyConservativeR: closedN >= 20 ? r2(mean(crs)) : null,
@@ -403,11 +416,12 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
       totalRaw,
       sampleNote,
       generatedAt: new Date(now).toISOString(),
-      assumptions: "A signal counts only after a 5-minute candle opened after the call trades through its entry (entries within 0.1% of the signal price fill at the next open). Realized R assumes fills at the exact TP/SL touch with no slippage or fees; a stop after TP exits at the last TP reached; a horizon exit uses the last close; same-candle SL+TP resolves as the stop. Unfilled, unverifiable and open signals never count toward rates.",
+      assumptions: "A signal counts only after a 5-minute candle opened after the call trades through its entry (entries within 0.1% of the signal price fill at the next open). Realized R assumes fills at the exact TP/SL touch with no slippage or fees; a stop after TP exits at the last TP reached; a horizon exit uses the last close; same-candle SL+TP resolves as the stop. Unfilled, unverifiable and open signals never count toward anything. A filled signal that expires at the horizon without touching TP1 or the stop counts in expectancy and profit factor (its horizon exit is real P&L) but not in hit or stop rates, since it reached no verdict.",
       filledN: closedN,
       unfilledN,
       unverifiableN,
       pendingFillN,
+      expiredN,
       provisional: closedN < PROVISIONAL_TARGET,
       provisionalTarget: PROVISIONAL_TARGET,
     },

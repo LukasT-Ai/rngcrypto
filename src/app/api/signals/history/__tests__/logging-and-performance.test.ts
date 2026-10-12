@@ -93,6 +93,27 @@ describe("performance exclusions", () => {
     expect(signals.find((s) => s.id === "e")?.outcomeLabel).toBe("Pending fill");
   });
 
+  it("keeps an expired no-verdict signal in R but out of the hit and stop rates", () => {
+    // Filled, horizon reached, neither TP1 nor stop touched: exited at the last close for +0.3R.
+    const expired = sig({ id: "f", status: "closed", outcome: "expired", closedReason: "horizon", realizedR: 0.3, stoppedAfterTp: null, outcomeTimestamp: NOW, fillStatus: "filled", filledAt: NOW - 3000e3 });
+    const { stats, signals } = computePerformance([win, loss, expired], { dedupe: false, rangeDays: null });
+    expect(stats.kpis.closedN).toBe(3);
+    expect(stats.kpis.decidedN).toBe(2);
+    expect(stats.kpis.expiredN).toBe(1);
+    expect(stats.meta.expiredN).toBe(1);
+    // 1 win of 2 decided, not 1 of 3 closed
+    expect(stats.kpis.tp1Rate).toBe(50);
+    expect(stats.kpis.stopBeforeTpRate).toBe(50);
+    // Real P&L still counts
+    expect(stats.kpis.sumR).toBe(2.3);
+    expect(stats.equity).toHaveLength(3);
+    expect(signals.find((s) => s.id === "f")?.outcomeLabel).toBe("Expired");
+    // Breakdown buckets use the same rule
+    const long = stats.breakdowns.byBias.find((b) => b.key === "LONG");
+    expect(long?.n).toBe(3);
+    expect(long?.tp1Rate).toBe(50);
+  });
+
   it("keeps the legacy stats object in R and skips excluded records", () => {
     const stats = computeStats([win, loss, unfilled, unverifiable]);
     expect(stats.total).toBe(2);

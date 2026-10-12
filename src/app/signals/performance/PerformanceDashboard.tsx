@@ -235,10 +235,11 @@ export default function PerformanceDashboard() {
               <span><span className="font-mono text-white">{data.meta.pendingFillN}</span> awaiting fill</span>
               <span title="Entry never traded within the fill window; excluded from every rate"><span className="font-mono text-white">{data.meta.unfilledN}</span> unfilled</span>
               <span title="Candles needed to verify the fill are no longer available; excluded"><span className="font-mono text-white">{data.meta.unverifiableN}</span> unverifiable</span>
+              <span title="Filled, but neither TP1 nor the stop was touched before the horizon. Counted in R, excluded from hit and stop rates"><span className="font-mono text-white">{data.meta.expiredN ?? 0}</span> expired, no verdict</span>
             </div>
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-              <Kpi label="TP1 hit rate" value={fmtPct(k!.tp1Rate)} sub={`${k!.closedN} filled & closed`} color={k!.tp1Rate == null ? undefined : k!.tp1Rate >= 55 ? GREEN : k!.tp1Rate <= 40 ? RED : undefined} icon={Target} />
+              <Kpi label="TP1 hit rate" value={fmtPct(k!.tp1Rate)} sub={`${k!.decidedN ?? k!.closedN} decided${k!.expiredN ? ` · ${k!.expiredN} expired excluded` : ""}`} color={k!.tp1Rate == null ? undefined : k!.tp1Rate >= 55 ? GREEN : k!.tp1Rate <= 40 ? RED : undefined} icon={Target} />
               <Kpi
                 label="Expectancy"
                 value={k!.expectancyR == null ? (early ? "n<20" : "—") : fmtR(k!.expectancyR)}
@@ -284,7 +285,7 @@ export default function PerformanceDashboard() {
               <div className={cn(CARD, "p-4 space-y-3")}>
                 <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#9CA3AF]">Target ladder</h2>
                 {([
-                  { l: "Reached TP1", v: k!.tp1Rate, n: k!.closedN, sub: "of closed" },
+                  { l: "Reached TP1", v: k!.tp1Rate, n: k!.decidedN ?? k!.closedN, sub: "of decided" },
                   { l: "TP1 → TP2", v: k!.ladder.tp2GivenTp1, n: k!.ladder.n1, sub: "of TP1 winners" },
                   { l: "TP2 → TP3", v: k!.ladder.tp3GivenTp2, n: k!.ladder.n2, sub: "of TP2 winners" },
                 ] as const).map((r) => (

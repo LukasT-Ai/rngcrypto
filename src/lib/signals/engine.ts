@@ -9,6 +9,7 @@
  */
 import { appendSignal } from "../../app/api/signals/history/logger";
 import { FACTOR } from "./factors";
+import { stampActiveSetups } from "./setup-tracker";
 import { fetchOrderFlowRaw, summarizeOrderFlow, type LiquidationSummary, type OrderBookSummary, type OrderFlowRaw } from "./orderflow";
 
 // Bump whenever scoring behaviour changes; every logged signal carries it so history can be bucketed.
@@ -4617,11 +4618,12 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
         }
       : null,
     anticipatory,
-    activeSetups: [
+    // Each setup carries calledAt: when this direction first appeared for the horizon (see setup-tracker.ts).
+    activeSetups: stampActiveSetups(symbol, [
       timeframeOutlook.short.trade ? { horizon: "Short-Term", horizonLabel: "SCALP" as const, timeframes: timeframeOutlook.short.timeframes.join(" + "), ...timeframeOutlook.short.trade } : null,
       timeframeOutlook.medium.trade ? { horizon: "Medium-Term", horizonLabel: "SWING" as const, timeframes: timeframeOutlook.medium.timeframes.join(" + "), ...timeframeOutlook.medium.trade } : null,
       timeframeOutlook.long.trade ? { horizon: "Long-Term", horizonLabel: "POSITION" as const, timeframes: timeframeOutlook.long.timeframes.join(" + "), ...timeframeOutlook.long.trade } : null,
-    ].filter((s): s is NonNullable<typeof s> => s !== null),
+    ].filter((s): s is NonNullable<typeof s> => s !== null)),
     setupAlignment: timeframeOutlook.alignment,
     timeframeOutlook,
     macro: macroState

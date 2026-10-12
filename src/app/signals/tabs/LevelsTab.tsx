@@ -4,7 +4,7 @@ import React from "react"
 import { Clock, Layers } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { SignalsResponse } from "../types"
-import { AMBER, GREEN, RED, SURFACE, SectionTitle, TD, TH, TableScroll, dirColor, dirLabel, fmt, pctFrom } from "../shared"
+import { AMBER, GREEN, RED, SURFACE, SectionTitle, TD, TH, TableScroll, dirColor, dirLabel, fmt, pctFrom, timeAgo } from "../shared"
 
 type LevelRow = { kind: "Support" | "Resistance" | "Fib" | "Daily high" | "Daily low" | "Weekly high" | "Weekly low" | "Buy wall" | "Sell wall"; label: string; price: number }
 
@@ -15,6 +15,13 @@ export function LevelsTab({ d, dp, accent }: { d: SignalsResponse; dp: number; a
   const lv = d.levels
   const book = d.orderBook ?? null
   const fmtUsd = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${(n / 1e3).toFixed(0)}K`)
+  const asOf = d.timestamp ? new Date(d.timestamp) : null
+  const calledStamp = (ts: number) => {
+    const t = new Date(ts)
+    const sameDay = asOf ? t.toDateString() === asOf.toDateString() : true
+    const time = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    return sameDay ? time : `${t.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`
+  }
 
   const rows: LevelRow[] = [
     ...(book?.bidWalls ?? []).map((w) => ({ kind: "Buy wall" as const, label: `Buy wall ${fmtUsd(w.usd)}`, price: w.price })),
@@ -50,6 +57,7 @@ export function LevelsTab({ d, dp, accent }: { d: SignalsResponse; dp: number; a
             align && (
               <span className="text-[10px] text-white/40 ml-auto">
                 {align.alignedCount}/{align.totalCount} timeframes aligned · <span className="text-white/60">{align.tradeType.toLowerCase()}</span>
+                {asOf && <span className="text-white/30"> · as of {asOf.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
               </span>
             )
           }
@@ -73,6 +81,7 @@ export function LevelsTab({ d, dp, accent }: { d: SignalsResponse; dp: number; a
                   <th className={cn(TH, "text-right")}>R:R</th>
                   <th className={cn(TH, "text-right")}>Confidence</th>
                   <th className={TH}>Duration</th>
+                  <th className={TH}>Called</th>
                 </tr>
               </thead>
               <tbody>
@@ -94,6 +103,19 @@ export function LevelsTab({ d, dp, accent }: { d: SignalsResponse; dp: number; a
                       <td className={cn(TD, "text-right text-white/70")}>{s.confidence}%</td>
                       <td className={cn(TD, "font-sans text-white/50")}>
                         <span className="inline-flex items-center gap-1"><Clock className="size-3" />{s.expectedDuration}</span>
+                      </td>
+                      <td className={cn(TD, "font-sans whitespace-nowrap")}>
+                        {s.calledAt ? (
+                          <span title={`First called ${new Date(s.calledAt).toLocaleString()}${s.calledEntry != null ? ` at $${fmt(s.calledEntry, dp)}` : ""}. Levels update with price; the direction has held since then.`}>
+                            <span className="text-white/70">{timeAgo(s.calledAt)}</span>
+                            <span className="ml-1.5 text-[10px] text-white/35">{calledStamp(s.calledAt)}</span>
+                            {s.calledEntry != null && Math.abs(s.calledEntry - s.entry) / s.entry > 0.0005 && (
+                              <span className="ml-1.5 text-[10px] text-white/35">from ${fmt(s.calledEntry, dp)}</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-white/30">—</span>
+                        )}
                       </td>
                     </tr>
                   )

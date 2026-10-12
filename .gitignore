@@ -37,6 +37,7 @@ yarn-error.log*
 # push cache (written at runtime by sync endpoint)
 data/stats-cache.json
 data/signal-history.json
+data/active-setups.json
 
 # vercel
 .vercel

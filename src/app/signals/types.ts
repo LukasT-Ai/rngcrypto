@@ -263,6 +263,10 @@ export interface SignalsResponse {
     basedOn: string
     confidence: number
     expectedDuration: string
+    /** When this direction first appeared for the horizon; resets on flip or when the setup drops out. */
+    calledAt?: number
+    /** Entry price when the call was first published. */
+    calledEntry?: number
   }>
   setupAlignment: {
     allAligned: boolean

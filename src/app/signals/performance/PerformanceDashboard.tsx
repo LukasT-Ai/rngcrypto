@@ -120,6 +120,9 @@ const TABS = [
   { k: "byHourUtc", l: "Hour (UTC)", col: "Hour" },
   { k: "byWeekday", l: "Weekday", col: "Day" },
   { k: "byOilRegime", l: "OIL regime", col: "Regime" },
+  { k: "byRegime", l: "Cloud/200MA", col: "Regime factor" },
+  { k: "byRegimeAlignment", l: "With / against regime", col: "Alignment" },
+  { k: "byEngineVersion", l: "Engine", col: "Version" },
 ] as const
 
 export default function PerformanceDashboard() {

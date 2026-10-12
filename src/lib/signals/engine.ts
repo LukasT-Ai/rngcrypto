@@ -13,7 +13,7 @@ import { stampActiveSetups } from "./setup-tracker";
 import { fetchOrderFlowRaw, summarizeOrderFlow, type LiquidationSummary, type OrderBookSummary, type OrderFlowRaw } from "./orderflow";
 
 // Bump whenever scoring behaviour changes; every logged signal carries it so history can be bucketed.
-export const ENGINE_VERSION = "2026.10.07-tuned";
+export const ENGINE_VERSION = "2026.10.12-regime";
 
 /**
  * Strategy tuning. Defaults come from a 36-configuration sweep of the walk-forward backtest (scripts/backtest.ts,
@@ -37,8 +37,13 @@ export interface Tuning {
   minStopAtr: number;
   /** Multiplier on the per-asset-class percentage stop floor. */
   stopFloorScale: number;
+  /** Weight of the Cloud/200MA/ADX regime factor for crypto (non-crypto scales it x1.2). 0 disables it.
+   *  60d backtest 2026-10-12: 0.10 halved net expectancy (+0.154R -> +0.073R); 0.05 matched the baseline (+0.154R, PF 1.22). */
+  regimeWeight: number;
+  /** Counter-regime gate: off = never, soft = allow confirmed reversals / high conviction at reduced size, hard = always WAIT. */
+  regimeGate: "off" | "soft" | "hard";
 }
-export const DEFAULT_TUNING: Tuning = { minPublishConfidence: 60, shortNeedsHtfBear: true, stopBufferAtr: 0.5, minStopAtr: 0.8, stopFloorScale: 1.0 };
+export const DEFAULT_TUNING: Tuning = { minPublishConfidence: 60, shortNeedsHtfBear: true, stopBufferAtr: 0.5, minStopAtr: 0.8, stopFloorScale: 1.0, regimeWeight: 0.05, regimeGate: "soft" };
 let TUNING: Tuning = { ...DEFAULT_TUNING };
 export function setTuning(partial: Partial<Tuning>): Tuning {
   TUNING = { ...TUNING, ...partial };
@@ -83,7 +88,8 @@ import { getMacroScores, macroAssetFor } from "@/lib/macro/service";
 import type { MacroScores, MacroState as MacroEventIntel } from "@/lib/macro/types";
 import { computeMacroRegime, macroBonus as regimeBonus, type MacroRegimeResult } from "@/lib/ta/macro-regime";
 import { analyzeElliottMTF, type ElliottMTFResult } from "@/lib/ta/elliott";
-import { scoreShortSideComposite, type CompositeResult } from "@/lib/ta/indicators";
+import { scoreShortSideComposite, ichimoku, deathGoldenCross, atrSeries, type CompositeResult, type CompositeOpts } from "@/lib/ta/indicators";
+import type { RegimeInfo, RegimeTFInfo, RegimeTF, TrendStrength } from "@/app/signals/types";
 
 // ── Symbol Configuration ────────────────────────────────────────────────────
 
@@ -311,8 +317,9 @@ function computeATR(candles: Candle[], period = 14): number[] {
   return atrVals;
 }
 
-function computeADX(candles: Candle[], period = 14): number[] {
-  if (candles.length < period + 1) return candles.map(() => 25);
+/** Wilder DMI: ADX plus the directional lines. +DI/-DI swap under a price mirror, ADX is unchanged. */
+export function computeDMI(candles: Candle[], period = 14): { adx: number[]; plusDI: number[]; minusDI: number[] } {
+  if (candles.length < period + 1) return { adx: candles.map(() => 25), plusDI: candles.map(() => 0), minusDI: candles.map(() => 0) };
 
   const plusDM: number[] = [0];
   const minusDM: number[] = [0];
@@ -359,10 +366,14 @@ function computeADX(candles: Candle[], period = 14): number[] {
   }
 
   const dx: number[] = [];
+  const plusDI: number[] = [];
+  const minusDI: number[] = [];
   for (let i = 0; i < candles.length; i++) {
     const tr = smoothTR[i] || 1;
     const pdi = (smoothPlusDM[i] / tr) * 100;
     const mdi = (smoothMinusDM[i] / tr) * 100;
+    plusDI.push(pdi);
+    minusDI.push(mdi);
     const sum = pdi + mdi;
     dx.push(sum === 0 ? 0 : (Math.abs(pdi - mdi) / sum) * 100);
   }
@@ -379,7 +390,11 @@ function computeADX(candles: Candle[], period = 14): number[] {
       adx.push((adx[i - 1] * (period - 1) + dx[i]) / period);
     }
   }
-  return adx;
+  return { adx, plusDI, minusDI };
+}
+
+function computeADX(candles: Candle[], period = 14): number[] {
+  return computeDMI(candles, period).adx;
 }
 
 function computeBB(
@@ -2852,7 +2867,7 @@ interface TaSystem {
 
 const STRUCTURAL = new Set(["marketStructure", "liquiditySweep", "doubleTopBottom", "headAndShouldersBoth", "wedge"]);
 
-function computeTaSystem(series: Record<string, Candle[]>, tfWeights: Record<string, number>): TaSystem | null {
+function computeTaSystem(series: Record<string, Candle[]>, tfWeights: Record<string, number>, opts?: CompositeOpts): TaSystem | null {
   const perTF: TaSystem["perTF"] = {};
   const comps: Record<string, CompositeResult> = {};
   let wsum = 0, trend = 0, exh = 0;
@@ -2861,7 +2876,7 @@ function computeTaSystem(series: Record<string, Candle[]>, tfWeights: Record<str
     if (!c || c.length < 60) continue;
     let r: CompositeResult;
     try {
-      r = scoreShortSideComposite(c);
+      r = scoreShortSideComposite(c, opts);
     } catch {
       continue;
     }
@@ -2920,6 +2935,271 @@ function computeTaSystem(series: Record<string, Candle[]>, tfWeights: Record<str
     notes.push(`Trend system flat (${trendScore > 0 ? "+" : ""}${trendScore}); exhaustion ${exhaustionScore > 0 ? "+" : ""}${exhaustionScore}`);
   }
   return { trendScore, exhaustionScore, score: clamp(score, -100, 100), setup, direction, confirmedBy, notes, perTF };
+}
+
+// ── Cloud / 200MA / ADX regime factor ───────────────────────────────────────
+// Three pillars per timeframe (Ichimoku 0.40, 200MA 0.35, ADX/DI 0.25), each -100..100 and strictly
+// sign-symmetric: mirroring the candles negates every line, so the factor cannot favour one side. Blended
+// 15m 0.2 / 4h 0.4 / 1d 0.4. The trend-system composite keeps a small Ichimoku weight for its
+// reversal/continuation logic; THIS factor owns the regime vote. Needs >= 80 bars per TF (Ichimoku) and
+// >= 200 for the 200MA pillar; a thinner TF degrades to the pillars it can compute, never throws.
+const REGIME_TF_WEIGHTS: Record<RegimeTF, number> = { "15m": 0.2, "4h": 0.4, "1d": 0.4 };
+const REGIME_TFS: RegimeTF[] = ["15m", "4h", "1d"];
+
+function trendStrengthFor(adx: number): TrendStrength {
+  return adx < 15 ? "none" : adx < 20 ? "weak" : adx < 25 ? "emerging" : adx <= 40 ? "strong" : "extreme";
+}
+/** Sign-symmetric rounding so round(-x) === -round(x) exactly (Math.round is not symmetric at .5). */
+function rsym(x: number, decimals = 1): number {
+  const m = Math.pow(10, decimals);
+  return (Math.sign(x) * Math.round(Math.abs(x) * m)) / m;
+}
+const sgn = (v: number): number => (v > 0 ? 1 : v < 0 ? -1 : 0);
+
+interface RegimeTFCalc {
+  info: RegimeTFInfo;
+  transition: boolean;
+  notes: string[];
+}
+
+function regimeForTF(c: Candle[], tf: RegimeTF, dec: number): RegimeTFCalc | null {
+  if (c.length < 80) return null;
+  const n = c.length - 1;
+  const closes = c.map((k) => k.close);
+  const close = closes[n];
+  const atr = atrSeries(c, 14)[n] || 1;
+  const notes: string[] = [];
+
+  // ── Ichimoku pillar ──
+  const ich = ichimoku(c);
+  const cloudTop = Math.max(ich.senkouA, ich.senkouB);
+  const cloudBottom = Math.min(ich.senkouA, ich.senkouB);
+  const cloudThin = cloudTop - cloudBottom < 0.5 * atr;
+  const colourSign = sgn(ich.senkouA - ich.senkouB);
+  const futureSign = sgn(ich.futureSenkouA - ich.futureSenkouB);
+  const posSign = ich.pricePosition === "above" ? 1 : ich.pricePosition === "below" ? -1 : 0;
+  const tkState = sgn(ich.tenkan - ich.kijun);
+  const chikouSign = sgn(close - closes[n - 26]);
+  let ichi = posSign * 25 * (cloudThin ? 0.5 : 1);
+  ichi += colourSign * 10;
+  if (ich.kumoTwist !== "none") ichi += (ich.kumoTwist === "bullish" ? 1 : -1) * 10;
+  else ichi += futureSign * 5;
+  if (ich.tkCross !== "none" && ich.tkCrossBarsAgo >= 0) {
+    const cs = ich.tkCross === "bullish" ? 1 : -1;
+    const base = posSign === cs ? 20 : posSign === 0 ? 12 : 6;
+    const bars = ich.tkCrossBarsAgo;
+    const decay = bars <= 5 ? 1 : bars >= 20 ? 0.5 : 1 - (0.5 * (bars - 5)) / 15;
+    ichi += cs * base * decay;
+  } else {
+    ichi += tkState * 8;
+  }
+  ichi += chikouSign * 15;
+  ichi += sgn(close - ich.kijun) * 10;
+  ichi += sgn(close - ich.tenkan) * 10;
+  ichi = clamp(ichi, -100, 100);
+
+  // ── 200MA pillar ──
+  let sma200: number | null = null;
+  let ema200: number | null = null;
+  let ma200Side: RegimeTFInfo["ma200Side"] = null;
+  let ma200DistAtr: number | null = null;
+  let ma200Slope: RegimeTFInfo["ma200Slope"] = null;
+  let freshCross: RegimeTFInfo["freshCross"] = null;
+  let barsSinceCross: number | null = null;
+  let goldenCross: RegimeTFInfo["goldenCross"] = null;
+  let maPillar: number | null = null;
+  let maSign = 0;
+  if (closes.length >= 200) {
+    const smaArr = smaArray(closes, 200);
+    const emaArr = ema(closes, 200);
+    sma200 = smaArr[n];
+    ema200 = emaArr[n];
+    maSign = sgn(close - sma200);
+    ma200Side = maSign > 0 ? "above" : maSign < 0 ? "below" : "at";
+    const dist = (close - sma200) / atr;
+    ma200DistAtr = rsym(dist, 2);
+    const slope = closes.length >= 210 ? (smaArr[n] - smaArr[n - 10]) / atr : 0;
+    ma200Slope = slope > 0.05 ? "rising" : slope < -0.05 ? "falling" : "flat";
+    let m = maSign * 25 + sgn(close - ema200) * 10 + clamp(slope * 20, -15, 15);
+    const ad = Math.abs(dist);
+    m += maSign * (ad <= 1 ? 20 : ad <= 3 ? 10 : ad <= 4 ? 0 : -10);
+    // Fresh price cross of the SMA200: the most recent side flip within 30 bars, confirmed by a second close
+    let crossBars: number | null = null;
+    for (let i = n; i >= Math.max(200, n - 30); i--) {
+      const a = sgn(closes[i] - smaArr[i]);
+      const b = sgn(closes[i - 1] - smaArr[i - 1]);
+      if (a !== 0 && b !== 0 && a !== b) {
+        crossBars = n - i;
+        break;
+      }
+    }
+    if (crossBars != null) {
+      barsSinceCross = crossBars;
+      if (crossBars >= 1 && maSign !== 0) {
+        const decay = crossBars <= 5 ? 1 : crossBars >= 30 ? 0 : 1 - (crossBars - 5) / 25;
+        m += maSign * 15 * decay;
+        freshCross = maSign > 0 ? "bullish" : "bearish";
+      }
+    }
+    if (c.length >= 202) {
+      const gx = deathGoldenCross(c);
+      if (gx.barsSinceCross >= 0) {
+        goldenCross = gx.state;
+        m += (gx.state === "golden" ? 1 : -1) * (gx.barsSinceCross <= 30 ? 15 : 8);
+      }
+    }
+    maPillar = clamp(m, -100, 100);
+  }
+
+  // ── ADX / DI pillar ──
+  const dmi = computeDMI(c, 14);
+  const adx = dmi.adx[n];
+  const pdi = dmi.plusDI[n];
+  const mdi = dmi.minusDI[n];
+  const diSign = sgn(pdi - mdi);
+  const diSpread = Math.abs(pdi - mdi) / (pdi + mdi || 1);
+  const adxDelta5 = adx - dmi.adx[Math.max(0, n - 5)];
+  const adxDelta10 = adx - dmi.adx[Math.max(0, n - 10)];
+  const adxSlope: RegimeTFInfo["adxSlope"] = adxDelta5 > 1 ? "rising" : adxDelta5 < -1 ? "falling" : "flat";
+  let sf = adx < 15 ? 0.15 : adx < 20 ? 0.3 : adx < 25 ? 0.6 : 1.0;
+  sf += adxSlope === "rising" ? 0.15 : adxSlope === "falling" ? -0.15 : 0;
+  const adxPillar = diSign * clamp(sf * (55 + 45 * diSpread), 0, 100);
+
+  // ── Blend the pillars present ──
+  const pillars: [number, number][] = [[ichi, 0.4], [adxPillar, 0.25]];
+  if (maPillar != null) pillars.push([maPillar, 0.35]);
+  const wsum = pillars.reduce((a, [, w]) => a + w, 0);
+  let score = pillars.reduce((a, [v, w]) => a + v * w, 0) / wsum;
+
+  // Agreement between the two structural pillars: cloud side and 200MA side
+  let transition = false;
+  let structuralSign = posSign;
+  if (maPillar != null && posSign !== 0 && maSign !== 0) {
+    if (posSign === maSign) score *= 1.15;
+    else {
+      score *= 0.6;
+      transition = true;
+      structuralSign = 0;
+    }
+  } else if (posSign === 0) {
+    structuralSign = maSign;
+  }
+  // DI conflict early warning: directional movement turning against the structure while ADX builds
+  if (structuralSign !== 0 && diSign === -structuralSign && adx >= 20 && adxDelta10 > 0) {
+    score = sgn(score) * Math.max(0, Math.abs(score) - 15);
+    notes.push(`DI turning ${diSign > 0 ? "bullish" : "bearish"} against the ${structuralSign > 0 ? "bull" : "bear"} regime on ${tf}, ADX rising: trend weakening`);
+  }
+  score = clamp(rsym(score), -100, 100);
+  if (adx > 40) notes.push(`ADX ${adx.toFixed(0)} on ${tf}: extreme trend, late-entry risk`);
+
+  const info: RegimeTFInfo = {
+    score,
+    cloud: ich.pricePosition,
+    cloudColor: colourSign > 0 ? "bullish" : colourSign < 0 ? "bearish" : "flat",
+    cloudThin,
+    tkCross: ich.tkCross,
+    tkCrossBarsAgo: ich.tkCrossBarsAgo,
+    tkState: tkState > 0 ? "bullish" : tkState < 0 ? "bearish" : "flat",
+    kumoTwist: ich.kumoTwist,
+    chikou: chikouSign > 0 ? "above" : chikouSign < 0 ? "below" : "at",
+    tenkan: round(ich.tenkan, dec),
+    kijun: round(ich.kijun, dec),
+    cloudTop: round(cloudTop, dec),
+    cloudBottom: round(cloudBottom, dec),
+    sma200: sma200 != null ? round(sma200, dec) : null,
+    ema200: ema200 != null ? round(ema200, dec) : null,
+    ma200Side,
+    ma200DistAtr,
+    ma200Slope,
+    freshCross,
+    barsSinceCross,
+    goldenCross,
+    adx: rsym(adx),
+    plusDI: rsym(pdi),
+    minusDI: rsym(mdi),
+    adxSlope,
+    diBias: diSign > 0 ? "bullish" : diSign < 0 ? "bearish" : "flat",
+    trendStrength: trendStrengthFor(adx),
+  };
+  return { info, transition, notes };
+}
+
+export function computeRegime(
+  series: Partial<Record<RegimeTF, Candle[]>>,
+  dec = 2,
+  ctx: { squeeze?: string | null } = {}
+): RegimeInfo | null {
+  const perTF: Partial<Record<RegimeTF, RegimeTFInfo>> = {};
+  const calcs: Partial<Record<RegimeTF, RegimeTFCalc>> = {};
+  let wsum = 0;
+  let acc = 0;
+  let anyTransition = false;
+  for (const tf of REGIME_TFS) {
+    const c = series[tf];
+    if (!c || !c.length) continue;
+    let r: RegimeTFCalc | null;
+    try {
+      r = regimeForTF(c, tf, dec);
+    } catch {
+      r = null;
+    }
+    if (!r || !Number.isFinite(r.info.score)) continue;
+    calcs[tf] = r;
+    perTF[tf] = r.info;
+    const w = REGIME_TF_WEIGHTS[tf];
+    wsum += w;
+    acc += w * r.info.score;
+    if (r.transition) anyTransition = true;
+  }
+  if (wsum === 0) return null;
+  let score = acc / wsum;
+  const notes: string[] = [];
+
+  const adx15 = calcs["15m"]?.info.adx ?? null;
+  const adx4 = calcs["4h"]?.info.adx ?? null;
+  const adx1d = calcs["1d"]?.info.adx ?? null;
+  const blendedAdx = adx15 != null && adx4 != null ? 0.4 * adx15 + 0.6 * adx4 : (adx4 ?? adx15 ?? adx1d ?? 0);
+  const trendStrength = trendStrengthFor(blendedAdx);
+
+  // Regime without trend strength: the classic breakout trap (above cloud and 200MA, ADX < 20, volume fading).
+  // The squeeze gate in computeMultiFactorCall already forces WAIT on volatility_compression + ADX < 20, so the
+  // damping is capped at 0.75 there to avoid penalising the same low ADX twice.
+  let damped = false;
+  if (adx15 != null && adx4 != null && adx15 < 20 && adx4 < 20) {
+    score *= ctx.squeeze === "volatility_compression" ? 0.75 : 0.6;
+    damped = true;
+  }
+  score = clamp(rsym(score), -100, 100);
+
+  const hi = [calcs["4h"]?.info.score, calcs["1d"]?.info.score].filter((v): v is number => v != null);
+  let label: RegimeInfo["label"];
+  if (hi.length && hi.every((v) => v >= 30)) label = "Bull regime";
+  else if (hi.length && hi.every((v) => v <= -30)) label = "Bear regime";
+  else if (anyTransition) label = "Transition";
+  else label = "Mixed";
+  // Flat 200MA chop on both higher timeframes never reads as a regime
+  if (adx4 != null && adx1d != null && adx4 < 20 && adx1d < 20 && Math.abs(score) < 30) label = "Mixed";
+
+  const describe = (tf: RegimeTF) => {
+    const i = perTF[tf];
+    if (!i) return null;
+    const ma = i.ma200Side ? `${i.ma200Side} 200MA` : "200MA n/a";
+    return `${tf} ${i.cloud} cloud, ${ma}, ADX ${i.adx.toFixed(0)}`;
+  };
+  const parts = (["4h", "1d"] as RegimeTF[]).map(describe).filter(Boolean);
+  notes.push(`${label} (${score > 0 ? "+" : ""}${score}): ${parts.join("; ") || describe("15m") || "insufficient data"}`);
+  if (damped) {
+    notes.push(`Regime present but trend strength absent (ADX ${adx15!.toFixed(0)}/${adx4!.toFixed(0)} on 15m/4h): breakout-trap risk, favour range entries`);
+  }
+  for (const tf of ["4h", "1d", "15m"] as RegimeTF[]) {
+    const i = perTF[tf];
+    if (!i) continue;
+    if (i.freshCross) notes.push(`Fresh 200MA ${i.freshCross === "bullish" ? "reclaim" : "loss"} on ${tf} (${i.barsSinceCross} bars ago)`);
+    if (i.tkCross !== "none" && i.tkCrossBarsAgo >= 0 && i.tkCrossBarsAgo <= 5) notes.push(`${i.tkCross === "bullish" ? "Bullish" : "Bearish"} Tenkan/Kijun cross on ${tf} ${i.cloud} the cloud (${i.tkCrossBarsAgo} bars ago)`);
+  }
+  for (const tf of REGIME_TFS) for (const nte of calcs[tf]?.notes ?? []) notes.push(nte);
+
+  return { score, label, trendStrength, gate: "none", perTF, notes: notes.slice(0, 5) };
 }
 
 function computeMultiFactorCall(
@@ -2996,6 +3276,7 @@ function computeMultiFactorCall(
     change24h: number;
     elliott: ElliottMTFResult | null;
     taSystem: TaSystem | null;
+    regime: RegimeInfo | null;
   },
   dec: number
 ) {
@@ -3060,19 +3341,20 @@ function computeMultiFactorCall(
     change24h,
     elliott,
     taSystem,
+    regime: regimeInfo,
   } = params;
 
   const trendDir15m =
     ema9 > ema21 && ema21 > ema50 ? "bull" : ema9 < ema21 && ema21 < ema50 ? "bear" : "mixed";
 
   const weights = {
-    marketStructure: 0.15,
-    momentum: 0.12,
+    marketStructure: 0.13,
+    momentum: 0.11,
     volume: 0.1,
     derivatives: 0.08,
-    htf: 0.1,
-    bollinger: 0.08,
-    divergences: 0.08,
+    htf: 0.08,
+    bollinger: 0.07,
+    divergences: 0.07,
     sentiment: 0.03,
     marketData: 0.05,
     patterns: 0.05,
@@ -3083,7 +3365,9 @@ function computeMultiFactorCall(
     // argue for shorts; wave 2, 4 and C bottoms argue for longs. Weight scales with count confidence.
     elliott: 0.08,
     // Trend-system + exhaustion composite (SMC, Ichimoku, squeeze, Chandelier, TD Sequential, patterns, sweeps)
-    taSystem: 0.12,
+    taSystem: 0.09,
+    // Cloud / 200MA / ADX regime across 15m, 4h, 1d (tunable; 0 removes it from the denominator)
+    regime: TUNING.regimeWeight,
     macro: 0,
     event: 0,
     confirmation: 0,
@@ -3098,10 +3382,11 @@ function computeMultiFactorCall(
       // OIL: headlines are a first-class driver; derivatives data does not exist for WTI on Strike
       weights.sentiment = 0.22;
       weights.derivatives = 0;
-      weights.marketStructure = 0.16;
-      weights.momentum = 0.13;
+      weights.marketStructure = 0.12;
+      weights.momentum = 0.09;
       weights.volume = 0.11;
-      weights.htf = 0.12;
+      weights.htf = 0.08;
+      weights.regime = TUNING.regimeWeight * 1.2;
       weights.bollinger = 0.08;
       weights.divergences = 0.08;
       weights.patterns = 0.06;
@@ -3110,10 +3395,11 @@ function computeMultiFactorCall(
       // Stocks / indices / metals: no derivatives data exists on Strike, so give that weight to price action
       weights.sentiment = 0;
       weights.derivatives = 0;
-      weights.marketStructure = 0.22;
-      weights.momentum = 0.17;
+      weights.marketStructure = 0.18;
+      weights.momentum = 0.13;
       weights.volume = 0.13;
-      weights.htf = 0.14;
+      weights.htf = 0.1;
+      weights.regime = TUNING.regimeWeight * 1.2;
       weights.bollinger = 0.1;
       weights.divergences = 0.1;
       weights.patterns = 0.08;
@@ -3124,8 +3410,8 @@ function computeMultiFactorCall(
   if (isCrypto && oilGeoScore != null) {
     // BTC / ADA with a live catalyst engine: headlines matter more than the 3% default
     weights.sentiment = 0.14;
-    weights.marketStructure = 0.13;
-    weights.momentum = 0.11;
+    weights.marketStructure = 0.11;
+    weights.momentum = 0.1;
   }
 
   // Macro Event Intelligence (BTC / GOLD / OIL): weights are configured in lib/macro/service.ts and the
@@ -3185,6 +3471,8 @@ function computeMultiFactorCall(
 
   const taScore = taSystem ? taSystem.score : 0;
   if (!taSystem) weights.taSystem = 0;
+  const regimeScore = regimeInfo ? regimeInfo.score : 0;
+  if (!regimeInfo) weights.regime = 0;
 
   // A component whose data source returned nothing is NOT a neutral vote: drop its weight from the
   // denominator so the remaining evidence is not diluted toward 50 by feeds that are simply down.
@@ -3224,6 +3512,7 @@ function computeMultiFactorCall(
       liq.score * weights.liquidation +
       ewScore * weights.elliott +
       taScore * weights.taSystem +
+      regimeScore * weights.regime +
       (macroScores?.macro ?? 0) * weights.macro +
       (macroScores?.event ?? 0) * weights.event +
       (macroScores?.confirmation ?? 0) * weights.confirmation) /
@@ -3312,6 +3601,12 @@ function computeMultiFactorCall(
       assessment:
         taScore > 40 ? "Strong Bullish" : taScore > 12 ? "Bullish" : taScore > -12 ? "Neutral" : taScore > -40 ? "Bearish" : "Strong Bearish",
       weight: Math.round(weights.taSystem * 100),
+    },
+    {
+      category: FACTOR.REGIME,
+      assessment:
+        regimeScore > 40 ? "Strong Bullish" : regimeScore > 12 ? "Bullish" : regimeScore > -12 ? "Neutral" : regimeScore > -40 ? "Bearish" : "Strong Bearish",
+      weight: Math.round(weights.regime * 100),
     },
     {
       category: FACTOR.ELLIOTT,
@@ -3434,6 +3729,27 @@ function computeMultiFactorCall(
     bias = "SHORT";
   }
 
+  // Counter-regime gate. Only evaluated inside a directional call: when isWait already fired the low-ADX /
+  // squeeze logic owns the WAIT and the regime must not add a second penalty for the same condition.
+  let counterTrend = false;
+  if (regimeInfo && TUNING.regimeGate !== "off" && (bias === "LONG" || bias === "SHORT")) {
+    const counter = (bias === "LONG" && regimeInfo.label === "Bear regime") || (bias === "SHORT" && regimeInfo.label === "Bull regime");
+    if (counter) {
+      const against = bias === "LONG" ? "bear" : "bull";
+      const allowed = TUNING.regimeGate === "soft" && (taSystem?.setup === "reversal_confirmed" || confidence >= TUNING.minPublishConfidence + 8);
+      if (allowed) {
+        regimeInfo.gate = "counter_trend";
+        counterTrend = true;
+        confidence = Math.round(confidence * 0.85);
+        gateNotes.push(`Counter-trend: fighting the ${against} regime (wrong side of the cloud and 200MA on 4h/1d), reduced size, targets capped`);
+      } else {
+        regimeInfo.gate = bias === "LONG" ? "blocked_long" : "blocked_short";
+        gateNotes.push(`${bias === "LONG" ? "Long" : "Short"} lean fighting a ${against} regime (wrong side of the cloud and 200MA on 4h/1d) with no confirmed reversal structure: standing aside`);
+        bias = "WAIT";
+      }
+    }
+  }
+
   // Geopolitical regime: gap risk sizing + headline override for OIL
   let geoOverride: string | null = null;
   let sizeMultiplier = 1;
@@ -3472,6 +3788,8 @@ function computeMultiFactorCall(
       }
     }
   }
+
+  if (counterTrend) sizeMultiplier = Math.min(sizeMultiplier, 0.5);
 
   // Macro regime bonus (crypto only): applied BEFORE levels are built so a lean that drops below tradeable
   // conviction becomes a real WAIT, with the provisional WAIT plan instead of a stale long/short plan.
@@ -3618,10 +3936,12 @@ function computeMultiFactorCall(
 
   const ewNotes = elliott && elliott.consensus.direction && Math.abs(ewScore) >= 10 ? elliott.consensus.notes.slice(0, 2).map((n) => `Elliott ${n}`) : [];
   const taNotes = taSystem ? taSystem.notes.slice(0, 1) : [];
+  const regimeNotes = regimeInfo ? regimeInfo.notes.slice(0, 1) : [];
   const reasoning = [
     ...gateNotes, ...macroNotes,
     ...ms.notes,
     ...mom.notes,
+    ...regimeNotes,
     ...taNotes,
     ...ewNotes,
     ...vol.notes.slice(0, 2),
@@ -3642,6 +3962,13 @@ function computeMultiFactorCall(
   if (taSystem?.setup === "reversal_confirmed" && taSystem.direction === "bullish") bullCase.push(`Reversal long confirmed (${taSystem.confirmedBy[0]})`);
   if (taSystem?.setup === "continuation" && taSystem.direction === "bearish") bearCase.push("Trend system: bearish continuation (structure, Ichimoku, Chandelier agree)");
   if (taSystem?.setup === "continuation" && taSystem.direction === "bullish") bullCase.push("Trend system: bullish continuation (structure, Ichimoku, Chandelier agree)");
+  if (regimeInfo?.label === "Bull regime") bullCase.push("Bull regime: price above the Ichimoku cloud and 200MA on 4h and 1d");
+  if (regimeInfo?.label === "Bear regime") bearCase.push("Bear regime: price below the Ichimoku cloud and 200MA on 4h and 1d");
+  for (const tf of ["4h", "1d"] as const) {
+    const fc = regimeInfo?.perTF[tf]?.freshCross;
+    if (fc === "bullish") bullCase.push(`Fresh 200MA reclaim on ${tf}`);
+    if (fc === "bearish") bearCase.push(`Fresh 200MA loss on ${tf}`);
+  }
   if (ewScore >= 20) bullCase.push("Elliott count: corrective wave completing — impulse up favoured");
   if (ewScore <= -20) bearCase.push("Elliott count: terminal wave (5 or B) — reversal down favoured");
   if (ms.score > 0)
@@ -3763,6 +4090,9 @@ function computeMultiFactorCall(
     strongCategories,
     weightedScore: Math.round(weightedScore * 10) / 10,
     macroBonus,
+    regimeLabel: regimeInfo?.label ?? null,
+    regimeScore: regimeInfo?.score ?? null,
+    regimeGate: regimeInfo?.gate ?? "none",
   };
 }
 
@@ -3926,7 +4256,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
   const fetches: Promise<unknown>[] = [
     // 0: 15m klines
     fetchJSON(
-      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=15m&limit=200&priceType=last`
+      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=15m&limit=400&priceType=last`
     ),
     // 1: 1h klines
     fetchJSON(
@@ -3934,11 +4264,11 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
     ),
     // 2: 4h klines
     fetchJSON(
-      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=4h&limit=100&priceType=last`
+      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=4h&limit=400&priceType=last`
     ),
     // 3: daily klines
     fetchJSON(
-      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=1d&limit=200&priceType=last`
+      `${STRIKE}/v2/klines?symbol=${strikeSymbol}&interval=1d&limit=400&priceType=last`
     ),
     // 4: mark price
     fetchJSON(`${STRIKE}/v2/markPrice?symbol=${strikeSymbol}`),
@@ -4283,7 +4613,8 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
   }
 
   // ── Trend-system + exhaustion composite across 15m / 4h / 1d ───────────────
-  const taSystem = computeTaSystem({ "15m": candles15m, "4h": candles4h, "1d": candlesDaily }, { "15m": 0.25, "4h": 0.4, "1d": 0.35 });
+  const taSystem = computeTaSystem({ "15m": candles15m, "4h": candles4h, "1d": candlesDaily }, { "15m": 0.25, "4h": 0.4, "1d": 0.35 }, { weights: { ichimoku: 0.3, deathGoldenCross: 0 } });
+  const regime = computeRegime({ "15m": candles15m, "4h": candles4h, "1d": candlesDaily }, dec, { squeeze });
 
   // ── Compute trade call ─────────────────────────────────────────────────────
   const call = computeMultiFactorCall(
@@ -4349,6 +4680,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       change24h,
       elliott: elliottMTF,
       taSystem,
+      regime,
     },
     dec
   );
@@ -4606,6 +4938,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
     },
     call,
     taSystem,
+    regime,
     elliott: elliottMTF
       ? {
           consensus: elliottMTF.consensus,
@@ -4795,7 +5128,8 @@ export function scoreFromCandles(input: ScoreInput) {
   } catch {
     elliottMTF = null;
   }
-  const taSystem = computeTaSystem({ "15m": candles15m, "4h": candles4h, "1d": candlesDaily }, { "15m": 0.25, "4h": 0.4, "1d": 0.35 });
+  const taSystem = computeTaSystem({ "15m": candles15m, "4h": candles4h, "1d": candlesDaily }, { "15m": 0.25, "4h": 0.4, "1d": 0.35 }, { weights: { ichimoku: 0.3, deathGoldenCross: 0 } });
+  const regime = computeRegime({ "15m": candles15m, "4h": candles4h, "1d": candlesDaily }, dec, { squeeze: A.squeeze });
   const prevRsi15m = A.rsiArr.length >= 2 ? A.rsiArr[A.rsiArr.length - 2] : null;
 
   const call = computeMultiFactorCall(
@@ -4861,6 +5195,7 @@ export function scoreFromCandles(input: ScoreInput) {
       change24h: A.change24h,
       elliott: elliottMTF,
       taSystem,
+      regime,
     },
     dec
   );
@@ -4878,6 +5213,9 @@ export function scoreFromCandles(input: ScoreInput) {
     regime: call.regime,
     weightedScore: call.weightedScore,
     factors: call.signalFactors,
+    regimeLabel: call.regimeLabel,
+    regimeScore: call.regimeScore,
+    regimeGate: call.regimeGate,
     price: currentPrice,
     atr: A.tradeATR,
   };

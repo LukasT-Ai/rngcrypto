@@ -24,6 +24,7 @@ export type SectionId =
   | "sec-tf-alignment"
   | "sec-chart"
   | "sec-macro"
+  | "sec-regime"
 
 export type Tone = "pos" | "neg" | "neutral"
 
@@ -111,6 +112,36 @@ function factorReason(d: SignalsResponse, category: string, assessment: string, 
       const h = d.htf
       const daily = h.trendDaily ? ` · daily ${h.trendDaily}` : ""
       return { ...base, anchor: "sec-htf", text: `Higher timeframes: 1h ${h.trend1h} · 4h ${h.trend4h}${daily}` }
+    }
+    case FACTOR.REGIME: {
+      const r = d.regime
+      if (!r) return null
+      const tf = r.perTF["4h"] ?? r.perTF["1d"]
+      if (!tf) return null
+      const tfName = r.perTF["4h"] ? "4h" : "daily"
+      const cloud = tf.cloud === "above" ? `above the ${tfName} cloud` : tf.cloud === "below" ? `below the ${tfName} cloud` : `inside the ${tfName} cloud (no edge)`
+      const ma = tf.ma200Side === "above" ? "above the 200MA" : tf.ma200Side === "below" ? "below the 200MA" : tf.ma200Side === "at" ? "sitting on the 200MA" : null
+      const slope = tf.ma200Slope && tf.ma200Slope !== "flat" ? ` (${tf.ma200Slope})` : ""
+      const tk = tf.tkCross !== "none" && tf.tkCrossBarsAgo >= 0 && tf.tkCrossBarsAgo <= 5 ? `; fresh ${tf.tkCross} TK cross` : ""
+      const gx = tf.goldenCross === "golden" ? "; golden cross in place" : tf.goldenCross === "death" ? "; death cross in place" : ""
+      const weakAdx = r.trendStrength === "none" || r.trendStrength === "weak"
+      const adxTxt = weakAdx
+        ? `; ADX ${tf.adx.toFixed(0)} says no trend yet`
+        : r.trendStrength === "emerging"
+          ? `; ADX ${tf.adx.toFixed(0)} emerging${tf.diBias !== "flat" ? ` with ${tf.diBias === "bullish" ? "+DI" : "-DI"} leading` : ""}`
+          : r.trendStrength === "extreme"
+            ? `; ADX ${tf.adx.toFixed(0)} stretched`
+            : `; trend strength strong, ADX ${tf.adx.toFixed(0)}${tf.diBias !== "flat" ? `, ${tf.diBias === "bullish" ? "+DI" : "-DI"} leading` : ""}`
+      const text =
+        dir > 0
+          ? `Trend regime bullish: price ${cloud}${ma ? ` and ${ma}${slope}` : ""}${tk}${gx}${adxTxt}`
+          : dir < 0
+            ? `Trend regime bearish: price ${cloud}${ma ? ` and ${ma}${slope}` : ""}${tk}${gx}${adxTxt}`
+            : `Trend regime mixed: price ${cloud}${ma ? `, ${ma}${slope}` : ""}${adxTxt}; wait for the cloud and 200MA to agree`
+      // Directional regime without trend strength is a range, not a breakout: neutral tone, half weight so it
+      // lands in "But watch" rather than "Why".
+      if (dir !== 0 && weakAdx) return { ...base, tone: "neutral", weight: base.weight / 2, anchor: "sec-regime", text }
+      return { ...base, anchor: "sec-regime", text }
     }
     case FACTOR.BOLLINGER: {
       const bb = ind.bb
@@ -220,6 +251,15 @@ export function buildRecommendation(
   }
 
   // ── Extra evidence not in the factor list ───────────────────────────────
+  if (d.regime?.gate === "counter_trend" && action !== "WAIT") {
+    const against = d.regime.label === "Bull regime" ? "bull" : d.regime.label === "Bear regime" ? "bear" : "higher-timeframe"
+    reasons.push({
+      text: `Counter-trend call against the ${against} regime: half size, targets capped at the 4h Kijun or 200MA.`,
+      anchor: "sec-regime",
+      tone: "neg",
+      weight: 15,
+    })
+  }
   if (map?.signal && map.signal.bias !== "WAIT") {
     const dir = map.signal.bias === "LONG" ? 1 : -1
     reasons.push({
@@ -389,8 +429,17 @@ export function buildRecommendation(
   let oneLiner: string
   if (action === "WAIT") {
     const h = d.htf
+    const rg = d.regime
+    const rgDaily = rg?.perTF["1d"]
+    const rgDirectional = rg?.label === "Bull regime" || rg?.label === "Bear regime"
+    const rgWeak = rg != null && (rg.trendStrength === "none" || rg.trendStrength === "weak")
+    const rgAdx = rg?.perTF["4h"]?.adx ?? rgDaily?.adx ?? d.indicators.adx
     oneLiner = call.geoOverride
       ? call.geoOverride
+      : rgDaily?.cloud === "inside"
+        ? "Price is inside the daily cloud, the trend is undecided; wait for a clean exit."
+        : rgDirectional && rgWeak
+          ? `Price is on the ${rg!.label === "Bull regime" ? "bull" : "bear"} side of the daily cloud and 200MA but ADX ${rgAdx.toFixed(0)} shows no trend; wait for a breakout before committing.`
       : Math.abs(bull - bear) <= 1
         ? `Signals are mixed (${bull} bullish vs ${bear} bearish factors, confidence ${call.confidence}%) — there is no edge right now.`
         : d.patterns.squeeze === "volatility_compression" && d.indicators.adx < 20

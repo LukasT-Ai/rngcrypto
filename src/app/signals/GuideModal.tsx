@@ -25,12 +25,24 @@ const SECTIONS = [
     ],
   },
   {
-    title: "Regime",
+    title: "Volatility regime",
     color: "rgba(255,255,255,0.7)",
     items: [
       { label: "Trending", desc: "ADX above 25. Price is moving directionally. Favor trend-following entries." },
       { label: "Transitional", desc: "ADX 20 to 25. Market shifting between trend and range. Be cautious." },
       { label: "Ranging", desc: "ADX below 20. Choppy price action. Fade extremes, tighten stops." },
+    ],
+  },
+  {
+    title: "Trend regime (cloud, 200MA & ADX)",
+    color: "#7BEBC2",
+    items: [
+      { label: "Cloud", desc: "Ichimoku cloud on 15m, 4h and daily. Above the cloud is a bull regime, below is bear, inside is undecided. Do not trade against the daily cloud without a confirmed reversal." },
+      { label: "TK cross", desc: "Tenkan crossing Kijun. A bullish cross above the cloud is a strong continuation signal; a cross inside the cloud is weak." },
+      { label: "200MA", desc: "Price above a rising 200-period average is a bull regime; below a falling one is bear. Distance is shown in ATR: more than 3 ATR away means stretched, expect a pullback toward it." },
+      { label: "Golden / death", desc: "50 crossing 200 on the daily. Golden is long-term bull, death is long-term bear. Slow, but it sets the bias for everything else." },
+      { label: "ADX", desc: "Strength, not direction. Below 20 means no trend: a bullish regime with weak ADX is a range, not a breakout. Above 25 with +DI leading confirms the move. Above 40 the move is stretched." },
+      { label: "Counter-trend", desc: "A call against the 4h and daily regime. Half size, targets capped at the 4h Kijun or 200MA, no adds." },
     ],
   },
   {

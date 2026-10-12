@@ -14,6 +14,7 @@ export const FACTOR = {
   BOLLINGER: "Bollinger/Volatility",
   DIVERGENCES: "Divergences",
   TREND_SYSTEM: "Trend System",
+  REGIME: "Cloud/200MA Regime",
   ELLIOTT: "Elliott Wave",
   SENTIMENT: "Sentiment",
   MARKET_DATA: "Market Data",

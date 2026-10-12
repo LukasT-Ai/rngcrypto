@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import type { Recommendation, RecoLink, SectionId } from "./recommendation"
 import type { SignalsResponse } from "./types"
 import { AMBER, GRADE_LABEL, GREEN, RED, dirLabel, fmt, fmtPrice, pctColor, pctFrom } from "./shared"
+import { RegimeStrip } from "./RegimeStrip"
 
 const TONE: Record<RecoLink["tone"], string> = { pos: GREEN, neg: RED, neutral: "rgba(255,255,255,0.55)" }
 
@@ -117,6 +118,9 @@ export function VerdictCard({
         )}
       </div>
       <p className="mt-1.5 text-sm text-white/65 leading-relaxed max-w-3xl">{reco.oneLiner}</p>
+
+      {/* Row 2b: cloud / 200MA / ADX regime strip */}
+      <RegimeStrip regime={d.regime} onJump={onJump} />
 
       {/* Row 3: plan */}
       <div className="mt-4">

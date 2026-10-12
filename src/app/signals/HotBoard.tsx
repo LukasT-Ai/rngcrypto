@@ -19,11 +19,46 @@ export interface HotPlay {
   grade: string
   riskReward: number
   regime: string
+  regimeLabel?: string | null
+  regimeScore?: number | null
+  trendStrength?: "none" | "weak" | "emerging" | "strong" | "extreme" | null
+  cloud1d?: "above" | "inside" | "below" | null
+  ma200Side1d?: "above" | "below" | "at" | null
+  adx15m?: number | null
 }
 export type HotResp = { timestamp: number; hot: HotPlay[]; all: HotPlay[] }
 
 const GREEN = "#00FF88"
 const RED = "#FF3B5C"
+const AMBER = "#F59E0B"
+const GRAY = "#9CA3AF"
+
+// Cloud / 200MA / ADX micro-chips for the card footer. Direction = colour, strength = opacity.
+function RegimeGlyphs({ p }: { p: HotPlay }) {
+  if (p.cloud1d == null && p.ma200Side1d == null && p.adx15m == null) return null
+  const weak = p.trendStrength == null || p.trendStrength === "none" || p.trendStrength === "weak"
+  const title = [p.regimeLabel, p.trendStrength ? `ADX ${p.trendStrength}` : null].filter(Boolean).join(" · ") || undefined
+  const chip = "inline-flex items-center rounded px-1 py-px font-mono text-[10px] font-bold"
+  return (
+    <span className="inline-flex items-center gap-1" title={title}>
+      {p.cloud1d != null && (
+        <span className={cn(chip, weak && "opacity-50")} style={{ color: p.cloud1d === "above" ? GREEN : p.cloud1d === "below" ? RED : AMBER, backgroundColor: "rgba(255,255,255,0.05)" }}>
+          ☁ {p.cloud1d === "above" ? "↑" : p.cloud1d === "below" ? "↓" : "–"}
+        </span>
+      )}
+      {p.ma200Side1d != null && (
+        <span className={cn(chip, weak && "opacity-50")} style={{ color: p.ma200Side1d === "above" ? GREEN : p.ma200Side1d === "below" ? RED : GRAY, backgroundColor: "rgba(255,255,255,0.05)" }}>
+          200 {p.ma200Side1d === "above" ? "↑" : p.ma200Side1d === "below" ? "↓" : "="}
+        </span>
+      )}
+      {p.adx15m != null && (
+        <span className={chip} style={{ color: p.adx15m < 20 ? GRAY : "rgba(255,255,255,0.75)", backgroundColor: "rgba(255,255,255,0.05)" }}>
+          ADX {Math.round(p.adx15m)}
+        </span>
+      )}
+    </span>
+  )
+}
 
 export function useHotPlays() {
   return useQuery<HotResp>({
@@ -83,7 +118,10 @@ export function HotPlayCard({ p, href, onSelect, compact = false }: { p: HotPlay
         </div>
       </div>
       <div className={cn("flex items-center justify-between text-[11px] text-white/35", compact ? "mt-3" : "mt-4")}>
-        <span>R:R {p.riskReward.toFixed(1)} · {p.regime}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <RegimeGlyphs p={p} />
+          <span className="truncate">R:R {p.riskReward.toFixed(1)} · {p.regime}</span>
+        </span>
         <span className="flex items-center gap-1 transition-colors group-hover:text-white/70">breakdown <ArrowUpRight className="size-3" /></span>
       </div>
     </>

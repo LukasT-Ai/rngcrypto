@@ -16,11 +16,12 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_TUNING, ENGINE_VERSION, getTuning, scoreFromCandles, setTuning, type Candle } from "../src/lib/signals/engine";
+import { DEFAULT_TUNING, ENGINE_VERSION, getTuning, scoreFromCandles, setTuning, type Candle, type Tuning } from "../src/lib/signals/engine";
 
 const BINANCE: Record<string, string> = { BTC: "BTCUSDT", ETH: "ETHUSDT", BNB: "BNBUSDT", ADA: "ADAUSDT", XRP: "XRPUSDT", SOL: "SOLUSDT", NEAR: "NEARUSDT", ZEC: "ZECUSDT" };
 const M5 = 300e3, M15 = 900e3, H1 = 3600e3, H4 = 14400e3, D1 = 86400e3;
-const WARMUP_15M = 240; // bars needed before the first decision (EMA200 on 15m, 1h/4h windows)
+const WARMUP_15M = 420; // bars needed before the first decision (SMA200 + slope + cross lookback on 15m)
+const WINDOW_4H = 420; // 4h bars the regime factor needs (SMA200 on 4h); aggregated from 5m, so the fetch starts earlier
 const HORIZON_MS = 24 * H1; // the verifier's default horizon when no trade type is known
 const FILL_WINDOW = 96; // 5m candles a limit entry may wait (matches check/core.ts default)
 const MARKET_TOL = 0.001;
@@ -43,6 +44,8 @@ setTuning({
   stopBufferAtr: parseFloat(arg("stop-buffer", String(DEFAULT_TUNING.stopBufferAtr))),
   minStopAtr: parseFloat(arg("min-stop-atr", String(DEFAULT_TUNING.minStopAtr))),
   stopFloorScale: parseFloat(arg("stop-floor-scale", String(DEFAULT_TUNING.stopFloorScale))),
+  regimeWeight: parseFloat(arg("regime-weight", String(DEFAULT_TUNING.regimeWeight))),
+  regimeGate: arg("regime-gate", DEFAULT_TUNING.regimeGate) as Tuning["regimeGate"],
 });
 const COOLDOWN_MS = parseFloat(arg("cooldown-min", "60")) * 60e3;
 const MIN_CONF = getTuning().minPublishConfidence;
@@ -114,6 +117,8 @@ interface Trade {
   highestTp: 0 | 1 | 2 | 3;
   grossR: number | null;
   netR: number | null;
+  regimeLabel: string | null;
+  alignment: "aligned" | "counter" | "n/a";
 }
 
 function simulate(tr: Trade, c5: Candle[], from: number): void {
@@ -187,7 +192,7 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
     return [];
   }
   const end = Math.floor(Date.now() / 3600e3) * 3600e3;
-  const start = end - DAYS * D1 - WARMUP_15M * M15 - 2 * D1;
+  const start = end - DAYS * D1 - WARMUP_15M * M15 - WINDOW_4H * H4 - 2 * D1;
   console.log(`${symbol}: fetching ${DAYS}d of 5m candles…`);
   const c5 = await klines(b, "5m", start, end);
   const c1d = await klines(b, "1d", end - 420 * D1, end);
@@ -227,10 +232,10 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
     const r = scoreFromCandles({
       symbol,
       c5: win(c5, M5, 120),
-      c15: win(c15, M15, 220),
+      c15: win(c15, M15, 420),
       c1h: win(c1h, H1, 120),
-      c4h: win(c4h, H4, 120),
-      c1d: win(c1d, D1, 220),
+      c4h: win(c4h, H4, WINDOW_4H),
+      c1d: win(c1d, D1, 420),
       price: bar.close,
       now,
     });
@@ -253,6 +258,13 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
       highestTp: 0,
       grossR: null,
       netR: null,
+      regimeLabel: r.regimeLabel ?? null,
+      alignment:
+        r.regimeLabel === "Bull regime" || r.regimeLabel === "Bear regime"
+          ? (r.bias === "LONG") === (r.regimeLabel === "Bull regime")
+            ? "aligned"
+            : "counter"
+          : "n/a",
     };
     simulate(tr, c5, i5);
     trades.push(tr);
@@ -320,6 +332,8 @@ async function main() {
     byConfidence: by((t) => (t.confidence >= 80 ? "80+" : t.confidence >= 70 ? "70-79" : t.confidence >= 60 ? "60-69" : "55-59")),
     byBias: by((t) => t.bias),
     byEntryType: by((t) => t.entryType),
+    byRegime: by((t) => t.regimeLabel ?? "none"),
+    byAlignment: by((t) => t.alignment),
     trades: all,
   };
   mkdirSync(OUT, { recursive: true });
@@ -335,9 +349,13 @@ async function main() {
   for (const [k, v] of Object.entries(report.bySymbol)) console.log(k.padEnd(6), `n=${v.closed}`.padEnd(7), `unfilled ${v.unfilled}`.padEnd(13), `TP1 ${v.tp1Rate}%`.padEnd(10), `netR ${v.expectancyNetR}`.padEnd(14), `sum ${v.sumNetR}`);
   console.log("\n=== BY ENTRY TYPE ===");
   for (const [k, v] of Object.entries(report.byEntryType)) console.log(k.padEnd(7), `signals=${v.signals}`.padEnd(13), `unfilled ${v.unfilled}`.padEnd(13), `netR ${v.expectancyNetR}`);
+  console.log("\n=== BY REGIME ===");
+  for (const [k, v] of Object.entries(report.byRegime)) console.log(k.padEnd(13), `n=${v.closed}`.padEnd(7), `TP1 ${v.tp1Rate}%`.padEnd(10), `netR ${v.expectancyNetR}`.padEnd(14), `PF ${v.profitFactorNet}`.padEnd(10), `sum ${v.sumNetR}`);
+  console.log("\n=== BY ALIGNMENT (call vs regime) ===");
+  for (const [k, v] of Object.entries(report.byAlignment)) console.log(k.padEnd(9), `n=${v.closed}`.padEnd(7), `TP1 ${v.tp1Rate}%`.padEnd(10), `netR ${v.expectancyNetR}`.padEnd(14), `PF ${v.profitFactorNet}`.padEnd(10), `sum ${v.sumNetR}`);
   console.log(`\nwritten ${file}`);
   const t = getTuning();
-  console.log(`SUMMARY ${LABEL || "run"} | conf>=${t.minPublishConfidence} shortGate=${t.shortNeedsHtfBear ? 1 : 0} stopBuf=${t.stopBufferAtr} minStopAtr=${t.minStopAtr} floorX=${t.stopFloorScale} cooldown=${COOLDOWN_MS / 60e3}m | signals=${o.signals} unfilled=${o.unfilled} closed=${o.closed} TP1=${o.tp1Rate}% gross=${o.expectancyGrossR} net=${o.expectancyNetR} PF=${o.profitFactorNet} sum=${o.sumNetR} long=${o.longShare}%`);
+  console.log(`SUMMARY ${LABEL || "run"} | conf>=${t.minPublishConfidence} shortGate=${t.shortNeedsHtfBear ? 1 : 0} stopBuf=${t.stopBufferAtr} minStopAtr=${t.minStopAtr} floorX=${t.stopFloorScale} regimeW=${t.regimeWeight} regimeGate=${t.regimeGate} cooldown=${COOLDOWN_MS / 60e3}m | signals=${o.signals} unfilled=${o.unfilled} closed=${o.closed} TP1=${o.tp1Rate}% gross=${o.expectancyGrossR} net=${o.expectancyNetR} PF=${o.profitFactorNet} sum=${o.sumNetR} long=${o.longShare}%`);
 }
 
 main().catch((e) => {

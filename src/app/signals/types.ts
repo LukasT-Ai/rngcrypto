@@ -80,6 +80,48 @@ export interface OrderBookInfo {
   read: string
 }
 
+// Cloud / 200MA / ADX regime factor (engine 2026.10.12-regime). Top-level and nullable so cached
+// pre-regime responses never crash the UI.
+export type RegimeTF = "15m" | "4h" | "1d"
+export type TrendStrength = "none" | "weak" | "emerging" | "strong" | "extreme"
+export interface RegimeTFInfo {
+  score: number
+  cloud: "above" | "inside" | "below"
+  cloudColor: "bullish" | "bearish" | "flat"
+  cloudThin: boolean
+  tkCross: "bullish" | "bearish" | "none"
+  tkCrossBarsAgo: number
+  tkState: "bullish" | "bearish" | "flat"
+  kumoTwist: "bullish" | "bearish" | "none"
+  chikou: "above" | "below" | "at"
+  tenkan: number
+  kijun: number
+  cloudTop: number
+  cloudBottom: number
+  sma200: number | null
+  ema200: number | null
+  ma200Side: "above" | "below" | "at" | null
+  ma200DistAtr: number | null
+  ma200Slope: "rising" | "falling" | "flat" | null
+  freshCross: "bullish" | "bearish" | null
+  barsSinceCross: number | null
+  goldenCross: "golden" | "death" | null
+  adx: number
+  plusDI: number
+  minusDI: number
+  adxSlope: "rising" | "falling" | "flat"
+  diBias: "bullish" | "bearish" | "flat"
+  trendStrength: TrendStrength
+}
+export interface RegimeInfo {
+  score: number
+  label: "Bull regime" | "Bear regime" | "Transition" | "Mixed"
+  trendStrength: TrendStrength
+  gate: "none" | "blocked_long" | "blocked_short" | "counter_trend"
+  perTF: Partial<Record<RegimeTF, RegimeTFInfo>>
+  notes: string[]
+}
+
 export interface SignalsResponse {
   // Added by the 2026-10 engine: scoring version and whether the entry is a market or resting limit order.
   engineVersion?: string
@@ -152,6 +194,7 @@ export interface SignalsResponse {
     liquidations: LiquidationInfo | null
   }
   orderBook?: OrderBookInfo | null
+  regime?: RegimeInfo | null
   divergences: {
     rsiDivergence15m: string | null
     rsiDivergence1h: string | null
@@ -435,6 +478,12 @@ export interface HotPlay {
   reasoning: string[]
   volSpikeRatio: number | null
   volSpikeLabel: string | null
+  regimeLabel?: RegimeInfo["label"] | null
+  regimeScore?: number | null
+  trendStrength?: TrendStrength | null
+  cloud1d?: RegimeTFInfo["cloud"] | null
+  ma200Side1d?: RegimeTFInfo["ma200Side"] | null
+  adx15m?: number | null
 }
 
 export interface HotResponse {

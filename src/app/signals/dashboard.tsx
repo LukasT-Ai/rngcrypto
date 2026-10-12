@@ -92,7 +92,7 @@ const TICKER_GROUPS: { label: string; symbols: Set<string> }[] = [
 // Types — matches /api/signals v2 response shape
 // ---------------------------------------------------------------------------
 
-export type { OilGeoForce, OilGeo, SignalsResponse, MarketMapResponse, HotPlay, HotResponse, SignalLog, CalibrationBucket, HistoryResponse } from "./types"
+export type { OilGeoForce, OilGeo, SignalsResponse, MarketMapResponse, HotPlay, HotResponse, SignalLog, CalibrationBucket, HistoryResponse, RegimeInfo, RegimeTFInfo } from "./types"
 
 const fmt = (n: number | null | undefined, decimals = 2) => {
   if (n == null) return "—"
@@ -276,7 +276,7 @@ type TabKey = (typeof TABS)[number]["key"]
 // Which tab holds each jump anchor used by the verdict card.
 const ANCHOR_TAB: Record<string, TabKey> = {
   "sec-active-setups": "levels", "sec-levels": "levels", "sec-fib": "levels",
-  "sec-indicators": "momentum", "sec-divergences": "momentum", "sec-htf": "momentum", "sec-tf-alignment": "momentum",
+  "sec-regime": "momentum", "sec-indicators": "momentum", "sec-divergences": "momentum", "sec-htf": "momentum", "sec-tf-alignment": "momentum",
   "sec-volume": "flow", "sec-market-data": "flow", "sec-positioning": "flow", "sec-liquidations": "flow", "sec-orderbook": "flow",
   "sec-calendar": "macro", "sec-geo": "macro", "sec-news": "macro", "sec-macro": "macro",
   "sec-confluence": "models", "sec-market-map": "models", "sec-setups": "models", "sec-forecast": "models",

@@ -89,6 +89,13 @@ export async function GET(req: NextRequest) {
         volSpikeRatio: data.volume?.spikeRatio ?? null,
         volSpikeLabel: data.volume?.spikeLabel ?? null,
         entryType: data.entryType ?? null,
+        // Cloud / 200MA / ADX regime (null-safe: pre-regime engine responses carry no block)
+        regimeLabel: data.regime?.label ?? null,
+        regimeScore: data.regime?.score ?? null,
+        trendStrength: data.regime?.trendStrength ?? null,
+        cloud1d: data.regime?.perTF?.["1d"]?.cloud ?? null,
+        ma200Side1d: data.regime?.perTF?.["1d"]?.ma200Side ?? null,
+        adx15m: data.regime?.perTF?.["15m"]?.adx ?? data.indicators?.adx ?? null,
       };
     } catch {
       return null;

@@ -33,6 +33,8 @@ export interface NormalizedSignal {
   grade: string;
   tradeType: string | null;
   oilRegime: string | null;
+  // Factor assessments logged with the call (category -> assessment), used for factor attribution.
+  factors: Record<string, string>;
   open: boolean;
   tpLevels: { level: 1 | 2 | 3; at: number | null; price: number }[];
   highestTp: 0 | 1 | 2 | 3;
@@ -83,6 +85,9 @@ export interface PerformanceStats {
     byHourUtc: Bucket[];
     byWeekday: Bucket[];
     byOilRegime: Bucket[];
+    byRegime: Bucket[];
+    byRegimeAlignment: Bucket[];
+    byEngineVersion: Bucket[];
   };
   excursion: { medianMfeR: number | null; medianMaeR: number | null; winnersOvershootR: number | null; losersNearMissR: number | null; n: number };
   streaks: { current: { type: "win" | "loss" | null; length: number }; maxWin: number; maxLoss: number };
@@ -189,6 +194,7 @@ export function normalize(s: SignalLog): NormalizedSignal {
     grade: s.grade,
     tradeType: s.context?.tradeType ?? null,
     oilRegime: s.symbol === "OIL" ? (s.context?.oilRegime ?? null) : null,
+    factors: s.context?.factors ?? {},
     open,
     tpLevels,
     highestTp: highest,
@@ -225,6 +231,20 @@ const median = (xs: number[]) => {
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 const pct = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 1000) / 10 : null);
 const r2 = (v: number | null) => (v == null ? null : Math.round(v * 100) / 100);
+
+// Cloud/200MA regime factor (src/lib/signals/factors.ts FACTOR.REGIME); string literal so this module stays
+// free of engine imports.
+const REGIME_FACTOR = "Cloud/200MA Regime";
+
+// Was the call with or against the cloud/200MA regime logged at the time?
+function regimeAlignment(s: NormalizedSignal): string {
+  const a = s.factors[REGIME_FACTOR];
+  if (!a) return "n/a";
+  const bull = a.includes("Bullish");
+  const bear = a.includes("Bearish");
+  if (!bull && !bear) return "neutral";
+  return (s.bias === "LONG" && bull) || (s.bias === "SHORT" && bear) ? "aligned" : "counter";
+}
 
 function bucketize(rows: NormalizedSignal[], keyOf: (s: NormalizedSignal) => string | null, order?: string[]): Bucket[] {
   const map = new Map<string, NormalizedSignal[]>();
@@ -372,6 +392,9 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
       byHourUtc: bucketize(closed, hourKey, Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, "0")}:00`)),
       byWeekday: bucketize(closed, (s) => WD[new Date(s.timestamp).getUTCDay()], WD),
       byOilRegime: bucketize(closed, (s) => s.oilRegime, ["calm", "elevated", "extreme", "whipsaw"]),
+      byRegime: bucketize(closed, (s) => s.factors[REGIME_FACTOR] ?? "n/a", ["Strong Bullish", "Bullish", "Neutral", "Bearish", "Strong Bearish", "n/a"]),
+      byRegimeAlignment: bucketize(closed, regimeAlignment, ["aligned", "neutral", "counter", "n/a"]),
+      byEngineVersion: bucketize(closed, (s) => s.engineVersion),
     },
     excursion: { medianMfeR: r2(median(mfe)), medianMaeR: r2(median(mae)), winnersOvershootR: r2(median(overshoot)), losersNearMissR: r2(median(nearMiss)), n: mfe.length },
     streaks: { current: cur, maxWin, maxLoss },

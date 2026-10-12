@@ -104,7 +104,10 @@ export const fadeUp = {
 
 export const HINTS: Record<string, string> = {
   CVD: "Cumulative Volume Delta: running total of buy volume minus sell volume. Positive means buyers have been in control.",
-  ADX: "Average Directional Index: trend strength regardless of direction. Above 25 is trending, below 20 is ranging.",
+  ADX: "Average Directional Index: measures trend STRENGTH, not direction. Below 20 is a range, 20 to 25 an emerging trend, above 25 trending, above 40 stretched. +DI and -DI give the push direction.",
+  Cloud: "Ichimoku cloud (9/26/52). Price above the cloud is a bull regime, below is bear, inside is undecided. The cloud under the current bar was set 26 bars ago.",
+  "200MA": "200-period simple moving average on that timeframe. Above a rising 200MA is a bull regime, below a falling one is bear. Distance is shown in ATR: beyond 3 ATR means stretched.",
+  "TK cross": "Tenkan (9) crossing Kijun (26). A bullish cross above the cloud is a strong continuation signal; a cross inside the cloud is weak.",
   "BB Width": "Bollinger Band width relative to price. Low values mean volatility compression that often precedes a breakout.",
   Supertrend: "ATR-based trend overlay. Bullish when price holds above the band, bearish when below.",
   "Stoch RSI": "Stochastic RSI: where RSI sits inside its recent range. Above 80 is stretched high, below 20 washed out.",

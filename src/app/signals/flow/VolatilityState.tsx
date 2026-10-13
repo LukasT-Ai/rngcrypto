@@ -25,8 +25,9 @@ export const VolatilityState = React.memo(function VolatilityState({ d }: { d: S
 
   const hot = vol != null && vol.dvolPct >= 80
   const compressed = vol != null && vol.dvolPct < 20
-  const em4hPct = vol ? vol.expectedMove24hPct * SQRT_4H : null
-  const em4hUsd = vol ? (Number.isFinite(vol.expectedMove24hUsd) && vol.expectedMove24hUsd > 0 ? vol.expectedMove24hUsd : price * (vol.expectedMove24hPct / 100)) * SQRT_4H : null
+  // 4h move: the feed's own figure when present, else the 24h move scaled by sqrt(4/24).
+  const em4hPct = vol ? (vol.expectedMove4hPct ?? vol.expectedMove24hPct * SQRT_4H) : null
+  const em4hUsd = vol ? (vol.expectedMove4hUsd ?? (Number.isFinite(vol.expectedMove24hUsd) && vol.expectedMove24hUsd > 0 ? vol.expectedMove24hUsd : price * (vol.expectedMove24hPct / 100)) * SQRT_4H) : null
 
   return (
     <div id="sec-volatility">
@@ -87,7 +88,7 @@ export const VolatilityState = React.memo(function VolatilityState({ d }: { d: S
           stale={staleLabel(vol, now)}
           hint="The 24h expected move scaled to 4h by the square root of time. Useful for sizing an intraday stop: a stop inside this band is likely to be hit by noise alone."
           value={em4hPct != null ? `±${em4hPct.toFixed(2)}%` : null}
-          sub={em4hUsd != null ? `±$${fmt(em4hUsd, price >= 1000 ? 0 : 2)} · sqrt-time scaled` : null}
+          sub={em4hUsd != null ? `±$${fmt(em4hUsd, price >= 1000 ? 0 : 2)} · ${vol?.expectedMove4hPct != null ? "1 sd" : "sqrt-time scaled"}` : null}
         />
         <FeatureTile
           label="Basis"
@@ -97,7 +98,7 @@ export const VolatilityState = React.memo(function VolatilityState({ d }: { d: S
           stale={staleLabel(basis, now)}
           hint="Annualized premium of the front Deribit future over index. Positive and rising means leveraged longs are paying for exposure; negative (backwardation) means stress. z is against the 90-day distribution; curve is the slope from front to next expiry."
           value={basis ? `${basis.annPct >= 0 ? "+" : ""}${basis.annPct.toFixed(1)}% ann` : null}
-          sub={basis ? `z ${fmtSd(basis.z).replace(" sd", "")} · curve ${basis.curveSlope >= 0 ? "+" : ""}${basis.curveSlope.toFixed(1)}${basis.stress ? " · stress" : ""}` : null}
+          sub={basis ? `z ${basis.z == null ? "n/a" : fmtSd(basis.z).replace(" sd", "")} · curve ${basis.curveSlope >= 0 ? "+" : ""}${basis.curveSlope.toFixed(1)}${basis.stress ? " · stress" : ""}` : null}
           color={basis?.stress ? AMBER : undefined}
         />
       </div>

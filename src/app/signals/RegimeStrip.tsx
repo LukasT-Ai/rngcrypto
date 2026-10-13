@@ -1,11 +1,11 @@
 "use client"
 
 import React from "react"
-import { Zap } from "lucide-react"
+import { ArrowDownRight, Zap } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { SectionId } from "./recommendation"
 import type { RegimeInfo, RegimeTF, RegimeTFInfo, TrendStrength } from "./types"
-import { AMBER, Chip, GRAY, GREEN, RED, fmt, fmtPrice } from "./shared"
+import { AMBER, Chip, FOCUS_RING, GRAY, GREEN, RED, fmt, fmtPrice } from "./shared"
 
 // Compact Ichimoku cloud / 200MA / ADX regime strip for the verdict card. One scan-line that wraps.
 // Two visual channels: direction (cloud, 200MA, DI) uses colour; strength (ADX) uses opacity plus a word.
@@ -30,10 +30,13 @@ export const strengthSuffix = (s: TrendStrength | null | undefined) => {
   return "no trend yet"
 }
 
-export const cloudColor = (c: RegimeTFInfo["cloud"] | null | undefined) => (c === "above" ? GREEN : c === "below" ? RED : c === "inside" ? AMBER : GRAY)
+// Inside the cloud is "undecided": neutral gray, not a warning.
+export const cloudColor = (c: RegimeTFInfo["cloud"] | null | undefined) => (c === "above" ? GREEN : c === "below" ? RED : GRAY)
 export const cloudLabel = (c: RegimeTFInfo["cloud"] | null | undefined) => (c === "above" ? "Above cloud" : c === "below" ? "Below cloud" : c === "inside" ? "In cloud" : "Cloud n/a")
+export const cloudDir = (c: RegimeTFInfo["cloud"] | null | undefined) => (c === "above" ? "bullish" : c === "below" ? "bearish" : "neutral")
 export const ma200Color = (s: RegimeTFInfo["ma200Side"] | null | undefined) => (s === "above" ? GREEN : s === "below" ? RED : GRAY)
 export const ma200Label = (s: RegimeTFInfo["ma200Side"] | null | undefined) => (s === "above" ? "> 200MA" : s === "below" ? "< 200MA" : s === "at" ? "At 200MA" : "200MA n/a")
+export const ma200Dir = (s: RegimeTFInfo["ma200Side"] | null | undefined) => (s === "above" ? "bullish" : s === "below" ? "bearish" : "neutral")
 export const slopeGlyph = (s: "rising" | "falling" | "flat" | null | undefined) => (s === "rising" ? "↗" : s === "falling" ? "↘" : "→")
 
 export function tfTooltip(tf: RegimeTF, t: RegimeTFInfo): string {
@@ -55,39 +58,31 @@ export function tfTooltip(tf: RegimeTF, t: RegimeTFInfo): string {
   return parts.join("\n")
 }
 
-export function RegimeStrip({ regime, onJump }: { regime: RegimeInfo | null | undefined; onJump: (anchor: SectionId) => void }) {
+export function RegimeStrip({ regime, onJump, showCoupling = false }: { regime: RegimeInfo | null | undefined; onJump: (anchor: SectionId) => void; showCoupling?: boolean }) {
   if (!regime) return null
-  const lc = regimeLabelColor(regime.label)
   const directional = regime.label === "Bull regime" || regime.label === "Bear regime"
   const weak = directional && isWeakStrength(regime.trendStrength)
   const tfs = TF_ORDER.filter((tf) => regime.perTF[tf])
+  const coupling = showCoupling ? regime.macroCoupling ?? null : null
 
   return (
-    <a
-      href="#sec-regime"
-      onClick={(e) => {
-        e.preventDefault()
-        onJump("sec-regime")
-      }}
-      className="mt-2.5 flex flex-wrap items-center gap-1.5 group"
-      title="Jump to the cloud, 200MA and ADX breakdown"
-    >
-      <Chip color={lc} title={regime.notes[0]} className={cn(weak && "opacity-55")}>
-        Regime · {regime.label}
+    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+      <Chip variant="regime" value={regime.label} tip={regime.notes[0]} className={cn(weak && "opacity-55")}>
+        {regime.label}
         <span className="font-medium normal-case tracking-normal opacity-80">· {strengthSuffix(regime.trendStrength)}</span>
       </Chip>
       {regime.trendStrength === "extreme" && (
-        <Chip color={AMBER} title="ADX above 40: the move is stretched; late entries carry mean-reversion risk">
+        <Chip variant="warning" tip="ADX above 40: the move is stretched; late entries carry mean-reversion risk">
           stretched
         </Chip>
       )}
       {weak && (
-        <Chip color={GRAY} title="Price is on the trending side of the cloud and 200MA, but ADX says there is no trend: treat it as a range, not a breakout">
+        <Chip variant="vol" tip="Price is on the trending side of the cloud and 200MA, but ADX says there is no trend: treat it as a range, not a breakout">
           range, no breakout
         </Chip>
       )}
       {regime.gate === "counter_trend" && (
-        <Chip color={AMBER} title="This call fights the higher-timeframe regime: half size, capped targets">
+        <Chip variant="warning" tip="This call fights the higher-timeframe regime: half size, capped targets">
           counter-trend
         </Chip>
       )}
@@ -100,31 +95,45 @@ export function RegimeStrip({ regime, onJump }: { regime: RegimeInfo | null | un
         const tkDir = freshTk ? t.tkCross : t.kumoTwist
         return (
           <span key={tf} className={cn("items-center gap-1", tf === "15m" ? "hidden sm:inline-flex" : "inline-flex")}>
-            <span className="ml-1 font-mono text-[10px] text-white/40">{tf}</span>
+            <span className="ml-1 font-mono text-[11px] text-white/50">{tf}</span>
             <span className={cn("inline-flex items-center gap-1", tfWeak && "opacity-55")}>
-              <Chip color={cloudColor(t.cloud)} title={tip}>
+              <Chip variant="direction" value={cloudDir(t.cloud)} tip={tip}>
                 {cloudLabel(t.cloud)}
               </Chip>
               {t.ma200Side != null && (
-                <Chip color={ma200Color(t.ma200Side)} title={tip}>
+                <Chip variant="direction" value={ma200Dir(t.ma200Side)} tip={tip}>
                   {ma200Label(t.ma200Side)}
                 </Chip>
               )}
               {(freshTk || twist) && (
-                <Chip color={tkDir === "bullish" ? GREEN : RED} title={freshTk ? `Fresh ${t.tkCross} Tenkan/Kijun cross ${t.tkCrossBarsAgo} bars ago` : `${t.kumoTwist} kumo twist ahead`}>
-                  <Zap className="size-2.5" />
+                <Chip variant="direction" value={tkDir} icon={Zap} tip={freshTk ? `Fresh ${t.tkCross} Tenkan/Kijun cross ${t.tkCrossBarsAgo} bars ago` : `${t.kumoTwist} kumo twist ahead`}>
                   {freshTk ? `TK ${t.tkCross === "bullish" ? "↑" : "↓"}` : `Twist ${t.kumoTwist === "bullish" ? "↑" : "↓"}`}
                 </Chip>
               )}
             </span>
             {tfWeak && (
-              <Chip color={GRAY} title={tip}>
+              <Chip variant="vol" tip={tip}>
                 ADX {fmt(t.adx, 0)} · range
               </Chip>
             )}
           </span>
         )
       })}
-    </a>
+      {coupling && (
+        <Chip variant="vol" className="ml-auto" tip={`30-day correlation with risk assets ${coupling.corr30d.toFixed(2)}; macro and event weights are scaled by ${coupling.mult.toFixed(2)}.`}>
+          coupling {coupling.mult.toFixed(1)}
+        </Chip>
+      )}
+      <a
+        href="#sec-regime"
+        onClick={(e) => {
+          e.preventDefault()
+          onJump("sec-regime")
+        }}
+        className={cn("inline-flex items-center gap-0.5 rounded-sm text-[11px] text-white/50 hover:text-white/80 transition-colors", !coupling && "ml-auto", FOCUS_RING)}
+      >
+        regime breakdown <ArrowDownRight className="size-3" />
+      </a>
+    </div>
   )
 }

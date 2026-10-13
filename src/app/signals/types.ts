@@ -1,4 +1,60 @@
-import type { AssetImpact, MacroScores } from "@/lib/macro/types"
+import type { AssetImpact, Importance, MacroScores } from "@/lib/macro/types"
+
+// ---------------------------------------------------------------------------
+// Verdict v2 contract (research/design-ux-ui.md F1.1). Every field is optional and nullable until the producing
+// backend phase ships; the UI renders a defined fallback for each null.
+// ---------------------------------------------------------------------------
+
+export type CallMode = "trend" | "reversion" | "standby"
+export type InvalidationKind = "stop" | "regime" | "structure"
+export type FlipDirection = "to_long" | "to_short" | "to_wait"
+export type EventWindowState = "none" | "pre" | "blackout" | "releasing" | "post"
+export type FirstMoveGate = "pending" | "confirmed" | "failed"
+export type HoldTF = "15m" | "1h" | "4h" | "1d"
+
+export interface CallInvalidation {
+  level: number
+  kind: InvalidationKind
+  reason: string
+}
+
+export interface CallFlip {
+  text: string
+  factor: string
+  distance: number
+  direction: FlipDirection
+}
+
+export interface ExpectedHold {
+  medianMin: number
+  p25Min: number
+  p75Min: number
+  n: number
+  tf: HoldTF
+}
+
+export interface CallBlocks {
+  trend: number
+  timing: number
+  flow: number
+}
+
+// Wire shape is EventWindowInfo (be-macro); this alias keeps the F1.1 name used by the verdict UI.
+export type EventWindow = EventWindowInfo
+
+export interface SizingPart {
+  key: string
+  mult: number
+  reason: string
+}
+
+// Wire shape is SizingInfo (be-macro): { base, parts: [{label, mult}], total }.
+export type CallSizing = SizingInfo
+
+export interface MacroCoupling {
+  corr30d: number
+  mult: number
+}
 
 // Response shapes for /api/signals, /api/signals/market-map and /api/signals/history.
 // recommendation.ts imports these through dashboard.tsx, which re-exports them.
@@ -271,7 +327,23 @@ export interface SignalsResponse {
     eventWindow?: EventWindowInfo | null
     /** Phase 3.2 size decomposition; absent on older engine builds. */
     sizing?: SizingInfo | null
+    // ── Verdict v2 (F1.1) extras from ui-structure; all optional with UI fallbacks. ──
+    /** Stop plus structural reason. Fallback: `invalidates[0]`. */
+    invalidation?: CallInvalidation | null
+    /** Two smallest flip distances. Fallback: reco.confirmation / reco.butWatch. */
+    flips?: CallFlip[] | null
+    /** Hold-time bucket (symbol x bias x regime). Fallback: `expectedDuration` string labelled "estimate". */
+    expectedHold?: ExpectedHold | null
+    horizonMin?: number | null
+    /** Strategy family chosen by regime and ADX. Chip hidden when null. */
+    mode?: CallMode | null
+    /** TREND / TIMING / FLOW block scores, -100..100. Header tally shown when null. */
+    blocks?: CallBlocks | null
+    /** Stop anchor label ("4h swing", "1h swing", "AVWAP"). Shown on the STOP tile when present. */
+    stopAnchor?: string | null
   }
+  /** Feed names that were down at call time (engine audit 4.8). Empty or absent means all feeds were up. */
+  degraded?: string[]
   anticipatory: {
     approachingLevels: Array<{
       level: number

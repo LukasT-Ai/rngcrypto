@@ -1,5 +1,19 @@
-import type { SignalsResponse, MarketMapResponse, HistoryResponse } from "./dashboard"
+import type { SignalsResponse, MarketMapResponse, HistoryResponse, InvalidationKind } from "./types"
 import { FACTOR } from "@/lib/signals/factors"
+
+// Wilson score interval for a binomial rate, as fractions in 0..1. Returns [0, 1] when n is 0.
+export function wilson(wins: number, n: number, z = 1.96): [number, number] {
+  if (!(n > 0)) return [0, 1]
+  const p = wins / n
+  const z2 = z * z
+  const denom = 1 + z2 / n
+  const centre = (p + z2 / (2 * n)) / denom
+  const half = (z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / denom
+  return [Math.max(0, centre - half), Math.min(1, centre + half)]
+}
+
+// Below this many decided calls a bucket is described in words, never as a percentage.
+export const MIN_RATED_N = 8
 
 export type SectionId =
   | "sec-call"
@@ -56,6 +70,27 @@ export interface Recommendation {
   trackRecord: RecoLink | null
   nextCatalyst: RecoLink | null
   tally: { bull: number; bear: number; total: number }
+  // ── Verdict v2 ──
+  /** WRONG IF: engine invalidation (level + reason + kind) when published, else the first `invalidates[]` line. */
+  wrongIf: { link: RecoLink; level: number | null; kind: InvalidationKind | null; reason: string | null } | null
+  /** FLIPS IF: the two smallest flip distances from the engine, else what-would-confirm plus the top "but watch". */
+  flipsIf: RecoLink[]
+  /** HISTORY: the symbol x grade bucket with a Wilson interval; `rated` is false below MIN_RATED_N decided calls. */
+  history: { label: string; n: number; wins: number; lo: number; hi: number; rated: boolean; anchor: SectionId } | null
+}
+
+// Which section a flip factor name points at.
+function flipAnchor(factor: string): SectionId {
+  const f = factor.toLowerCase()
+  if (/flow|cvd|taker|imbalance|book|funding|oi\b|open interest|liquid/.test(f)) return "sec-positioning"
+  if (/regime|cloud|200|adx|kijun|tenkan/.test(f)) return "sec-regime"
+  if (/structure|bos|choch|sweep|setup/.test(f)) return "sec-setups"
+  if (/level|support|resistance|fib|stop|swing/.test(f)) return "sec-levels"
+  if (/macro|event|cpi|fomc|nfp|calendar|release/.test(f)) return "sec-calendar"
+  if (/headline|catalyst|geo|news/.test(f)) return "sec-geo"
+  if (/map|daily structure|ema5|bounce/.test(f)) return "sec-market-map"
+  if (/timeframe|htf|4h|1h|daily/.test(f)) return "sec-htf"
+  return "sec-indicators"
 }
 
 const DIR: Record<string, number> = {
@@ -517,6 +552,44 @@ export function buildRecommendation(
     nextCatalyst = { text: `Lead scenario (${Math.round(s.probability * 100)}%): ${s.trigger}`, anchor: "sec-forecast", tone: s.direction === "LONG" ? "pos" : "neg", weight: 0 }
   }
 
+  // ── Verdict v2 rows ─────────────────────────────────────────────────────
+  const inv = call.invalidation ?? null
+  const wrongIf: Recommendation["wrongIf"] = inv
+    ? {
+        link: { text: `${inv.kind === "stop" ? "Stop" : inv.kind === "regime" ? "Regime flip" : "Structure break"} at $${fmtN(inv.level, dp)}`, anchor: inv.kind === "regime" ? "sec-regime" : inv.kind === "structure" ? "sec-setups" : "sec-levels", tone: "neg", weight: 0 },
+        level: inv.level,
+        kind: inv.kind,
+        reason: inv.reason,
+      }
+    : invalidation
+      ? { link: invalidation, level: null, kind: null, reason: null }
+      : null
+
+  const engineFlips = (call.flips ?? []).slice(0, 2)
+  const flipsIf: RecoLink[] =
+    engineFlips.length > 0
+      ? engineFlips.map((f) => ({ text: f.text, anchor: flipAnchor(f.factor), tone: f.direction === "to_long" ? "pos" : f.direction === "to_short" ? "neg" : "neutral", weight: Math.abs(f.distance) }))
+      : action === "WAIT"
+        ? [
+            ...(call.bullCase[0] ? [{ text: `To long: ${call.bullCase[0]}`, anchor: "sec-confluence" as SectionId, tone: "pos" as Tone, weight: 0 }] : []),
+            ...(call.bearCase[0] ? [{ text: `To short: ${call.bearCase[0]}`, anchor: "sec-confluence" as SectionId, tone: "neg" as Tone, weight: 0 }] : []),
+          ].slice(0, 2)
+        : [...(confirmation ? [{ ...confirmation, text: `Confirms: ${confirmation.text}` }] : []), ...butWatch.filter((w) => w.tone === "neg").slice(0, 1)].slice(0, 2)
+
+  let history: Recommendation["history"] = null
+  if (gb) {
+    const decided = gb.wins + gb.losses
+    const [lo, hi] = wilson(gb.wins, decided)
+    history = { label: `${d.asset} ${call.grade}`, n: decided, wins: gb.wins, lo, hi, rated: decided >= MIN_RATED_N, anchor: "sec-track-record" }
+  } else {
+    const bs = stats?.bySymbol?.[d.asset]
+    if (bs) {
+      const decided = bs.wins + bs.losses
+      const [lo, hi] = wilson(bs.wins, decided)
+      history = { label: d.asset, n: decided, wins: bs.wins, lo, hi, rated: decided >= MIN_RATED_N, anchor: "sec-track-record" }
+    }
+  }
+
   return {
     action,
     headline,
@@ -530,5 +603,8 @@ export function buildRecommendation(
     trackRecord,
     nextCatalyst,
     tally: { bull, bear, total },
+    wrongIf,
+    flipsIf,
+    history,
   }
 }

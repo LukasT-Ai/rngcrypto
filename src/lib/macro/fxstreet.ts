@@ -204,8 +204,8 @@ const FX_ALIASES: Record<string, [RegExp, string][]> = {
   DE: [
     [/^harmonized index of consumer prices \(yoy\)$/i, "de_hicp_yoy"],
     [/^hcob manufacturing pmi$/i, "de_pmi"],
-    [/^ifo – business climate$|^ifo - business climate$/i, "de_ifo"],
-    [/^zew survey – economic sentiment$|^zew survey - economic sentiment$/i, "de_zew"],
+    [/^ifo\s*[–—-]\s*business climate$/i, "de_ifo"],
+    [/^zew survey\s*[–—-]\s*economic sentiment$/i, "de_zew"],
   ],
   UK: [
     [/^boe interest rate decision$/i, "boe_rate"],

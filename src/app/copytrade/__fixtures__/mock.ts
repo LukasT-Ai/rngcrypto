@@ -1,5 +1,6 @@
-// Deterministic fixture matching CONTRACT.md "COPY TRADE". Used only in development behind ?mock=1.
-import type { Asset, AssetStats, LeaderboardResponse, OpenPosition, SortKey, Trade, TraderDetail, TraderRow, Window } from "../types"
+// Deterministic fixture matching CONTRACT.md "COPY TRADE" plus amendments 1 and 2. Development only, behind ?mock=1.
+import type { Asset, AssetGroup, AssetStats, Grade, LeaderboardResponse, Mix, OpenPosition, Score, SortKey, Stats30d, SummaryResponse, Trade, TraderDetail, TraderRow, Window } from "../types"
+import { ASSET_GROUPS } from "../types"
 
 const NOW = 1791907200000 // 2026-10-13 16:00 UTC
 const H = 3600_000
@@ -27,24 +28,31 @@ const ADDRS = [
   "0x1234567890abcdef1234567890abcdef12345678",
   "0xdeadbeef00000000000000000000000000000001",
   "0xcafebabe00000000000000000000000000000002",
+  "0x9999aaaabbbbccccddddeeeeffff000011112222",
+  "0x3333444455556666777788889999aaaabbbbcccc",
 ]
-const NAMES: (string | null)[] = ["hyperwhale", null, "adamaxi", null, null, "quietshort", null, "btc_only", null, null, "vol_harvester", null]
+const NAMES: (string | null)[] = ["hyperwhale", null, "adamaxi", null, null, "quietshort", null, "btc_only", null, null, "vol_harvester", null, "goldbug", null]
 
-const PX: Record<string, number> = { BTC: 118_420, ADA: 0.842, ETH: 4_210, SOL: 196.4 }
+const GROUP_COINS: Record<AssetGroup, string[]> = { BTC: ["BTC"], ADA: ["ADA"], GOLD: ["xyz:GOLD", "km:GOLD", "PAXG"], WTI: ["xyz:CL", "km:USOIL", "xyz:BRENTOIL"] }
+const PX: Record<string, number> = { BTC: 118_420, ADA: 0.842, "xyz:GOLD": 4_062, "km:GOLD": 4_060, PAXG: 4_058, "xyz:CL": 61.4, "km:USOIL": 61.3, "xyz:BRENTOIL": 65.1, ETH: 4_210, SOL: 196.4 }
+const GROUP_SCALE: Record<AssetGroup, number> = { BTC: 1, ADA: 0.25, GOLD: 0.4, WTI: 0.3 }
 
-function assetStats(coin: string, r: () => number, i: number): AssetStats {
+function assetStats(group: AssetGroup, r: () => number, i: number): AssetStats | null {
+  // Some wallets never touch a group: null so the UI exercises its fallbacks.
+  if (r() < 0.2 && !(group === "BTC" && i < 4)) return null
   const trades = Math.round(6 + r() * 180)
   const wins = Math.round(trades * (0.35 + r() * 0.4))
   const losses = trades - wins
-  const volumeUsd = Math.round((50_000 + r() * 40_000_000) * (coin === "ADA" ? 0.25 : 1))
+  const volumeUsd = Math.round((50_000 + r() * 40_000_000) * GROUP_SCALE[group])
   const realizedPnl = Math.round((r() - 0.3) * volumeUsd * 0.02)
   const dirRoll = r()
-  // Row 3: no last trade; row 5: unknown direction; row 9: fewer than 5 trades (neutral win rate tone).
-  const small = i === 9
+  const small = i === 9 && group === "BTC"
   const tr = small ? 3 : trades
   const w = small ? 2 : wins
+  const coins = GROUP_COINS[group].filter((_, k) => k === 0 || r() < 0.35)
   return {
-    coin,
+    coin: group,
+    coins,
     trades: tr,
     volumeUsd,
     realizedPnl,
@@ -53,7 +61,7 @@ function assetStats(coin: string, r: () => number, i: number): AssetStats {
     wins: w,
     losses: small ? 1 : losses,
     avgTradeUsd: Math.round(volumeUsd / tr),
-    lastTradeAt: i === 3 ? null : NOW - Math.round(r() * 3 * D),
+    lastTradeAt: i === 3 && group === "BTC" ? null : NOW - Math.round(r() * 3 * D),
     direction: i === 5 ? null : dirRoll < 0.45 ? "long" : dirRoll < 0.75 ? "short" : "mixed",
     first30dPnl: Math.round(realizedPnl * (0.4 + r() * 0.8)),
   }
@@ -61,7 +69,7 @@ function assetStats(coin: string, r: () => number, i: number): AssetStats {
 
 function position(coin: string, side: "long" | "short", r: () => number, isolated = false): OpenPosition {
   const px = PX[coin]
-  const size = coin === "BTC" ? Math.round((0.2 + r() * 12) * 1000) / 1000 : Math.round(50_000 + r() * 2_000_000)
+  const size = coin === "BTC" ? Math.round((0.2 + r() * 12) * 1000) / 1000 : coin === "ADA" ? Math.round(50_000 + r() * 2_000_000) : Math.round((5 + r() * 400) * 10) / 10
   const entryPx = px * (1 + (r() - 0.5) * 0.04)
   const notionalUsd = size * px
   const lev = [3, 5, 10, 20][Math.floor(r() * 4)]
@@ -85,29 +93,97 @@ function position(coin: string, side: "long" | "short", r: () => number, isolate
   }
 }
 
-type Seed = TraderRow & { _btc: AssetStats; _ada: AssetStats; _positions: OpenPosition[] }
+const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)))
+
+function buildMix(groups: Record<AssetGroup, AssetStats | null>, otherVol: number, otherTrades: number): Mix {
+  const vols = ASSET_GROUPS.map((g) => groups[g]?.volumeUsd ?? 0)
+  const trs = ASSET_GROUPS.map((g) => groups[g]?.trades ?? 0)
+  const totalVol = vols.reduce((s, v) => s + v, 0) + otherVol
+  const totalTr = trs.reduce((s, v) => s + v, 0) + otherTrades
+  const byAsset = {} as Mix["byAsset"]
+  ASSET_GROUPS.forEach((g, i) => {
+    byAsset[g] = { volumeUsd: vols[i], trades: trs[i], sharePct: totalVol ? Math.round((vols[i] / totalVol) * 1000) / 10 : 0 }
+  })
+  byAsset.OTHER = { volumeUsd: otherVol, trades: otherTrades, sharePct: totalVol ? Math.round((otherVol / totalVol) * 1000) / 10 : 0 }
+  const topCoins = [
+    ...ASSET_GROUPS.flatMap((g) => (groups[g]?.coins ?? []).map((c, k) => ({ coin: c, sharePct: Math.round(byAsset[g].sharePct / (k + 1) * 10) / 10 }))),
+    { coin: "ETH", sharePct: Math.round(byAsset.OTHER.sharePct * 0.7 * 10) / 10 },
+    { coin: "SOL", sharePct: Math.round(byAsset.OTHER.sharePct * 0.3 * 10) / 10 },
+  ]
+    .filter((c) => c.sharePct > 0)
+    .sort((a, b) => b.sharePct - a.sharePct)
+    .slice(0, 5)
+  return {
+    copyableSharePct: totalVol ? Math.round(((totalVol - otherVol) / totalVol) * 1000) / 10 : 0,
+    copyableTradeSharePct: totalTr ? Math.round(((totalTr - otherTrades) / totalTr) * 1000) / 10 : 0,
+    byAsset,
+    topCoins,
+  }
+}
+
+function buildScore(mix: Mix, stats: Stats30d, groups: Record<AssetGroup, AssetStats | null>, r: () => number): Score {
+  const focus = clamp(mix.copyableSharePct)
+  const wr = ASSET_GROUPS.reduce((s, g) => s + (groups[g]?.winRate ?? 0) * (groups[g]?.trades ?? 0), 0) / Math.max(1, ASSET_GROUPS.reduce((s, g) => s + (groups[g]?.trades ?? 0), 0))
+  const success = clamp((stats.pnlCopyable > 0 ? 55 : 25) + (wr - 50) * 0.8 + r() * 15)
+  const activity = clamp(Math.min(100, stats.tradesPerDay * 18) + r() * 10)
+  const consistency = clamp(stats.profitableWeeksPct ?? 40)
+  const risk = clamp(100 - (stats.maxDrawdownPct ?? 20) * 2.5 - ((stats.medianLeverage ?? 5) - 5) * 3)
+  const blend = success * 0.35 + activity * 0.2 + focus * 0.2 + consistency * 0.15 + risk * 0.1
+  const copyability = clamp(focus < 50 ? blend * (focus / 50) : blend)
+  const grade: Grade = copyability >= 75 ? "A" : copyability >= 55 ? "B" : copyability >= 35 ? "C" : "D"
+  const reasons: string[] = []
+  reasons.push(focus >= 70 ? `${focus}% of 30d volume in BTC, ADA, GOLD or WTI` : `Only ${focus}% of volume in copyable markets`)
+  reasons.push(stats.pnlCopyable > 0 ? `Realized +$${Math.round(stats.pnlCopyable / 1000)}k in copyable markets over 30d` : `Lost $${Math.round(-stats.pnlCopyable / 1000)}k in copyable markets over 30d`)
+  reasons.push(`${stats.tradesPerDay.toFixed(1)} trades per day`)
+  if (stats.maxDrawdownPct != null) reasons.push(`Max drawdown ${stats.maxDrawdownPct.toFixed(1)}%${stats.maxDrawdownPct > 25 ? " (deep)" : ""}`)
+  if (stats.medianLeverage != null && stats.medianLeverage >= 10) reasons.push(`Median leverage ${stats.medianLeverage}x`)
+  if (stats.profitableWeeksPct != null) reasons.push(`${Math.round(stats.profitableWeeksPct)}% of weeks profitable`)
+  return { copyability, success, activity, focus, consistency, risk, grade, reasons }
+}
+
+type Seed = TraderRow & { _groups: Record<AssetGroup, AssetStats | null>; _positions: OpenPosition[] }
 
 function buildTrader(i: number): Seed {
   const r = rng(1000 + i * 97)
   const equity = Math.round(80_000 + r() * 12_000_000)
-  const btc = assetStats("BTC", r, i)
-  const ada = assetStats("ADA", r, i)
+  const groups = { BTC: assetStats("BTC", r, i), ADA: assetStats("ADA", r, i), GOLD: assetStats("GOLD", r, i), WTI: assetStats("WTI", r, i) }
   const positions: OpenPosition[] = []
-  if (r() < 0.7) positions.push(position("BTC", r() < 0.6 ? "long" : "short", r, i % 4 === 1))
-  if (r() < 0.5) positions.push(position("ADA", r() < 0.5 ? "long" : "short", r))
-  if (r() < 0.3) positions.push(position("ETH", "long", r))
-  const monthPnl = Math.round((r() - 0.25) * equity * 0.3)
+  if (groups.BTC && r() < 0.7) positions.push(position("BTC", r() < 0.6 ? "long" : "short", r, i % 4 === 1))
+  if (groups.ADA && r() < 0.5) positions.push(position("ADA", r() < 0.5 ? "long" : "short", r))
+  if (groups.GOLD && r() < 0.5) positions.push(position(groups.GOLD.coins?.[0] ?? "xyz:GOLD", "long", r))
+  if (groups.WTI && r() < 0.4) positions.push(position(groups.WTI.coins?.[0] ?? "xyz:CL", r() < 0.5 ? "long" : "short", r))
+  if (r() < 0.35) positions.push(position("ETH", "long", r))
+  // Wallets 1, 4 and 11 are mostly "other" so the copyable lens has something to hide.
+  const otherVol = Math.round(r() * (i === 1 || i === 4 || i === 11 ? 60_000_000 : 6_000_000))
+  const otherTrades = Math.round(otherVol / 150_000)
+  const mix = buildMix(groups, otherVol, otherTrades)
+  const copyTrades = ASSET_GROUPS.reduce((s, g) => s + (groups[g]?.trades ?? 0), 0)
+  const pnlCopyable = ASSET_GROUPS.reduce((s, g) => s + (groups[g]?.realizedPnl ?? 0), 0)
+  const stats: Stats30d = {
+    tradesPerDay: Math.round(((copyTrades + otherTrades) / 30) * 10) / 10,
+    avgHoldMin: i === 6 ? null : Math.round(30 + r() * 2000),
+    medianLeverage: i === 2 ? null : [3, 5, 5, 10, 20][Math.floor(r() * 5)],
+    maxDrawdownPct: i === 7 ? null : Math.round(r() * 40 * 10) / 10,
+    profitableWeeksPct: i === 7 ? null : Math.round(r() * 100),
+    pnlCopyable,
+    pnlOther: Math.round((r() - 0.4) * otherVol * 0.015),
+  }
+  const score = buildScore(mix, stats, groups, r)
+  const monthPnl = pnlCopyable + stats.pnlOther
+  const volume = ASSET_GROUPS.reduce((s, g) => s + (groups[g]?.volumeUsd ?? 0), 0) + otherVol
   return {
     address: ADDRS[i],
     displayName: NAMES[i],
     rank: 0,
     equity,
-    window: { pnl: monthPnl, roi: Math.round((monthPnl / equity) * 1000) / 10, volume: btc.volumeUsd + ada.volumeUsd + Math.round(r() * 5_000_000) },
+    window: { pnl: monthPnl, roi: Math.round((monthPnl / equity) * 1000) / 10, volume },
     asset: null,
     open: { count: positions.length, coins: positions.map((p) => p.coin), notionalUsd: positions.reduce((s, p) => s + p.notionalUsd, 0), unrealizedPnl: positions.reduce((s, p) => s + p.unrealizedPnl, 0) },
     openForAsset: null,
-    _btc: btc,
-    _ada: ada,
+    mix: i === 12 ? null : mix,
+    score: i === 12 ? null : score,
+    stats30d: i === 12 ? null : stats,
+    _groups: groups,
     _positions: positions,
   }
 }
@@ -116,45 +192,76 @@ const TRADERS = ADDRS.map((_, i) => buildTrader(i))
 
 const windowScale: Record<Window, number> = { day: 0.06, week: 0.3, month: 1, allTime: 4.2 }
 
-export function mockLeaderboard(asset: Asset, window: Window, sort: SortKey, minVolume: number): LeaderboardResponse {
+function rowFor(t: Seed, asset: Asset, window: Window): TraderRow {
   const scale = windowScale[window]
-  let rows: TraderRow[] = TRADERS.map((t) => {
-    const a = asset === "BTC" ? t._btc : asset === "ADA" ? t._ada : null
-    const openForAsset = asset === "ALL" ? null : (t._positions.find((p) => p.coin === asset) ?? null)
-    return {
-      address: t.address,
-      displayName: t.displayName,
-      rank: 0,
-      equity: t.equity,
-      window: { pnl: Math.round(t.window.pnl * scale), roi: Math.round(t.window.roi * scale * 10) / 10, volume: Math.round(t.window.volume * scale) },
-      asset: a,
-      open: t.open,
-      openForAsset,
-    }
-  })
-  rows = rows.filter((x) => (asset === "ALL" ? x.window.volume : (x.asset?.volumeUsd ?? 0)) >= minVolume)
-  const key = (x: TraderRow) => {
-    switch (sort) {
-      case "assetPnl":
-        return x.asset ? x.asset.realizedPnl : x.window.pnl
-      case "roi":
-        return x.window.roi
-      case "winRate":
-        return x.asset?.winRate ?? -1
-      case "volume":
-        return x.asset ? x.asset.volumeUsd : x.window.volume
-      case "equity":
-        return x.equity
-    }
-  }
-  rows.sort((a, b) => key(b) - key(a))
-  rows.forEach((x, i) => (x.rank = i + 1))
+  const a = asset === "ALL" ? null : t._groups[asset]
+  const coins = asset === "ALL" ? [] : GROUP_COINS[asset]
+  const openForAsset = asset === "ALL" ? null : (t._positions.find((p) => coins.includes(p.coin)) ?? null)
   return {
-    asOf: NOW,
-    scan: { candidates: 412, scanned: 388, lastFullScanAt: NOW - 14 * 60_000, nextScanAt: NOW + 46 * 60_000, stale: false },
-    assets: ["BTC", "ADA"],
-    traders: rows,
+    address: t.address,
+    displayName: t.displayName,
+    rank: 0,
+    equity: t.equity,
+    window: { pnl: Math.round(t.window.pnl * scale), roi: Math.round(t.window.roi * scale * 10) / 10, volume: Math.round(t.window.volume * scale) },
+    asset: a,
+    open: t.open,
+    openForAsset,
+    mix: t.mix,
+    score: t.score,
+    stats30d: t.stats30d,
   }
+}
+
+export function sortValueFor(x: TraderRow, sort: SortKey): number {
+  switch (sort) {
+    case "copyability":
+      return x.score?.copyability ?? -1
+    case "assetPnl":
+      return x.asset ? x.asset.realizedPnl : x.window.pnl
+    case "roi":
+      return x.window.roi
+    case "winRate":
+      return x.asset?.winRate ?? -1
+    case "volume":
+      return x.asset ? x.asset.volumeUsd : x.window.volume
+    case "equity":
+      return x.equity
+    case "focus":
+      return x.score?.focus ?? x.mix?.copyableSharePct ?? -1
+    case "activity":
+      return x.score?.activity ?? x.stats30d?.tradesPerDay ?? -1
+  }
+}
+
+const SCAN = { candidates: 1512, scanned: 1388, lastFullScanAt: NOW - 14 * 60_000, nextScanAt: NOW + 46 * 60_000, stale: false }
+
+export function mockLeaderboard(asset: Asset, window: Window, sort: SortKey, minVolume: number, copyableOnly: boolean, minFocus: number): LeaderboardResponse {
+  let rows = TRADERS.map((t) => rowFor(t, asset, window))
+  rows = rows.filter((x) => (asset === "ALL" ? x.window.volume : (x.asset?.volumeUsd ?? 0)) >= minVolume)
+  if (asset !== "ALL") rows = rows.filter((x) => x.asset != null)
+  if (copyableOnly) rows = rows.filter((x) => (x.mix?.copyableSharePct ?? 0) >= minFocus)
+  rows.sort((a, b) => sortValueFor(b, sort) - sortValueFor(a, sort) || (b.asset?.winRate ?? 0) - (a.asset?.winRate ?? 0))
+  rows.forEach((x, i) => (x.rank = i + 1))
+  return { asOf: NOW, scan: SCAN, assets: [...ASSET_GROUPS], traders: rows }
+}
+
+export function mockSummary(window: Window): SummaryResponse {
+  const top: SummaryResponse["top"] = {}
+  for (const g of ASSET_GROUPS) {
+    const rows = TRADERS.map((t) => rowFor(t, g, window))
+      .filter((x) => x.asset != null)
+      .sort((a, b) => (b.score?.copyability ?? -1) - (a.score?.copyability ?? -1) || (b.asset?.realizedPnl ?? 0) - (a.asset?.realizedPnl ?? 0))
+      .slice(0, 5)
+    rows.forEach((x, i) => (x.rank = i + 1))
+    top[g] = rows
+  }
+  const copyable = TRADERS.map((t) => rowFor(t, "ALL", window))
+    .filter((x) => (x.mix?.copyableSharePct ?? 0) >= 70)
+    .sort((a, b) => (b.score?.copyability ?? -1) - (a.score?.copyability ?? -1))
+    .slice(0, 10)
+  copyable.forEach((x, i) => (x.rank = i + 1))
+  top.COPYABLE = copyable
+  return { asOf: NOW, scan: SCAN, top }
 }
 
 function history(r: () => number, points: number, step: number, endPnl: number): [number, number][] {
@@ -170,11 +277,11 @@ function history(r: () => number, points: number, step: number, endPnl: number):
 
 function trades(t: Seed, r: () => number): Trade[] {
   const out: Trade[] = []
-  const coins = ["BTC", "ADA", "BTC", "BTC", "ETH", "ADA", "SOL"]
+  const coins = ["BTC", "ADA", "BTC", "BTC", "ETH", "ADA", "SOL", "xyz:GOLD", "xyz:CL", "PAXG"]
   for (let i = 0; i < 100; i++) {
     const coin = coins[Math.floor(r() * coins.length)]
     const px = PX[coin] * (1 + (r() - 0.5) * 0.03)
-    const size = coin === "BTC" ? Math.round(r() * 3000) / 1000 : coin === "ETH" ? Math.round(r() * 400) / 10 : Math.round(r() * 400_000)
+    const size = coin === "BTC" ? Math.round(r() * 3000) / 1000 : coin === "ETH" ? Math.round(r() * 400) / 10 : coin === "ADA" ? Math.round(r() * 400_000) : Math.round(r() * 2000) / 10
     const open = r() < 0.5
     const long = r() < 0.55
     const dir = open ? (long ? "Open Long" : "Open Short") : long ? "Close Long" : "Close Short"
@@ -201,6 +308,7 @@ export function mockTrader(address: string, asset: Asset): TraderDetail | null {
   const r = rng(77 + ADDRS.indexOf(t.address))
   const all = trades(t, r)
   const monthPnl = t.window.pnl
+  const coins = asset === "ALL" ? null : GROUP_COINS[asset]
   return {
     asOf: NOW,
     address: t.address,
@@ -215,8 +323,11 @@ export function mockTrader(address: string, asset: Asset): TraderDetail | null {
     },
     pnlHistory: { month: history(r, 30, D, monthPnl), allTime: history(r, 52, 7 * D, Math.round(monthPnl * 4.2)) },
     openPositions: t._positions,
-    recentTrades: asset === "ALL" ? all : all.filter((x) => x.coin === asset),
-    perAsset: { BTC: t._btc, ADA: t._ada, ETH: null },
+    recentTrades: coins ? all.filter((x) => coins.includes(x.coin)) : all,
+    perAsset: { ...t._groups, ETH: null },
     links: { hyperliquid: `https://app.hyperliquid.xyz/explorer/address/${t.address}` },
+    mix: t.mix,
+    score: t.score,
+    stats30d: t.stats30d,
   }
 }

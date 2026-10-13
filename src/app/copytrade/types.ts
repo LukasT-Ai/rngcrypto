@@ -1,9 +1,13 @@
-// Copy Trade API contract (CONTRACT.md "COPY TRADE"). All numbers are numbers, all times epoch ms.
+// Copy Trade API contract (CONTRACT.md "COPY TRADE" + amendments 1 and 2). All numbers are numbers, all times epoch ms.
 
-export type Asset = "BTC" | "ADA" | "ALL"
+export type AssetGroup = "BTC" | "ADA" | "GOLD" | "WTI"
+export type Asset = AssetGroup | "ALL"
 export type Window = "day" | "week" | "month" | "allTime"
-export type SortKey = "assetPnl" | "roi" | "winRate" | "volume" | "equity"
+export type SortKey = "copyability" | "assetPnl" | "roi" | "winRate" | "volume" | "equity" | "focus" | "activity"
 export type Direction = "long" | "short" | "mixed"
+export type Grade = "A" | "B" | "C" | "D"
+
+export const ASSET_GROUPS: AssetGroup[] = ["BTC", "ADA", "GOLD", "WTI"]
 
 export interface WindowStats {
   pnl: number
@@ -12,7 +16,10 @@ export interface WindowStats {
 }
 
 export interface AssetStats {
+  /** Group name (BTC, ADA, GOLD, WTI). */
   coin: string
+  /** Underlying Hyperliquid markets traded inside the group, e.g. ["xyz:GOLD", "PAXG"]. */
+  coins?: string[]
   trades: number
   volumeUsd: number
   realizedPnl: number
@@ -24,6 +31,40 @@ export interface AssetStats {
   lastTradeAt: number | null
   direction: Direction | null
   first30dPnl: number
+}
+
+export interface MixSlice {
+  volumeUsd: number
+  trades: number
+  sharePct: number
+}
+
+export interface Mix {
+  copyableSharePct: number
+  copyableTradeSharePct: number
+  byAsset: Record<AssetGroup | "OTHER", MixSlice>
+  topCoins: { coin: string; sharePct: number }[]
+}
+
+export interface Score {
+  copyability: number
+  success: number
+  activity: number
+  focus: number
+  consistency: number
+  risk: number
+  grade: Grade
+  reasons: string[]
+}
+
+export interface Stats30d {
+  tradesPerDay: number
+  avgHoldMin: number | null
+  medianLeverage: number | null
+  maxDrawdownPct: number | null
+  profitableWeeksPct: number | null
+  pnlCopyable: number
+  pnlOther: number
 }
 
 export interface OpenPosition {
@@ -52,6 +93,10 @@ export interface TraderRow {
   asset: AssetStats | null
   open: { count: number; coins: string[]; notionalUsd: number; unrealizedPnl: number }
   openForAsset: OpenPosition | null
+  // Amendment 2. Typed as optional so a backend that has not shipped them yet still renders (with dashes).
+  mix?: Mix | null
+  score?: Score | null
+  stats30d?: Stats30d | null
 }
 
 export interface ScanStatus {
@@ -67,6 +112,14 @@ export interface LeaderboardResponse {
   scan: ScanStatus
   assets: string[]
   traders: TraderRow[]
+}
+
+export type SummaryKey = AssetGroup | "COPYABLE"
+
+export interface SummaryResponse {
+  asOf: number
+  scan: ScanStatus
+  top: Partial<Record<SummaryKey, TraderRow[]>>
 }
 
 export interface Trade {
@@ -94,4 +147,7 @@ export interface TraderDetail {
   recentTrades: Trade[]
   perAsset: Record<string, AssetStats | null>
   links: { hyperliquid: string }
+  mix?: Mix | null
+  score?: Score | null
+  stats30d?: Stats30d | null
 }

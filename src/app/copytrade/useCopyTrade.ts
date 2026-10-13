@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react"
 import { useQuery } from "@tanstack/react-query"
-import type { Asset, LeaderboardResponse, SortKey, TraderDetail, Window } from "./types"
+import type { Asset, LeaderboardResponse, SortKey, SummaryResponse, TraderDetail, Window } from "./types"
 
 /** `?mock=1` serves the fixture; development only, so the production bundle never ships it. Server snapshot is
  * false so SSR and hydration agree; the client value lands on the first post-hydration render. */
@@ -17,6 +17,8 @@ export interface ListParams {
   window: Window
   sort: SortKey
   minVolume: number
+  copyableOnly: boolean
+  minFocus: number
   limit?: number
 }
 
@@ -25,15 +27,38 @@ export const DETAIL_POLL_MS = 30_000
 
 export function useLeaderboard(p: ListParams, mock: boolean) {
   const qs = new URLSearchParams({ asset: p.asset, window: p.window, sort: p.sort, minVolume: String(p.minVolume), limit: String(p.limit ?? 100) })
+  if (p.copyableOnly) {
+    qs.set("copyableOnly", "1")
+    qs.set("minFocus", String(p.minFocus))
+  }
   return useQuery<LeaderboardResponse>({
     queryKey: ["copytrade", "list", mock, qs.toString()],
     queryFn: async () => {
       if (mock) {
         const m = await import("./__fixtures__/mock")
-        return m.mockLeaderboard(p.asset, p.window, p.sort, p.minVolume)
+        return m.mockLeaderboard(p.asset, p.window, p.sort, p.minVolume, p.copyableOnly, p.minFocus)
       }
       const r = await fetch(`/api/copytrade?${qs.toString()}`)
       if (!r.ok) throw new Error(`copytrade ${r.status}`)
+      return r.json()
+    },
+    refetchInterval: LIST_POLL_MS,
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
+  })
+}
+
+/** Quick "Top traders" strip: top 5 per asset group and top 10 copyable overall, month window. */
+export function useSummary(mock: boolean) {
+  return useQuery<SummaryResponse>({
+    queryKey: ["copytrade", "summary", mock],
+    queryFn: async () => {
+      if (mock) {
+        const m = await import("./__fixtures__/mock")
+        return m.mockSummary("month")
+      }
+      const r = await fetch(`/api/copytrade?view=summary&window=month`)
+      if (!r.ok) throw new Error(`copytrade summary ${r.status}`)
       return r.json()
     },
     refetchInterval: LIST_POLL_MS,

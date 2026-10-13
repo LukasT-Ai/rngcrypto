@@ -13,8 +13,11 @@ const COLS: { k: SortKey; l: string; align: "left" | "right"; hint?: string }[] 
   { k: "nAgree", l: "n agree", align: "right", hint: "Decided signals where this component pointed the same way as the call." },
   { k: "pWinAgree", l: "P(win | agree)", align: "right", hint: "TP1 rate when the component agreed with the call, with a 95% Wilson interval." },
   { k: "pWinDisagree", l: "P(win | dis)", align: "right", hint: "TP1 rate when the component disagreed with the call." },
-  { k: "lift", l: "Lift", align: "right", hint: "P(win | agree) minus P(win | disagree). A marker appears when the 95% interval excludes zero." },
+  { k: "lift", l: "Lift", align: "right", hint: "P(win | agree) minus P(win | disagree), as a fraction. A marker appears when the Newcombe 95% interval excludes zero." },
 ]
+
+// API rates are fractions 0..1; the page speaks percent.
+const pct = (f: number | null | undefined) => (f == null ? null : f * 100)
 
 const sortVal = (r: PerfComponentRow, k: SortKey): number | string => {
   if (k === "name") return r.name
@@ -79,8 +82,8 @@ export default function ComponentsTable({ rows }: { rows?: PerfComponentRow[] | 
                     <td className="py-1.5 font-medium text-white/85">{r.name}</td>
                     <td className="text-right font-mono tabular-nums text-white/70">{r.weight.toFixed(2)}</td>
                     <td className="text-right font-mono tabular-nums text-white/70">{r.nAgree}</td>
-                    <td className="text-right"><Rate rate={r.pWinAgree} n={r.nAgree} /></td>
-                    <td className="text-right font-mono tabular-nums text-white/70" title={`n=${r.nDisagree}`}>{fmtPct(r.pWinDisagree)}</td>
+                    <td className="text-right"><Rate rate={pct(r.pWinAgree)} n={r.nAgree} /></td>
+                    <td className="text-right font-mono tabular-nums text-white/70" title={`n=${r.nDisagree}`}>{fmtPct(pct(r.pWinDisagree))}</td>
                     <td className="text-right"><LiftCell r={r} /></td>
                     {hasCandidate && <td className="text-right font-mono tabular-nums text-white/70">{r.candidateWeight == null ? "—" : r.candidateWeight.toFixed(2)}</td>}
                   </tr>
@@ -102,8 +105,8 @@ export default function ComponentsTable({ rows }: { rows?: PerfComponentRow[] | 
                   <span className="font-mono text-white/60">w {r.weight.toFixed(2)} · n {r.nAgree}</span>
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-2">
-                  <span><span className="text-white/50">agree </span><Rate rate={r.pWinAgree} n={r.nAgree} /></span>
-                  <span><span className="text-white/50">dis </span><span className="font-mono">{fmtPct(r.pWinDisagree)}</span></span>
+                  <span><span className="text-white/50">agree </span><Rate rate={pct(r.pWinAgree)} n={r.nAgree} /></span>
+                  <span><span className="text-white/50">dis </span><span className="font-mono">{fmtPct(pct(r.pWinDisagree))}</span></span>
                   <span><span className="text-white/50">lift </span><LiftCell r={r} /></span>
                 </div>
               </div>

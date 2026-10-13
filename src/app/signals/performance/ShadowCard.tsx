@@ -14,7 +14,8 @@ const CLASS_LABEL: Record<PerfShadowClass, string> = {
 
 const DASHED = "rounded-xl border border-dashed border-white/20 bg-[rgb(var(--surface-rgb)/0.35)]"
 
-export default function ShadowCard({ shadow }: { shadow?: { byClass: PerfShadowRow[]; note: string } | null }) {
+export default function ShadowCard({ shadow, mode = "gross" }: { shadow?: { byClass: PerfShadowRow[]; note: string } | null; mode?: "net" | "gross" }) {
+  const exp = (r: PerfShadowRow) => (mode === "net" && r.expectancyNetR != null ? r.expectancyNetR : r.expectancyR)
   const rows = shadow?.byClass ?? []
   const allEmpty = rows.every((r) => r.n === 0)
   const header = (
@@ -38,16 +39,16 @@ export default function ShadowCard({ shadow }: { shadow?: { byClass: PerfShadowR
               <th scope="col" className="text-left font-medium py-1">Class</th>
               <th scope="col" className="text-right font-medium">n</th>
               <th scope="col" className="text-right font-medium">TP1 rate</th>
-              <th scope="col" className="text-right font-medium">Expectancy</th>
+              <th scope="col" className="text-right font-medium">Expectancy{mode === "net" ? " net" : ""}</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.key} className="border-t border-white/[0.05]">
                 <td className="py-1.5 text-white/85">{CLASS_LABEL[r.key] ?? r.key}</td>
-                <td className="text-right font-mono tabular-nums text-white/70">{r.n}</td>
+                <td className="text-right font-mono tabular-nums text-white/70">{r.n}{r.openN ? <span className="text-white/40"> +{r.openN} open</span> : null}</td>
                 <td className="text-right">{r.n < 8 ? <span className="text-white/40 text-[11px]">too few</span> : <Rate rate={r.tp1Rate} n={r.n} lo={r.wilsonLo} hi={r.wilsonHi} />}</td>
-                <td className="text-right font-mono tabular-nums" style={{ color: rColor(r.expectancyR, r.n) ?? (r.expectancyR == null ? GRAY : undefined) }}>{r.n < 8 ? "" : fmtR(r.expectancyR)}</td>
+                <td className="text-right font-mono tabular-nums" style={{ color: rColor(exp(r), r.n) ?? (exp(r) == null ? GRAY : undefined) }}>{r.n < 8 ? "" : fmtR(exp(r))}</td>
               </tr>
             ))}
           </tbody>
@@ -58,7 +59,7 @@ export default function ShadowCard({ shadow }: { shadow?: { byClass: PerfShadowR
           <div key={r.key} className="rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2 text-xs">
             <div className="flex items-center justify-between"><span className="text-white/85">{CLASS_LABEL[r.key] ?? r.key}</span><span className="font-mono text-white/60">n {r.n}</span></div>
             <div className="mt-1 flex items-center justify-between">
-              {r.n < 8 ? <span className="text-white/40">too few</span> : <><Rate rate={r.tp1Rate} n={r.n} lo={r.wilsonLo} hi={r.wilsonHi} /><span className="font-mono" style={{ color: rColor(r.expectancyR, r.n) }}>{fmtR(r.expectancyR)}</span></>}
+              {r.n < 8 ? <span className="text-white/40">too few</span> : <><Rate rate={r.tp1Rate} n={r.n} lo={r.wilsonLo} hi={r.wilsonHi} /><span className="font-mono" style={{ color: rColor(exp(r), r.n) }}>{fmtR(exp(r))}</span></>}
             </div>
           </div>
         ))}

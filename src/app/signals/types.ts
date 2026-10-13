@@ -624,6 +624,7 @@ export interface PerfCalibrationV2 {
   platt?: PerfPlatt | null
 }
 
+/** be-measure PR 12. pWin* and lift* are FRACTIONS 0..1 (Newcombe 95% on lift); weight is the mean in-play weight. */
 export interface PerfComponentRow {
   name: string
   nAgree: number
@@ -640,11 +641,14 @@ export interface PerfComponentRow {
 export type PerfShadowClass = "wait_lean" | "htf_blocked_short" | "regime_blocked" | "event_gated"
 export interface PerfShadowRow {
   key: PerfShadowClass
+  /** decided count */
   n: number
   tp1Rate: number | null
   wilsonLo: number | null
   wilsonHi: number | null
   expectancyR: number | null
+  expectancyNetR?: number | null
+  openN?: number
 }
 
 export interface PerfVersionRow {

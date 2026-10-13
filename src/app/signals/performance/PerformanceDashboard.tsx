@@ -462,7 +462,7 @@ export default function PerformanceDashboard() {
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <ComponentsTable rows={data.stats.components} />
-                <ShadowCard shadow={data.stats.shadow} />
+                <ShadowCard shadow={data.stats.shadow} mode={mode} />
               </div>
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

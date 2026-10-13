@@ -12,6 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE}/signals/strike`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.9 },
     { url: `${BASE}/signals/ascend`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.9 },
     { url: `${BASE}/signals/performance`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.85 },
+    { url: `${BASE}/copytrade`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.85 },
     { url: `${BASE}/markets`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.6 },
   ]
   const fixed: MetadataRoute.Sitemap = ["/blog", "/projects", "/proposals", "/about", "/subscribe", "/defi", "/web3", "/youtube"].map((route) => ({

@@ -7,6 +7,7 @@ import { ExternalLink } from "lucide-react"
 const exploreLinks = [
   { href: "/signals/strike", label: "Strike Signals" },
   { href: "/signals/ascend", label: "Ascend Signals" },
+  { href: "/copytrade", label: "Copy Trade" },
   { href: "/signals/performance", label: "Performance" },
   { href: "/projects", label: "Projects" },
   { href: "/blog", label: "Blog" },

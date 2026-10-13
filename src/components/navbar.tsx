@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import Image from "next/image"
-import { PenSquare, Layers, User, Menu, X, Zap, Activity, Crosshair, ChevronDown, TrendingUp, BarChart3 } from "lucide-react"
+import { PenSquare, Layers, User, Menu, X, Zap, Activity, Crosshair, ChevronDown, TrendingUp, BarChart3, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useState, useEffect, useRef } from "react"
@@ -27,6 +27,7 @@ const navItems: NavItem[] = [
       { href: "/signals/ascend", label: "Ascend", icon: BarChart3, color: ASCEND, blurb: "BTC, Gold, Cardano and WTI" },
     ],
   },
+  { href: "/copytrade", label: "Copy Trade", icon: Users },
   { href: "/signals/performance", label: "Performance", icon: Activity },
   { href: "/projects", label: "Projects", icon: Layers },
   { href: "/proposals", label: "Proposals", icon: Zap },

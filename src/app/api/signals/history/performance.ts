@@ -1,5 +1,5 @@
 import type { CalibrationBucket, SignalLog, SignalStats } from "./logger";
-import { activeCostVenue, costInR } from "./check/core";
+import { activeCostVenue, CANDLE_MS, costInR, fillWindowCandles, firstEligibleCandleTime } from "./check/core";
 import { bandOf, brierSet, sigmoid, wilson as wilsonFrac, type CalibrationFile } from "@/lib/signals/calibration";
 
 export interface PerformanceOptions {
@@ -92,6 +92,13 @@ export interface NormalizedSignal {
   minutesToNextEvent: number | null;
   /** Plain-language resolution sentence (design F4.3), rendered inline under the row. */
   reasonText: string;
+  // Open-signal card fields (names chosen by ui-performance). ms epoch.
+  /** End of the fill window (first eligible candle + 24 or 96 candles). */
+  fillWindowEndsAt: number;
+  /** Last checker pass that touched the record; null before the first pass. */
+  lastCheckAt: number | null;
+  /** Open record whose last check is older than 15 minutes. */
+  checkerStalled: boolean;
 }
 
 export interface CalBucket extends Bucket {
@@ -221,6 +228,8 @@ export interface PerformanceStats {
     provisionalTarget: number;
     /** Current engine version and how many decided, non-shadow records it has (the calibration gate counter). */
     engineVersion: string | null;
+    /** First record logged on the current engine version (ms epoch); null when none exists yet. */
+    engineVersionSince: number | null;
     decidedNCurrentVersion: number;
     /** Shadow records seen in the range (never in any number above). */
     shadowN: number;
@@ -479,6 +488,9 @@ export function normalize(s: SignalLog): NormalizedSignal {
     components: inputs?.components ?? null,
     minutesToNextEvent: inputs?.minutesToNextEvent ?? null,
     reasonText: "",
+    fillWindowEndsAt: firstEligibleCandleTime(s) + fillWindowCandles(s) * CANDLE_MS,
+    lastCheckAt: s.lastCheckedAt ?? null,
+    checkerStalled: open && s.lastCheckedAt != null && Date.now() - s.lastCheckedAt > 15 * 60e3,
   };
   row.reasonText = reasonText(row, s);
   return row;
@@ -958,6 +970,7 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
       provisional: closedN < PROVISIONAL_TARGET,
       provisionalTarget: PROVISIONAL_TARGET,
       engineVersion: currentVersion,
+      engineVersionSince: currentVersion ? all.filter((s) => s.engineVersion === currentVersion).reduce<number | null>((m, s) => (m == null || s.timestamp < m ? s.timestamp : m), null) : null,
       decidedNCurrentVersion,
       shadowN: shadowRows.length,
     },

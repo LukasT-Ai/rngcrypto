@@ -67,6 +67,76 @@ export function getTuning(): Tuning {
   return TUNING;
 }
 
+/**
+ * Factor weights of the multi-factor call (the literal that used to sit inside computeMultiFactorCall).
+ * `regime` is overridden by TUNING.regimeWeight at call time; macro/event/confirmation are injected from the
+ * macro service per run. setWeights() exists for out-of-sample validation of candidate weight vectors from the
+ * backtest (--weights-json); the live server never calls it.
+ */
+export interface FactorWeights {
+  marketStructure: number;
+  momentum: number;
+  volume: number;
+  derivatives: number;
+  htf: number;
+  bollinger: number;
+  divergences: number;
+  sentiment: number;
+  marketData: number;
+  patterns: number;
+  etf: number;
+  catalyst: number;
+  liquidation: number;
+  elliott: number;
+  taSystem: number;
+  regime: number;
+  macro: number;
+  event: number;
+  confirmation: number;
+}
+export const DEFAULT_WEIGHTS: Readonly<FactorWeights> = Object.freeze({
+  marketStructure: 0.13,
+  momentum: 0.11,
+  volume: 0.1,
+  derivatives: 0.08,
+  htf: 0.08,
+  bollinger: 0.07,
+  divergences: 0.07,
+  sentiment: 0.03,
+  marketData: 0.05,
+  patterns: 0.05,
+  etf: 0.05,
+  catalyst: 0.02,
+  liquidation: 0.05,
+  // Elliott Wave position (impulse 1-5 / corrective ABC across 15m, 1h, 4h). Wave 5 and wave B tops
+  // argue for shorts; wave 2, 4 and C bottoms argue for longs. Weight scales with count confidence.
+  elliott: 0.08,
+  // Trend-system + exhaustion composite (SMC, Ichimoku, squeeze, Chandelier, TD Sequential, patterns, sweeps)
+  taSystem: 0.09,
+  // Cloud / 200MA / ADX regime across 15m, 4h, 1d (tunable; 0 removes it from the denominator)
+  regime: DEFAULT_TUNING.regimeWeight,
+  macro: 0,
+  event: 0,
+  confirmation: 0,
+});
+let WEIGHT_OVERRIDES: Partial<FactorWeights> = {};
+export function setWeights(partial: Partial<FactorWeights>): FactorWeights {
+  const clean: Partial<FactorWeights> = {};
+  for (const k of Object.keys(DEFAULT_WEIGHTS) as (keyof FactorWeights)[]) {
+    const v = partial[k];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) clean[k] = v;
+  }
+  WEIGHT_OVERRIDES = { ...WEIGHT_OVERRIDES, ...clean };
+  return getWeights();
+}
+export function resetWeights(): void {
+  WEIGHT_OVERRIDES = {};
+}
+/** Weights as the next call will see them (regime follows TUNING). */
+export function getWeights(): FactorWeights {
+  return { ...DEFAULT_WEIGHTS, ...WEIGHT_OVERRIDES, regime: TUNING.regimeWeight };
+}
+
 export type EngineResult =
   | { status: 200; body: Record<string, unknown>; cached: boolean }
   | { status: 400 | 503; body: { error: string; [k: string]: unknown } };
@@ -3318,32 +3388,9 @@ function computeMultiFactorCall(
   const trendDir15m =
     ema9 > ema21 && ema21 > ema50 ? "bull" : ema9 < ema21 && ema21 < ema50 ? "bear" : "mixed";
 
-  const weights = {
-    marketStructure: 0.13,
-    momentum: 0.11,
-    volume: 0.1,
-    derivatives: 0.08,
-    htf: 0.08,
-    bollinger: 0.07,
-    divergences: 0.07,
-    sentiment: 0.03,
-    marketData: 0.05,
-    patterns: 0.05,
-    etf: 0.05,
-    catalyst: 0.02,
-    liquidation: 0.05,
-    // Elliott Wave position (impulse 1-5 / corrective ABC across 15m, 1h, 4h). Wave 5 and wave B tops
-    // argue for shorts; wave 2, 4 and C bottoms argue for longs. Weight scales with count confidence.
-    elliott: 0.08,
-    // Trend-system + exhaustion composite (SMC, Ichimoku, squeeze, Chandelier, TD Sequential, patterns, sweeps)
-    taSystem: 0.09,
-    // Cloud / 200MA / ADX regime across 15m, 4h, 1d (tunable; 0 removes it from the denominator)
-    regime: TUNING.regimeWeight,
-    macro: 0,
-    event: 0,
-    confirmation: 0,
-  };
-
+  // Factor weights: DEFAULT_WEIGHTS plus any setWeights() override (backtest --weights-json); the regime
+  // weight always follows TUNING so the existing tuning knob keeps working. Same literal as before by default.
+  const weights: FactorWeights = { ...DEFAULT_WEIGHTS, ...WEIGHT_OVERRIDES, regime: TUNING.regimeWeight };
   if (!isCrypto) {
     const hasOilGeo = oilGeoScore != null;
     weights.marketData = 0;

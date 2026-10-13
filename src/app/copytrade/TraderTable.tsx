@@ -5,37 +5,38 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Chip, FOCUS_RING, SURFACE } from "../signals/shared"
 import type { Asset, OpenPosition, SortKey, TraderRow, Window } from "./types"
-import { Ago, TraderName, dirWord, fmtInt, fmtPct, fmtRate, fmtSize, fmtUsd, signColor, winRateColor } from "./ct-shared"
+import { Ago, MixBar, ScoreChip, TraderName, dirWord, fmtInt, fmtNum, fmtPct, fmtRate, fmtSize, fmtUsd, signColor, winRateColor } from "./ct-shared"
 
-export type ColKey = SortKey | "rank" | "pnl" | "trades" | "lastTrade"
+export type ColKey = SortKey | "rank" | "pnl" | "trades" | "lastTrade" | "tradesPerDay" | "maxDd"
 export type SortDir = "asc" | "desc"
 
 const TH = "px-2 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-white/50 whitespace-nowrap"
-const TD = "px-2 py-2 font-mono text-xs tabular-nums whitespace-nowrap align-middle"
+const TD = "px-2 py-1.5 font-mono text-xs tabular-nums whitespace-nowrap align-middle"
 
 export const WINDOW_WORD: Record<Window, string> = { day: "24h", week: "7d", month: "30d", allTime: "all time" }
 
 interface Col {
+  id: string
   k: ColKey
   l: string
-  short?: string
   align: "left" | "right"
   sortable: boolean
   hide?: string
 }
 
 const COLS: Col[] = [
-  { k: "rank", l: "#", align: "right", sortable: true },
-  { k: "equity", l: "Trader", align: "left", sortable: false },
-  { k: "equity", l: "Equity", align: "right", sortable: true, hide: "hidden lg:table-cell" },
-  { k: "pnl", l: "Window PnL", short: "PnL", align: "right", sortable: true },
-  { k: "roi", l: "ROI", align: "right", sortable: true, hide: "hidden xl:table-cell" },
-  { k: "assetPnl", l: "Asset PnL", align: "right", sortable: true },
-  { k: "winRate", l: "Win rate", align: "right", sortable: true },
-  { k: "trades", l: "Trades / Vol", align: "right", sortable: true, hide: "hidden lg:table-cell" },
-  { k: "volume", l: "Bias", align: "left", sortable: false, hide: "hidden xl:table-cell" },
-  { k: "lastTrade", l: "Last trade", align: "right", sortable: true, hide: "hidden xl:table-cell" },
-  { k: "volume", l: "Open position", align: "left", sortable: false },
+  { id: "rank", k: "rank", l: "#", align: "right", sortable: true },
+  { id: "trader", k: "equity", l: "Trader", align: "left", sortable: false },
+  { id: "score", k: "copyability", l: "Score", align: "left", sortable: true },
+  { id: "mix", k: "focus", l: "Mix · copyable", align: "left", sortable: true },
+  { id: "equity", k: "equity", l: "Equity", align: "right", sortable: true, hide: "hidden lg:table-cell" },
+  { id: "pnl", k: "pnl", l: "Window PnL", align: "right", sortable: true },
+  { id: "assetPnl", k: "assetPnl", l: "Asset PnL", align: "right", sortable: true },
+  { id: "winRate", k: "winRate", l: "Win rate", align: "right", sortable: true },
+  { id: "tpd", k: "tradesPerDay", l: "Tr/day", align: "right", sortable: true, hide: "hidden lg:table-cell" },
+  { id: "dd", k: "maxDd", l: "Max DD", align: "right", sortable: true, hide: "hidden xl:table-cell" },
+  { id: "last", k: "lastTrade", l: "Last trade", align: "right", sortable: true, hide: "hidden 2xl:table-cell" },
+  { id: "open", k: "volume", l: "Open position", align: "left", sortable: false },
 ]
 
 export function OpenChip({ p, compact = false }: { p: OpenPosition | null; compact?: boolean }) {
@@ -46,7 +47,7 @@ export function OpenChip({ p, compact = false }: { p: OpenPosition | null; compa
         {p.side}
       </Chip>
       <span className="font-mono text-xs tabular-nums text-white/85">
-        {fmtSize(p.size)} <span className="text-white/45">{compact ? "" : p.coin}</span>
+        {fmtSize(p.size)} {!compact && <span className="text-white/45">{p.coin}</span>}
       </span>
       <span className="font-mono text-xs tabular-nums" style={{ color: signColor(p.unrealizedPnl) ?? "rgba(255,255,255,0.6)" }} title="Unrealized PnL">
         {fmtUsd(p.unrealizedPnl, { sign: true })}
@@ -83,6 +84,8 @@ function WinRate({ r }: { r: TraderRow }) {
   )
 }
 
+const ddColor = (dd: number | null | undefined) => (dd == null ? "rgba(255,255,255,0.4)" : dd > 25 ? "#F59E0B" : "rgba(255,255,255,0.85)")
+
 interface RowProps {
   r: TraderRow
   pos: number
@@ -92,6 +95,7 @@ interface RowProps {
 
 const Row = memo(function Row({ r, pos, asset, onView }: RowProps) {
   const a = r.asset
+  const s = r.stats30d
   const open = () => onView(r)
   return (
     <tr
@@ -107,46 +111,33 @@ const Row = memo(function Row({ r, pos, asset, onView }: RowProps) {
       className={cn("cursor-pointer border-t border-white/[0.05] transition-colors hover:bg-white/[0.04] focus-visible:bg-white/[0.05]", FOCUS_RING, "focus-visible:ring-inset focus-visible:ring-offset-0")}
     >
       <td className={cn(TD, "text-right text-white/50")}>{pos}</td>
-      <td className={cn(TD, "max-w-[220px] font-sans")}>
+      <td className={cn(TD, "max-w-[200px] font-sans")}>
         <TraderName address={r.address} displayName={r.displayName} />
+      </td>
+      <td className={cn(TD, "font-sans")}>
+        <ScoreChip score={r.score} />
+      </td>
+      <td className={cn(TD, "font-sans")}>
+        <MixBar mix={r.mix} width={72} />
       </td>
       <td className={cn(TD, "hidden text-right text-white/85 lg:table-cell")}>{fmtUsd(r.equity)}</td>
       <td className={cn(TD, "text-right")}>
         <span style={{ color: signColor(r.window.pnl) ?? "rgba(255,255,255,0.85)" }}>{fmtUsd(r.window.pnl, { sign: true })}</span>
-        <span className="ml-1 text-[11px] text-white/45 xl:hidden">{fmtPct(r.window.roi)}</span>
+        <span className="ml-1 text-[11px] text-white/45">{fmtPct(r.window.roi)}</span>
       </td>
-      <td className={cn(TD, "hidden text-right xl:table-cell")} style={{ color: signColor(r.window.roi) ?? "rgba(255,255,255,0.85)" }}>
-        {fmtPct(r.window.roi)}
-      </td>
-      <td className={cn(TD, "text-right")} style={{ color: a ? signColor(a.realizedPnl) ?? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.4)" }} title={a ? `Realized ${a.coin} PnL over the last 30 days, fees ${fmtUsd(a.fees)}` : "Pick BTC or ADA for per-asset stats"}>
-        {a ? fmtUsd(a.realizedPnl, { sign: true }) : "—"}
+      <td className={cn(TD, "text-right")} style={{ color: a ? signColor(a.realizedPnl) ?? "rgba(255,255,255,0.85)" : s ? signColor(s.pnlCopyable) ?? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.4)" }} title={a ? `Realized ${a.coin} PnL over the last 30 days, fees ${fmtUsd(a.fees)}` : s ? "30d realized PnL across BTC, ADA, GOLD and WTI" : "Pick an asset for per-asset stats"}>
+        {a ? fmtUsd(a.realizedPnl, { sign: true }) : s ? fmtUsd(s.pnlCopyable, { sign: true }) : "—"}
       </td>
       <td className={cn(TD, "text-right")}>
         <WinRate r={r} />
       </td>
-      <td className={cn(TD, "hidden text-right lg:table-cell")}>
-        {a ? (
-          <>
-            <span className="text-white/85">{fmtInt(a.trades)}</span>
-            <span className="ml-1 text-white/45">{fmtUsd(a.volumeUsd)}</span>
-          </>
-        ) : (
-          <>
-            <span className="text-white/40">—</span>
-            <span className="ml-1 text-white/45">{fmtUsd(r.window.volume)}</span>
-          </>
-        )}
+      <td className={cn(TD, "hidden text-right text-white/85 lg:table-cell")} title={a ? `${fmtInt(a.trades)} ${a.coin} trades · ${fmtUsd(a.volumeUsd)} volume in 30d` : undefined}>
+        {fmtNum(s?.tradesPerDay)}
       </td>
-      <td className={cn(TD, "hidden xl:table-cell")}>
-        {a ? (
-          <Chip variant="direction" value={a.direction ?? "mixed"}>
-            {dirWord(a.direction)}
-          </Chip>
-        ) : (
-          <span className="text-white/40">—</span>
-        )}
+      <td className={cn(TD, "hidden text-right xl:table-cell")} style={{ color: ddColor(s?.maxDrawdownPct) }} title={s?.maxDrawdownPct != null ? `Max drawdown ${s.maxDrawdownPct.toFixed(1)}% over 30d${s.maxDrawdownPct > 25 ? " (deep)" : ""}` : "Drawdown not available"}>
+        {s?.maxDrawdownPct == null ? "—" : `-${s.maxDrawdownPct.toFixed(1)}%`}
       </td>
-      <td className={cn(TD, "hidden text-right text-white/70 xl:table-cell")}>
+      <td className={cn(TD, "hidden text-right text-white/70 2xl:table-cell")}>
         <Ago ts={a?.lastTradeAt ?? null} />
       </td>
       <td className={cn(TD, "font-sans")}>{asset === "ALL" ? <OpenSummary r={r} /> : <OpenChip p={r.openForAsset} compact />}</td>
@@ -158,7 +149,7 @@ const Row = memo(function Row({ r, pos, asset, onView }: RowProps) {
             open()
           }}
           aria-label={`View ${r.displayName ?? r.address}`}
-          className={cn("inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-sans font-medium text-white/60 hover:text-white hover:bg-white/[0.06]", FOCUS_RING)}
+          className={cn("inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-sans text-[11px] font-medium text-white/60 hover:bg-white/[0.06] hover:text-white", FOCUS_RING)}
         >
           View <ChevronRight className="size-3.5" />
         </button>
@@ -169,8 +160,10 @@ const Row = memo(function Row({ r, pos, asset, onView }: RowProps) {
 
 const Card = memo(function Card({ r, pos, asset, onView }: RowProps) {
   const a = r.asset
+  const s = r.stats30d
+  const L = "text-[10px] font-sans uppercase tracking-[0.08em] text-white/45"
   return (
-    <div className={cn(SURFACE, "p-3 space-y-2")}>
+    <div className={cn(SURFACE, "space-y-2 p-3")}>
       <div className="flex items-center gap-2">
         <span className="font-mono text-xs tabular-nums text-white/50">#{pos}</span>
         <div className="min-w-0 flex-1">
@@ -180,48 +173,50 @@ const Card = memo(function Card({ r, pos, asset, onView }: RowProps) {
           View <ChevronRight className="size-3.5" />
         </button>
       </div>
-      <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 font-mono text-xs tabular-nums">
-        <div>
-          <div className="text-[10px] font-sans uppercase tracking-[0.08em] text-white/45">Equity</div>
-          <div className="text-white/85">{fmtUsd(r.equity)}</div>
-        </div>
-        <div>
-          <div className="text-[10px] font-sans uppercase tracking-[0.08em] text-white/45">PnL</div>
-          <div style={{ color: signColor(r.window.pnl) ?? "rgba(255,255,255,0.85)" }}>
-            {fmtUsd(r.window.pnl, { sign: true })} <span className="text-white/45">{fmtPct(r.window.roi)}</span>
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] font-sans uppercase tracking-[0.08em] text-white/45">{a ? `${a.coin} PnL` : "Asset PnL"}</div>
-          <div style={{ color: a ? signColor(a.realizedPnl) ?? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.4)" }}>{a ? fmtUsd(a.realizedPnl, { sign: true }) : "—"}</div>
-        </div>
-        <div>
-          <div className="text-[10px] font-sans uppercase tracking-[0.08em] text-white/45">Win rate</div>
-          <div>
-            <WinRate r={r} />
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] font-sans uppercase tracking-[0.08em] text-white/45">Trades / vol</div>
-          <div className="text-white/85">
-            {a ? fmtInt(a.trades) : "—"} <span className="text-white/45">{fmtUsd(a ? a.volumeUsd : r.window.volume)}</span>
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] font-sans uppercase tracking-[0.08em] text-white/45">Last trade</div>
-          <div className="text-white/70">
-            <Ago ts={a?.lastTradeAt ?? null} />
-          </div>
-        </div>
-      </div>
       <div className="flex flex-wrap items-center gap-2">
+        <ScoreChip score={r.score} />
+        <MixBar mix={r.mix} width={96} />
         {a && (
           <Chip variant="direction" value={a.direction ?? "mixed"}>
             {dirWord(a.direction)}
           </Chip>
         )}
-        {asset === "ALL" ? <OpenSummary r={r} /> : <OpenChip p={r.openForAsset} />}
       </div>
+      <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 font-mono text-xs tabular-nums">
+        <div>
+          <div className={L}>Equity</div>
+          <div className="text-white/85">{fmtUsd(r.equity)}</div>
+        </div>
+        <div>
+          <div className={L}>PnL</div>
+          <div style={{ color: signColor(r.window.pnl) ?? "rgba(255,255,255,0.85)" }}>
+            {fmtUsd(r.window.pnl, { sign: true })} <span className="text-white/45">{fmtPct(r.window.roi)}</span>
+          </div>
+        </div>
+        <div>
+          <div className={L}>{a ? `${a.coin} PnL` : "Copyable PnL"}</div>
+          <div style={{ color: a ? signColor(a.realizedPnl) ?? "rgba(255,255,255,0.85)" : signColor(s?.pnlCopyable) ?? "rgba(255,255,255,0.4)" }}>{a ? fmtUsd(a.realizedPnl, { sign: true }) : fmtUsd(s?.pnlCopyable, { sign: true })}</div>
+        </div>
+        <div>
+          <div className={L}>Win rate</div>
+          <div>
+            <WinRate r={r} />
+          </div>
+        </div>
+        <div>
+          <div className={L}>Tr/day · max DD</div>
+          <div className="text-white/85">
+            {fmtNum(s?.tradesPerDay)} <span style={{ color: ddColor(s?.maxDrawdownPct) }}>{s?.maxDrawdownPct == null ? "—" : `-${s.maxDrawdownPct.toFixed(1)}%`}</span>
+          </div>
+        </div>
+        <div>
+          <div className={L}>Last trade</div>
+          <div className="text-white/70">
+            <Ago ts={a?.lastTradeAt ?? null} />
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">{asset === "ALL" ? <OpenSummary r={r} /> : <OpenChip p={r.openForAsset} />}</div>
     </div>
   )
 })
@@ -237,7 +232,7 @@ export interface TraderTableProps {
 }
 
 export default function TraderTable({ rows, asset, window, sortKey, sortDir, onSort, onView }: TraderTableProps) {
-  const cols = COLS.map((c) => (c.l === "Window PnL" ? { ...c, l: `PnL ${WINDOW_WORD[window]}` } : c.l === "Asset PnL" ? { ...c, l: asset === "ALL" ? "Asset PnL" : `${asset} PnL 30d` } : c.l === "Open position" ? { ...c, l: asset === "ALL" ? "Open" : `Open ${asset}` } : c))
+  const cols = COLS.map((c) => (c.id === "pnl" ? { ...c, l: `PnL ${WINDOW_WORD[window]}` } : c.id === "assetPnl" ? { ...c, l: asset === "ALL" ? "Copyable PnL 30d" : `${asset} PnL 30d` } : c.id === "open" ? { ...c, l: asset === "ALL" ? "Open" : `Open ${asset}` } : c))
   return (
     <>
       <div className={cn(SURFACE, "hidden overflow-hidden md:block")}>
@@ -245,11 +240,11 @@ export default function TraderTable({ rows, asset, window, sortKey, sortDir, onS
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-[#0B0F1A]">
               <tr>
-                {cols.map((c, i) => {
+                {cols.map((c) => {
                   const active = c.sortable && sortKey === c.k
                   const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown
                   return (
-                    <th key={`${c.k}-${i}`} scope="col" aria-sort={c.sortable ? (active ? (sortDir === "asc" ? "ascending" : "descending") : "none") : undefined} className={cn(TH, c.hide, c.align === "right" ? "text-right" : "text-left")}>
+                    <th key={c.id} scope="col" aria-sort={c.sortable ? (active ? (sortDir === "asc" ? "ascending" : "descending") : "none") : undefined} className={cn(TH, c.hide, c.align === "right" ? "text-right" : "text-left")}>
                       {c.sortable ? (
                         <button type="button" onClick={() => onSort(c.k)} className={cn("inline-flex items-center gap-1 rounded px-0.5 hover:text-white/85", FOCUS_RING, active && "text-white/85")}>
                           {c.l}

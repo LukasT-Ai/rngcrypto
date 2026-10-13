@@ -4,11 +4,12 @@ import React, { useMemo, useState } from "react"
 import { AlertTriangle, ExternalLink, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { AMBER, Chip, FOCUS_RING, GREEN, LABEL, RED } from "../signals/shared"
+import { AMBER, Chip, FOCUS_RING, GREEN, LABEL, RED, Tip } from "../signals/shared"
 import { Kpi, Segmented } from "../signals/performance/perf-shared"
 import { RNG_THEME, themeStyle } from "../signals/themes"
-import type { Asset, AssetStats, OpenPosition, Trade, TraderDetail, TraderRow, Window } from "./types"
-import { Ago, CopyButton, addressUrl, dirWord, fmtInt, fmtPct, fmtPx, fmtRate, fmtSize, fmtUsd, posHealth, shortAddr, sideColor, signColor, tradeUrl, txUrl, utc, winRateColor } from "./ct-shared"
+import type { Asset, AssetGroup, AssetStats, Mix, OpenPosition, Score, Stats30d, Trade, TraderDetail, TraderRow, Window } from "./types"
+import { ASSET_GROUPS } from "./types"
+import { Ago, CopyButton, GRADE_WORD, GROUP_COINS, MIX_COLORS, MixBar, MixLegend, SUBSCORES, ScoreChip, addressUrl, dirWord, fmtInt, fmtNum, fmtPct, fmtPx, fmtRate, fmtSize, fmtUsd, groupOf, posHealth, shortAddr, sideColor, signColor, tradeUrl, txUrl, utc, winRateColor } from "./ct-shared"
 import { useTrader } from "./useCopyTrade"
 import PnlChart from "./PnlChart"
 import { WINDOW_WORD } from "./TraderTable"
@@ -33,11 +34,144 @@ function Scroll({ children }: { children: React.ReactNode }) {
   return <div className="overflow-x-auto rounded-lg border border-white/[0.06] [scrollbar-width:thin]">{children}</div>
 }
 
-function AssetTile({ a, coin }: { a: AssetStats | null | undefined; coin: string }) {
+// ---------------------------------------------------------------------------
+// Why this wallet: grade, copyability, five sub-score bars (single hue, length = value), reasons, mix breakdown.
+// ---------------------------------------------------------------------------
+
+function ScoreBar({ label, value, hint }: { label: string; value: number | null | undefined; hint: string }) {
+  const v = value == null ? null : Math.max(0, Math.min(100, value))
+  return (
+    <div className="grid grid-cols-[88px_1fr_36px] items-center gap-2 text-[11px]">
+      <Tip content={hint}>
+        <span className="cursor-help text-white/70 underline decoration-dotted decoration-white/25 underline-offset-2">{label}</span>
+      </Tip>
+      <div className="relative h-1.5 rounded-full bg-white/[0.06]" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={v ?? undefined}>
+        {v != null && <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${v}%`, backgroundColor: "#00C466", opacity: 0.5 + v / 200 }} />}
+      </div>
+      <span className="text-right font-mono tabular-nums text-white/85">{v == null ? "—" : v}</span>
+    </div>
+  )
+}
+
+function WhyPanel({ score, mix, stats }: { score: Score | null | undefined; mix: Mix | null | undefined; stats: Stats30d | null | undefined }) {
+  if (!score && !mix && !stats) return <p className="text-xs text-white/45">Scoring not yet available for this wallet.</p>
+  return (
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
+        <div className="flex items-center gap-2">
+          <ScoreChip score={score} />
+          <span className="font-mono text-2xl font-bold tabular-nums text-white/90">{score ? score.copyability : "—"}</span>
+          <span className="text-[11px] text-white/50">/ 100 copyability{score ? ` · ${GRADE_WORD[score.grade]}` : ""}</span>
+        </div>
+        <div className="mt-3 space-y-1.5">
+          {SUBSCORES.map((s) => (
+            <ScoreBar key={s.k} label={s.l} value={score?.[s.k]} hint={s.hint} />
+          ))}
+        </div>
+        {score?.reasons?.length ? (
+          <ul className="mt-3 list-disc space-y-0.5 pl-4 text-[12px] leading-snug text-white/80">
+            {score.reasons.map((r, i) => (
+              <li key={i}>{r}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-[11px] text-white/45">No reasons recorded.</p>
+        )}
+      </div>
+      <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className={LABEL}>Asset mix · 30d volume</span>
+          <span className="font-mono text-xs tabular-nums text-white/85">{mix ? `${fmtRate(mix.copyableSharePct)} copyable` : "—"}</span>
+        </div>
+        <div className="mt-2">
+          <MixBar mix={mix} width={999} showNumber={false} className="w-full [&>span]:w-full [&>span>span]:w-full" />
+        </div>
+        <MixLegend className="mt-2" />
+        {mix && (
+          <table className="mt-2 w-full text-xs">
+            <thead>
+              <tr>
+                <th scope="col" className={cn(TH, "pl-0 text-left")}>Group</th>
+                <th scope="col" className={cn(TH, "text-right")}>Share</th>
+                <th scope="col" className={cn(TH, "text-right")}>Volume</th>
+                <th scope="col" className={cn(TH, "pr-0 text-right")}>Trades</th>
+              </tr>
+            </thead>
+            <tbody>
+              {([...ASSET_GROUPS, "OTHER"] as const).map((k) => {
+                const s = mix.byAsset?.[k]
+                return (
+                  <tr key={k} className="border-t border-white/[0.05]">
+                    <td className={cn(TD, "pl-0 font-sans")}>
+                      <span aria-hidden className="mr-1.5 inline-block size-2 rounded-sm align-middle" style={{ backgroundColor: MIX_COLORS[k] }} />
+                      <span className="text-white/80">{k}</span>
+                    </td>
+                    <td className={cn(TD, "text-right text-white/85")}>{fmtRate(s?.sharePct)}</td>
+                    <td className={cn(TD, "text-right text-white/70")}>{fmtUsd(s?.volumeUsd)}</td>
+                    <td className={cn(TD, "pr-0 text-right text-white/70")}>{fmtInt(s?.trades)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+        {mix?.topCoins?.length ? (
+          <p className="mt-2 text-[11px] text-white/50">
+            Top markets:{" "}
+            {mix.topCoins.map((c, i) => (
+              <span key={c.coin} className="font-mono text-white/75">
+                {i > 0 && <span className="text-white/35">, </span>}
+                {c.coin} {fmtRate(c.sharePct)}
+              </span>
+            ))}
+          </p>
+        ) : null}
+        {mix && <p className="mt-1 text-[11px] text-white/45">By trade count: {fmtRate(mix.copyableTradeSharePct)} copyable.</p>}
+      </div>
+      {stats && (
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 font-mono text-[11px] tabular-nums text-white/60 sm:grid-cols-3 lg:col-span-2 lg:grid-cols-6">
+          <div>
+            <dt className="font-sans text-[10px] uppercase tracking-[0.08em] text-white/45">Trades/day</dt>
+            <dd className="text-white/85">{fmtNum(stats.tradesPerDay)}</dd>
+          </div>
+          <div>
+            <dt className="font-sans text-[10px] uppercase tracking-[0.08em] text-white/45">Avg hold</dt>
+            <dd className="text-white/85">{stats.avgHoldMin == null ? "—" : stats.avgHoldMin < 60 ? `${Math.round(stats.avgHoldMin)}m` : stats.avgHoldMin < 1440 ? `${(stats.avgHoldMin / 60).toFixed(1)}h` : `${(stats.avgHoldMin / 1440).toFixed(1)}d`}</dd>
+          </div>
+          <div>
+            <dt className="font-sans text-[10px] uppercase tracking-[0.08em] text-white/45">Median lev</dt>
+            <dd className="text-white/85">{stats.medianLeverage == null ? "—" : `${stats.medianLeverage}x`}</dd>
+          </div>
+          <div>
+            <dt className="font-sans text-[10px] uppercase tracking-[0.08em] text-white/45">Max DD</dt>
+            <dd style={{ color: stats.maxDrawdownPct != null && stats.maxDrawdownPct > 25 ? AMBER : "rgba(255,255,255,0.85)" }}>{stats.maxDrawdownPct == null ? "—" : `-${stats.maxDrawdownPct.toFixed(1)}%`}</dd>
+          </div>
+          <div>
+            <dt className="font-sans text-[10px] uppercase tracking-[0.08em] text-white/45">Profitable wks</dt>
+            <dd className="text-white/85">{fmtRate(stats.profitableWeeksPct)}</dd>
+          </div>
+          <div>
+            <dt className="font-sans text-[10px] uppercase tracking-[0.08em] text-white/45">Copyable · other</dt>
+            <dd>
+              <span style={{ color: signColor(stats.pnlCopyable) ?? "rgba(255,255,255,0.85)" }}>{fmtUsd(stats.pnlCopyable, { sign: true })}</span>
+              <span className="text-white/35"> · </span>
+              <span style={{ color: signColor(stats.pnlOther) ?? "rgba(255,255,255,0.6)" }}>{fmtUsd(stats.pnlOther, { sign: true })}</span>
+            </dd>
+          </div>
+        </dl>
+      )}
+    </div>
+  )
+}
+
+function AssetTile({ a, coin }: { a: AssetStats | null | undefined; coin: AssetGroup }) {
   if (!a) {
     return (
       <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-2.5 opacity-70">
-        <div className={LABEL}>{coin}</div>
+        <div className="flex items-center gap-1.5">
+          <span aria-hidden className="inline-block size-2 rounded-sm" style={{ backgroundColor: MIX_COLORS[coin] }} />
+          <span className={LABEL}>{coin}</span>
+        </div>
         <div className="mt-1 font-mono text-sm text-white/40">No {coin} fills in 30d</div>
       </div>
     )
@@ -46,7 +180,10 @@ function AssetTile({ a, coin }: { a: AssetStats | null | undefined; coin: string
   return (
     <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
-        <span className={LABEL}>{coin} · 30d</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="inline-block size-2 rounded-sm" style={{ backgroundColor: MIX_COLORS[coin] }} />
+          <span className={LABEL}>{coin} · 30d</span>
+        </span>
         <Chip variant="direction" value={a.direction ?? "mixed"}>
           {dirWord(a.direction)}
         </Chip>
@@ -73,6 +210,12 @@ function AssetTile({ a, coin }: { a: AssetStats | null | undefined; coin: string
         <dd className="text-right text-white/80">
           <Ago ts={a.lastTradeAt} />
         </dd>
+        {a.coins && a.coins.length > 0 && (
+          <>
+            <dt>Markets</dt>
+            <dd className="truncate text-right text-white/70" title={a.coins.join(", ")}>{a.coins.join(" ")}</dd>
+          </>
+        )}
       </dl>
     </div>
   )
@@ -102,9 +245,13 @@ function PositionsTable({ rows }: { rows: OpenPosition[] }) {
         <tbody>
           {rows.map((p, i) => {
             const h = posHealth(p)
+            const g = groupOf(p.coin)
             return (
               <tr key={`${p.coin}-${p.side}-${i}`} className="border-t border-white/[0.05]">
-                <td className={cn(TD, "font-bold text-white")}>{p.coin}</td>
+                <td className={cn(TD, "font-bold text-white")}>
+                  <span aria-hidden className="mr-1.5 inline-block size-2 rounded-sm align-middle" style={{ backgroundColor: MIX_COLORS[g] }} />
+                  {p.coin}
+                </td>
                 <td className={cn(TD, "font-sans")}>
                   <Chip variant="direction" value={p.side}>
                     {p.side}
@@ -168,7 +315,7 @@ function TradesTable({ rows }: { rows: Trade[] }) {
         <tbody>
           {rows.map((t, i) => (
             <tr key={`${t.hash}-${i}`} className="border-t border-white/[0.05]">
-              <td className={cn(TD, "text-white/70")} title={utc(t.time)}>
+              <td className={cn(TD, "text-white/70")}>
                 <Ago ts={t.time} />
               </td>
               <td className={cn(TD, "font-bold text-white")}>{t.coin}</td>
@@ -207,11 +354,15 @@ export default function TraderDrawer({ row, asset, mock, onClose }: { row: Trade
   const effAsset: Asset = asset === "ALL" || allCoins ? "ALL" : asset
   const { data, isLoading, isError, isFetching } = useTrader(row?.address ?? null, effAsset, mock)
   const d: TraderDetail | undefined = data
-  const positions = useMemo(() => (d ? (effAsset === "ALL" ? d.openPositions : d.openPositions.filter((p) => p.coin === effAsset)) : []), [d, effAsset])
+  const positions = useMemo(() => (d ? (effAsset === "ALL" ? d.openPositions : d.openPositions.filter((p) => GROUP_COINS[effAsset].includes(p.coin))) : []), [d, effAsset])
   const explorer = d?.links?.hyperliquid ?? (row ? addressUrl(row.address) : "#")
-  const copyCoin = asset === "ALL" ? (row?.openForAsset?.coin ?? positions[0]?.coin ?? "BTC") : asset
+  // Market to open on Hyperliquid: the trader's own market inside the selected group, else the group's primary market.
+  const copyCoin = asset === "ALL" ? (row?.openForAsset?.coin ?? positions[0]?.coin ?? "BTC") : (row?.asset?.coins?.[0] ?? d?.perAsset?.[asset]?.coins?.[0] ?? GROUP_COINS[asset][0])
   const series = d ? (range === "month" ? d.pnlHistory.month : d.pnlHistory.allTime) : []
   const totalUpnl = d ? d.openPositions.reduce((s, p) => s + p.unrealizedPnl, 0) : row?.open.unrealizedPnl
+  const score = d?.score ?? row?.score
+  const mix = d?.mix ?? row?.mix
+  const stats = d?.stats30d ?? row?.stats30d
 
   return (
     <Sheet
@@ -224,21 +375,22 @@ export default function TraderDrawer({ row, asset, mock, onClose }: { row: Trade
       }}
     >
       {/* The sheet portals outside the themed page div, so the brand variables are re-applied here. */}
-      <SheetContent side="right" className="w-full gap-0 overflow-y-auto border-white/10 bg-[#0A0E17] text-white sm:max-w-[720px]" style={themeStyle(RNG_THEME)}>
+      <SheetContent side="right" className="w-full gap-0 overflow-y-auto border-white/10 bg-[#0A0E17] text-white sm:max-w-[760px]" style={themeStyle(RNG_THEME)}>
         {row && (
           <>
             <SheetHeader className="pr-10">
               <SheetTitle className="flex flex-wrap items-center gap-2 text-white">
                 <Wallet className="size-4 text-white/50" aria-hidden />
                 <span className="font-semibold">{row.displayName ?? shortAddr(row.address)}</span>
+                <ScoreChip score={score} />
                 <span className="font-mono text-xs text-white/50">#{row.rank}</span>
                 {isFetching && !isLoading && <span className="text-[11px] text-white/40">refreshing…</span>}
               </SheetTitle>
               <SheetDescription className="text-xs text-white/60">Public on-chain activity for one Hyperliquid account. Not advice; past results do not predict the next trade.</SheetDescription>
               <div className="flex flex-wrap items-center gap-1 font-mono text-[11px] text-white/70">
                 <span className="break-all">{row.address}</span>
-                <CopyButton text={row.address} />
-                <a href={explorer} target="_blank" rel="noopener noreferrer" className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-[11px] text-white/70 hover:text-white hover:bg-white/[0.06]", FOCUS_RING)}>
+                <CopyButton text={row.address} size="md" />
+                <a href={explorer} target="_blank" rel="noopener noreferrer" className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-[11px] text-white/70 hover:bg-white/[0.06] hover:text-white", FOCUS_RING)}>
                   Open explorer <ExternalLink className="size-3" aria-hidden />
                 </a>
               </div>
@@ -263,6 +415,10 @@ export default function TraderDrawer({ row, asset, mock, onClose }: { row: Trade
                 <Kpi label="Open uPnL" value={fmtUsd(totalUpnl ?? null, { sign: true })} color={signColor(totalUpnl)} sub={`${d ? d.openPositions.length : row.open.count} position${(d ? d.openPositions.length : row.open.count) === 1 ? "" : "s"} · ${fmtUsd(d ? d.openPositions.reduce((s, p) => s + p.notionalUsd, 0) : row.open.notionalUsd)} notional`} />
                 <Kpi label="PnL 30d" value={fmtUsd(d?.windows.month.pnl ?? null, { sign: true })} color={signColor(d?.windows.month.pnl)} sub={d ? `ROI ${fmtPct(d.windows.month.roi)}` : undefined} dim={!d} />
               </div>
+
+              <Section title="Why this wallet">
+                <WhyPanel score={score} mix={mix} stats={stats} />
+              </Section>
 
               <Section title="Windows">
                 {isLoading && !d ? (
@@ -304,8 +460,9 @@ export default function TraderDrawer({ row, asset, mock, onClose }: { row: Trade
 
               <Section title="Per-asset, last 30d">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <AssetTile coin="BTC" a={d ? d.perAsset.BTC : row.asset?.coin === "BTC" ? row.asset : undefined} />
-                  <AssetTile coin="ADA" a={d ? d.perAsset.ADA : row.asset?.coin === "ADA" ? row.asset : undefined} />
+                  {ASSET_GROUPS.map((g) => (
+                    <AssetTile key={g} coin={g} a={d ? d.perAsset?.[g] : row.asset?.coin === g ? row.asset : undefined} />
+                  ))}
                 </div>
               </Section>
 

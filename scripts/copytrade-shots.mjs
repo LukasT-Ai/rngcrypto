@@ -26,6 +26,9 @@ const shot = async (name, full) => {
 
 await new Promise((r) => ws.addEventListener("open", r));
 await send("Page.enable"); await send("Runtime.enable");
+// Headless rejects clipboard writes even with the permission; stub it so the toast path is exercised.
+await send("Page.addScriptToEvaluateOnNewDocument", { source: "Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.resolve() }, configurable: true })" });
+try { await send("Browser.grantPermissions", { origin: new URL(url).origin, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] }); } catch (e) { console.log("grantPermissions: " + e.message); }
 const report = {};
 for (const [label, metrics] of [["1440", { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false }], ["390", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true }]]) {
   await send("Emulation.setDeviceMetricsOverride", metrics);
@@ -44,6 +47,20 @@ for (const [label, metrics] of [["1440", { width: 1440, height: 1100, deviceScal
   console.log(`list-${label}: ${JSON.stringify(info)}`);
   await shot(`copytrade-list-${label}`);
   await shot(`copytrade-list-${label}-full`, true);
+  // Strip copy button -> toast + checkmark state.
+  const copied = await ev(`(() => { const b = [...document.querySelectorAll('button')].find((x) => /^Copy address/.test(x.getAttribute('aria-label') || '')); b?.click(); return !!b; })()`);
+  await sleep(500);
+  const toast = await ev(`(() => ({ copied: ${copied}, toast: document.querySelector('[role="status"]')?.innerText || '', state: [...document.querySelectorAll('button')].some((x) => x.getAttribute('aria-label') === 'Address copied') }))()`);
+  report[`copy-${label}`] = toast; console.log(`copy-${label}: ${JSON.stringify(toast)}`);
+  await shot(`copytrade-copied-${label}`);
+  await sleep(2200);
+  // Switch lens to all wallets and count rows.
+  await ev(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'All wallets'); b?.click(); })()`);
+  await sleep(1500);
+  const lens = await ev(`({ rows: document.querySelectorAll('tbody tr').length, text: (document.body.innerText.match(/[0-9]+ wallets?/) || [])[0] })`);
+  report[`lens-all-${label}`] = lens; console.log(`lens-all-${label}: ${JSON.stringify(lens)}`);
+  await ev(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Ascend-copyable'); b?.click(); })()`);
+  await sleep(1200);
   // Open the first trader drawer.
   await ev(`(() => { const b = [...document.querySelectorAll('button')].find((x) => /^View/.test(x.getAttribute('aria-label') || '')); b?.click(); return !!b; })()`);
   await sleep(2500);

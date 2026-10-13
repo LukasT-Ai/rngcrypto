@@ -8,18 +8,21 @@ import { RNG_THEME, themeStyle } from "../signals/themes"
 import { Chip, SURFACE, timeAgo, useNow } from "../signals/shared"
 import { CARD } from "../signals/performance/perf-shared"
 import type { SortKey, TraderRow } from "./types"
-import Filters, { type FilterState } from "./Filters"
+import Filters, { DEFAULT_FILTERS, type FilterState } from "./Filters"
 import TraderTable, { type ColKey, type SortDir, WINDOW_WORD } from "./TraderTable"
 import TraderDrawer from "./TraderDrawer"
-import { useLeaderboard, useMock } from "./useCopyTrade"
-import { fmtInt, utc } from "./ct-shared"
+import TopStrip from "./TopStrip"
+import { useLeaderboard, useMock, useSummary } from "./useCopyTrade"
+import { CopyToast, MixLegend, fmtInt, utc } from "./ct-shared"
 
-const SERVER_SORTS = new Set<string>(["assetPnl", "roi", "winRate", "volume", "equity"])
+const SERVER_SORTS = new Set<string>(["copyability", "assetPnl", "roi", "winRate", "volume", "equity", "focus", "activity"])
 
 function sortValue(r: TraderRow, k: ColKey): number {
   switch (k) {
     case "rank":
       return -r.rank
+    case "copyability":
+      return r.score?.copyability ?? -1
     case "equity":
       return r.equity
     case "pnl":
@@ -27,13 +30,22 @@ function sortValue(r: TraderRow, k: ColKey): number {
     case "roi":
       return r.window.roi
     case "assetPnl":
-      return r.asset ? r.asset.realizedPnl : r.window.pnl
+      return r.asset ? r.asset.realizedPnl : (r.stats30d?.pnlCopyable ?? r.window.pnl)
     case "winRate":
       return r.asset?.winRate ?? -1
     case "volume":
       return r.asset ? r.asset.volumeUsd : r.window.volume
+    case "focus":
+      return r.score?.focus ?? r.mix?.copyableSharePct ?? -1
+    case "activity":
+      return r.score?.activity ?? r.stats30d?.tradesPerDay ?? -1
     case "trades":
       return r.asset?.trades ?? -1
+    case "tradesPerDay":
+      return r.stats30d?.tradesPerDay ?? -1
+    case "maxDd":
+      // Ascending "desc" means deepest first; null sorts last either way.
+      return r.stats30d?.maxDrawdownPct ?? -1
     case "lastTrade":
       return r.asset?.lastTradeAt ?? -1
   }
@@ -44,7 +56,7 @@ function ScanChip({ scan, asOf }: { scan: { candidates: number; scanned: number;
   if (!scan) return <Chip variant="neutral">scan: pending</Chip>
   const last = scan.lastFullScanAt ?? asOf ?? null
   const ago = last != null && now > 0 ? timeAgo(last, now) : "…"
-  const tip = `${fmtInt(scan.scanned)} of ${fmtInt(scan.candidates)} leaderboard candidates scanned for BTC and ADA fills. Last full scan ${last != null ? utc(last) : "unknown"}.${scan.stale ? " The scanner has not completed a pass recently; numbers may lag." : ""}`
+  const tip = `${fmtInt(scan.scanned)} of ${fmtInt(scan.candidates)} candidate wallets scanned for BTC, ADA, GOLD and WTI fills. Last full scan ${last != null ? utc(last) : "unknown"}.${scan.stale ? " The scanner has not completed a pass recently; numbers may lag." : ""}`
   return (
     <Chip variant={scan.stale ? "warning" : "neutral"} size="label" icon={scan.stale ? undefined : Radar} tip={tip} className="rounded-md">
       <span className="font-mono tabular-nums">
@@ -69,8 +81,8 @@ function Skeleton() {
 
 export default function CopyTradeDashboard() {
   const mock = useMock()
-  const [filters, setFilters] = useState<FilterState>({ asset: "BTC", window: "month", sort: "assetPnl", minVolume: 0, search: "" })
-  const [sortKey, setSortKey] = useState<ColKey>("assetPnl")
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
+  const [sortKey, setSortKey] = useState<ColKey>(DEFAULT_FILTERS.sort)
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [selected, setSelected] = useState<TraderRow | null>(null)
 
@@ -94,19 +106,26 @@ export default function CopyTradeDashboard() {
     if (SERVER_SORTS.has(k)) setFilters((cur) => ({ ...cur, sort: k as SortKey }))
   }, [])
 
-  const { data, isLoading, isError, isFetching, dataUpdatedAt } = useLeaderboard({ asset: filters.asset, window: filters.window, sort: filters.sort, minVolume: filters.minVolume }, mock)
+  const { data, isLoading, isError, isFetching, dataUpdatedAt } = useLeaderboard({ asset: filters.asset, window: filters.window, sort: filters.sort, minVolume: filters.minVolume, copyableOnly: filters.lens === "copyable", minFocus: filters.minFocus }, mock)
+  const summary = useSummary(mock)
 
   const rows = useMemo(() => {
     const all = data?.traders ?? []
     const q = filters.search.trim().toLowerCase()
-    const filtered = q ? all.filter((r) => r.address.toLowerCase().includes(q) || (r.displayName ?? "").toLowerCase().includes(q)) : all
+    const filtered = all.filter((r) => {
+      if (q && !(r.address.toLowerCase().includes(q) || (r.displayName ?? "").toLowerCase().includes(q))) return false
+      if (filters.minTradesPerDay > 0 && (r.stats30d?.tradesPerDay ?? 0) < filters.minTradesPerDay) return false
+      if (filters.minWinRate > 0 && (r.asset?.winRate ?? 0) < filters.minWinRate) return false
+      return true
+    })
     const dir = sortDir === "asc" ? 1 : -1
     return [...filtered].sort((a, b) => (sortValue(a, sortKey) - sortValue(b, sortKey)) * dir || a.rank - b.rank)
-  }, [data, filters.search, sortKey, sortDir])
+  }, [data, filters.search, filters.minTradesPerDay, filters.minWinRate, sortKey, sortDir])
 
   const onView = useCallback((r: TraderRow) => setSelected(r), [])
   const now = useNow(15_000)
   const listStale = data != null && !isFetching && now > 0 && now - dataUpdatedAt > 5 * 60_000
+  const hidden = (data?.traders.length ?? 0) - rows.length
 
   return (
     <TooltipProvider>
@@ -119,17 +138,19 @@ export default function CopyTradeDashboard() {
                 <h1 className="font-display text-xl font-bold text-white sm:text-2xl">Copy Trade</h1>
                 {mock && <Chip variant="warning">mock data</Chip>}
               </div>
-              <p className="mt-1 text-[13px] leading-snug text-[#9CA3AF]">Top Hyperliquid traders ranked by what they actually made on BTC and ADA, with their live positions and latest fills.</p>
+              <p className="mt-1 text-[13px] leading-snug text-[#9CA3AF]">Hyperliquid wallets worth mirroring through Ascend: successful, active, and trading mostly BTC, ADA, GOLD and WTI, with live positions and latest fills.</p>
               <p className="mt-1 flex items-start gap-1.5 text-[11px] text-white/45">
                 <Info className="mt-0.5 size-3 shrink-0" aria-hidden />
                 <span>Public on-chain data from the Hyperliquid API. Not financial advice. Leverage can liquidate a copied position before the original closes.</span>
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <ScanChip scan={data?.scan} asOf={data?.asOf} />
+              <ScanChip scan={data?.scan ?? summary.data?.scan} asOf={data?.asOf ?? summary.data?.asOf} />
               {listStale && <Chip variant="warning">list stale</Chip>}
             </div>
           </div>
+
+          <TopStrip data={summary.data} loading={summary.isLoading} error={summary.isError} onView={onView} />
 
           <div className={cn(CARD, "px-4 py-3")}>
             <Filters value={filters} onChange={patch} />
@@ -151,17 +172,28 @@ export default function CopyTradeDashboard() {
             <>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#9CA3AF]">
                 <span>
-                  <span className="font-mono text-white">{rows.length}</span> trader{rows.length === 1 ? "" : "s"}
+                  <span className="font-mono text-white">{rows.length}</span> wallet{rows.length === 1 ? "" : "s"}
+                  {hidden > 0 && <span className="text-white/45"> · {hidden} hidden by thresholds</span>}
                   {filters.search && <> matching &ldquo;{filters.search}&rdquo;</>}
+                </span>
+                <span>
+                  {filters.lens === "copyable" ? (
+                    <>
+                      copyable share ≥ <span className="font-mono text-white">{filters.minFocus}%</span>
+                    </>
+                  ) : (
+                    "all wallets"
+                  )}
                 </span>
                 <span>
                   window <span className="font-mono text-white">{WINDOW_WORD[filters.window]}</span>
                 </span>
-                {filters.asset !== "ALL" && <span>per-asset stats cover the last 30 days of fills</span>}
-                <span className="ml-auto">as of {utc(data.asOf)}</span>
+                <span className="hidden sm:inline">per-asset stats and mix cover the last 30 days of fills</span>
+                <MixLegend className="ml-auto" />
+                <span className="w-full text-right sm:w-auto">as of {utc(data.asOf)}</span>
               </div>
               {rows.length === 0 ? (
-                <div className={cn(CARD, "px-4 py-10 text-center text-sm text-[#9CA3AF]")}>No traders match. Lower the minimum volume, widen the window or clear the search.</div>
+                <div className={cn(CARD, "px-4 py-10 text-center text-sm text-[#9CA3AF]")}>No traders match. Lower the minimum focus or volume, switch to all wallets, widen the window or clear the search.</div>
               ) : (
                 <TraderTable rows={rows} asset={filters.asset} window={filters.window} sortKey={sortKey} sortDir={sortDir} onSort={onSort} onView={onView} />
               )}
@@ -169,6 +201,7 @@ export default function CopyTradeDashboard() {
           )}
         </div>
         <TraderDrawer row={selected} asset={filters.asset} mock={mock} onClose={() => setSelected(null)} />
+        <CopyToast />
       </div>
     </TooltipProvider>
   )

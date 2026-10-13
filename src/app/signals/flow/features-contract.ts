@@ -1,11 +1,13 @@
 // ---------------------------------------------------------------------------
 // Wave 2 `features.*` contract (research/design-ux-ui.md F2, CONTRACT.md wave 2).
 //
-// TEMPORARY MIRROR: be-features owns the canonical `Features` type in ../types.ts. Until that lands on master this
-// file carries the same shape so the Flow / Momentum / Levels / Macro tiles type-check and render their "feed off"
-// fallback. When the canonical type exists, replace the body of this file with
-//   export type { Features } from "../types"
-// and delete the local declaration. Nothing else imports from here except ui-flow owned files.
+// TEMPORARY MIRROR: be-features owns the canonical type `SignalFeatures` in src/lib/signals/features/types.ts,
+// re-exported from ../types.ts as `features?: SignalFeatures | null` on SignalsResponse. Until that lands on master
+// this file carries a structurally compatible subset so the Flow / Momentum / Levels / Macro tiles type-check and
+// render their "feed off" fallback. When the canonical type exists, replace the declarations below with
+//   export type { SignalFeatures as Features } from "@/lib/signals/features/types"
+// and keep the helpers. Nothing else imports from here except ui-flow owned files (and RatesDollarStrip's props).
+// Fields marked "be-features extra" are additive on their side and optional here.
 //
 // Every feature object may also carry `{ asOf, ttlMs }` (F2 preamble); both are optional here so a producer that
 // omits them still type-checks. Tiles show a `stale {age}` tag only when `asOf` is present and older than 3x ttl.
@@ -29,6 +31,9 @@ export interface FundingFeature extends FeatureMeta {
   venues: Partial<Record<FundingVenueKey, number | null>>
   spreadRatio: number
   crowded: "long" | "short" | null
+  /** be-features extra. */
+  regime?: "neutral" | "crowded_long" | "crowded_short"
+  n?: number
 }
 
 export type OiQuadrantKey = "new_longs" | "short_cover" | "new_shorts" | "long_flush"
@@ -39,6 +44,11 @@ export interface OiFeature extends FeatureMeta {
   sd: number
   quadrant: OiQuadrantKey | null
   priceChange24hPct: number
+  /** be-features extras. */
+  oi?: number
+  oiUsd?: number
+  change1hPct?: number
+  quadrantRaw?: OiQuadrantKey | null
 }
 
 export interface CvdFeature extends FeatureMeta {
@@ -49,13 +59,19 @@ export interface CvdFeature extends FeatureMeta {
   qhImbalance: number | null
   /** Raw quarter-hour readings, oldest first (up to 4). */
   qhReadings: number[]
-  /** Optional 15m CVD series for the sparkline, oldest first (12 points = 3h, 16 = 4h). */
+  /** 15m cumulative CVD series for the sparkline, oldest first (16 points over 4h). */
   series15m?: number[]
+  /** be-features extra. */
+  takerImbalance15m?: number
 }
 
 export interface BookFeature extends FeatureMeta {
   imbalance: number
   band: number
+  /** be-features extras: signed distance to the nearest wall on each side, and the sampled venue. */
+  bidWallPct?: number | null
+  askWallPct?: number | null
+  venue?: string
 }
 
 export interface VolFeature extends FeatureMeta {
@@ -65,13 +81,21 @@ export interface VolFeature extends FeatureMeta {
   expectedMove24hPct: number
   expectedMove24hUsd: number
   change24hPct: number
+  /** be-features extras; the 4h tile uses these when present, else sqrt-time scaling of the 24h move. */
+  dvolPct90d?: number
+  expectedMove4hPct?: number
+  expectedMove4hUsd?: number
 }
 
 export interface BasisFeature extends FeatureMeta {
   annPct: number
-  z: number
+  /** null until 10 daily samples exist in the per-process store. */
+  z: number | null
   curveSlope: number
   stress: boolean
+  /** be-features extras. */
+  front?: { instrument: string; daysToExpiry: number; annPct: number }
+  n?: number
 }
 
 export interface MacroRatesFeature extends FeatureMeta {
@@ -79,11 +103,16 @@ export interface MacroRatesFeature extends FeatureMeta {
   realYield5dChgBp: number
   dxy: number
   dxy5dChgPct: number
+  /** The stronger of corrRealYield30d / corrDxy30d. */
   corr30d: number
+  /** true when |corr30d| < 0.3. */
   gated: boolean
-  /** Optional 20-point histories for the sparklines, oldest first. */
+  /** Last 20 daily closes, oldest first. */
   realYieldSeries?: number[]
   dxySeries?: number[]
+  /** be-features extras. */
+  corrRealYield30d?: number
+  corrDxy30d?: number
 }
 
 export interface StablecoinFeature extends FeatureMeta {
@@ -91,6 +120,10 @@ export interface StablecoinFeature extends FeatureMeta {
   z: number
   usdtMint24hUsd: number
   flag: "tailwind" | "headwind" | null
+  /** be-features extras; `mintFlag` is the >= $500M flag computed upstream. */
+  supplyUsd?: number
+  usdcMint24hUsd?: number
+  mintFlag?: boolean
 }
 
 export interface SessionFeature {
@@ -99,6 +132,8 @@ export interface SessionFeature {
   weekend: boolean
   haircutPct: number
   gate: "none" | "late_utc" | "nonc_weekend"
+  lowLiquidity?: boolean
+  hourUtc?: number
 }
 
 export interface Features {
@@ -110,7 +145,8 @@ export interface Features {
   basis: BasisFeature | null
   macroRates: MacroRatesFeature | null
   stablecoins: StablecoinFeature | null
-  session?: SessionFeature
+  session?: SessionFeature | null
+  /** Not produced by be-features (coupling stays at regime.macroCoupling); kept optional for the F2 block. */
   macroCoupling?: { corr30d: number; mult: number } | null
 }
 

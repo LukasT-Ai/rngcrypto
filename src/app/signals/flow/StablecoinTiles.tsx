@@ -16,7 +16,7 @@ export const StablecoinTiles = React.memo(function StablecoinTiles({ sc, now }: 
   const off = sc == null
   const stale = staleLabel(sc, now)
   const flagColor = sc?.flag === "tailwind" ? GREEN : sc?.flag === "headwind" ? RED : undefined
-  const mintFlag = !off && sc.usdtMint24hUsd >= MINT_FLAG_USD
+  const mintFlag = !off && (sc.mintFlag ?? sc.usdtMint24hUsd >= MINT_FLAG_USD)
   return (
     <>
       <FeatureTile

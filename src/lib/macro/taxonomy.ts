@@ -154,10 +154,16 @@ export const EVENT_DEFS: MacroEventDef[] = [
     logic: "Minutes reveal how divided the committee is; hawkish detail lifts yields.",
   },
   {
-    id: "fed_speech", title: "Fed Speech", aliases: /fed chair .* speaks|fomc member .* speaks|^fed .* speaks$|beige book/i, kind: "fed_communication", importance: "medium", unit: "text", decimals: 0,
+    id: "fed_chair_speech", title: "Fed Chair Speech", aliases: /^fed chair(man|woman)? \S+ speaks$/i, kind: "fed_communication", importance: "high", unit: "text", decimals: 0,
+    typicalSurpriseSD: null, relevance: { BTC: 0.8, GOLD: 0.8, WTI: 0.3 },
+    source: { provider: "NONE" },
+    logic: "The Chair sets the committee's tone; a scheduled speech with Q&A can reprice the next meeting. Read via 2Y and DXY.",
+  },
+  {
+    id: "fed_speech", title: "Fed Speech", aliases: /fomc member .* speaks|^fed .* speaks$|beige book/i, kind: "fed_communication", importance: "medium", unit: "text", decimals: 0,
     typicalSurpriseSD: null, relevance: { BTC: 0.5, GOLD: 0.5, WTI: 0.2 },
     source: { provider: "NONE" },
-    logic: "Fed speakers nudge rate pricing; Powell matters most.",
+    logic: "Regional presidents and governors nudge rate pricing; voters matter more than non-voters.",
   },
   {
     id: "eia_crude", title: "EIA Crude Oil Inventories", aliases: /^crude oil inventories$|^eia weekly petroleum status report$/i, kind: "oil_inventory", importance: "high", unit: "mb", decimals: 1,
@@ -520,6 +526,36 @@ export const EVENT_DEFS: MacroEventDef[] = [
     source: { provider: "NONE" },
     logic: "Household borrowing; a stretched consumer shows up here before it shows in spending.",
   },
+  {
+    id: "fed_dot_median", title: "FOMC Median Dot (current year)", aliases: /^fomc median dot/i, kind: "policy_rate", importance: "high", unit: "pct", decimals: 2,
+    typicalSurpriseSD: 0.125, relevance: { BTC: 0.9, GOLD: 0.9, WTI: 0.4 },
+    source: { provider: "NONE" },
+    logic: "The median year-end funds rate projection; no consensus is published, so it is judged against the prior SEP. A higher median is hawkish.",
+  },
+  {
+    id: "pce_qq", title: "PCE Prices q/q", aliases: /^pce prices q\/q$/i, kind: "inflation", importance: "low", unit: "pct", decimals: 1,
+    typicalSurpriseSD: 0.2, relevance: { BTC: 0.3, GOLD: 0.4, WTI: 0.2 },
+    source: { provider: "NONE" },
+    logic: "Quarterly headline PCE inside the GDP report; usually already implied by the monthly prints.",
+  },
+  {
+    id: "uom_expectations", title: "UoM Consumer Expectations", aliases: /^(prelim|revised) uom consumer expectations$/i, kind: "sentiment", importance: "low", unit: "index", decimals: 1,
+    typicalSurpriseSD: 2.5, relevance: { BTC: 0.3, GOLD: 0.3, WTI: 0.3 },
+    source: { provider: "NONE" },
+    logic: "The forward-looking half of the Michigan survey; moves with the headline.",
+  },
+  {
+    id: "participation", title: "Labor Force Participation Rate", aliases: /^labor force participation rate$/i, kind: "labor_strength", importance: "low", unit: "pct", decimals: 1,
+    typicalSurpriseSD: 0.1, relevance: { BTC: 0.3, GOLD: 0.3, WTI: 0.2 },
+    source: { provider: "FRED", series: "CIVPART", transform: "level" },
+    logic: "Rising participation explains a higher jobless rate without weakness; read with the unemployment rate on jobs day.",
+  },
+  {
+    id: "u6", title: "U6 Underemployment Rate", aliases: /^u6 underemployment rate$/i, kind: "labor_weakness", importance: "low", unit: "pct", decimals: 1,
+    typicalSurpriseSD: 0.2, relevance: { BTC: 0.3, GOLD: 0.3, WTI: 0.2 },
+    source: { provider: "FRED", series: "U6RATE", transform: "level" },
+    logic: "Broad slack including discouraged and part-time-for-economic-reasons workers; confirms or contradicts the headline rate.",
+  },
   // ── Fed communications, remaining ────────────────────────────────────────────────────────────────────────
   {
     id: "fomc_projections", title: "FOMC Economic Projections (dot plot)", aliases: /^fomc economic projections$/i, kind: "fed_communication", importance: "critical", unit: "text", decimals: 0,
@@ -608,6 +644,19 @@ export const EVENT_DEFS: MacroEventDef[] = [
     typicalSurpriseSD: null, relevance: { BTC: 0.8, GOLD: 0.7, WTI: 0.5 },
     source: { provider: "NONE" },
     logic: "Policy-regime event; the market trades the fiscal and regulatory implications overnight.",
+  },
+  // ── Oil policy and agency reports (text events; no feed publishes a number) ─────────────────────────────
+  {
+    id: "opec_meeting", title: "OPEC+ Meeting", aliases: /^opec(\+|-jmmc)? meetings?$/i, kind: "market_event", importance: "high", unit: "text", decimals: 0,
+    typicalSurpriseSD: null, relevance: { BTC: 0.1, GOLD: 0.2, WTI: 1.0 },
+    source: { provider: "NONE" },
+    logic: "Quota decisions set the supply path for months; an unexpected cut is bullish WTI, an unwind of voluntary cuts is bearish. Read from the WTI reaction.",
+  },
+  {
+    id: "oil_agency_report", title: "Oil Market Report (EIA STEO / IEA OMR / OPEC MOMR)", aliases: /^(eia short-term energy outlook|iea (monthly )?oil market report|opec monthly oil market report)$/i, kind: "market_event", importance: "medium", unit: "text", decimals: 0,
+    typicalSurpriseSD: null, relevance: { BTC: 0.0, GOLD: 0.1, WTI: 0.7 },
+    source: { provider: "NONE" },
+    logic: "Monthly demand and supply balance revisions; a demand downgrade or supply upgrade weighs on crude.",
   },
   // ── Foreign central banks ─────────────────────────────────────────────────────────────────────────────────
   // Convention: + surprise = more hawkish abroad = weaker dollar = mild support for BTC and Gold.
@@ -732,7 +781,7 @@ export const EVENT_DEFS: MacroEventDef[] = [
     logic: "Yen funds the global carry trade; a hawkish BoJ surprise unwinds leverage and hits BTC first (Aug 2024).",
   },
   {
-    id: "boj_statement", title: "BoJ Policy Statement", aliases: /^monetary policy statement$/i, kind: "foreign_cb", importance: "high", unit: "text", decimals: 0,
+    id: "boj_statement", title: "BoJ Policy Statement", aliases: /^monetary policy statement$|^boj outlook report$/i, kind: "foreign_cb", importance: "high", unit: "text", decimals: 0,
     typicalSurpriseSD: null, relevance: { BTC: 0.5, GOLD: 0.4, WTI: 0.2 },
     source: { provider: "NONE" },
     logic: "Guidance on hikes and JGB purchases; watch USD/JPY.",
@@ -847,10 +896,10 @@ export const EVENT_DEFS: MacroEventDef[] = [
     logic: "Private services PMI.",
   },
   {
-    id: "pboc_lpr", title: "PBoC Loan Prime Rate", aliases: /^(1|5)-y loan prime rate$/i, kind: "growth", importance: "medium", unit: "pct", decimals: 2,
+    id: "pboc_lpr", title: "PBoC Loan Prime Rate", aliases: /^(1|5)-y loan prime rate$/i, kind: "foreign_cb", importance: "medium", unit: "pct", decimals: 2,
     typicalSurpriseSD: 0.1, relevance: { BTC: 0.3, GOLD: 0.3, WTI: 0.4 },
     source: { provider: "NONE" },
-    logic: "A cut is Chinese stimulus and supports commodities; sign is inverted versus a growth print, so read via the surprise label.",
+    logic: "A surprise cut is Chinese stimulus and supports crude and commodity-linked risk; a hold when a cut was expected disappoints. Typed as a foreign rate so a lower print reads dovish.",
   },
   {
     id: "cn_trade", title: "China Trade Balance (USD)", aliases: /^china trade balance$/i, kind: "trade", importance: "medium", unit: "b", decimals: 1,

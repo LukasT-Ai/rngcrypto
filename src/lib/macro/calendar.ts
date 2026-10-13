@@ -63,6 +63,9 @@ function ffImportance(s: string | undefined, def: MacroEventDef): Importance {
 
 const dayKey = (iso: string) => iso.slice(0, 10);
 
+// Non-USD Fair Economy rows that are still wanted: they have no country of their own on that feed.
+const GLOBAL_FF_IDS = new Set(["opec_meeting", "oil_agency_report"]);
+
 export async function getMacroEvents(fromMs: number, toMs: number): Promise<ScheduledEvent[]> {
   const retrievedAt = new Date().toISOString();
   const out: ScheduledEvent[] = [];
@@ -78,12 +81,15 @@ export async function getMacroEvents(fromMs: number, toMs: number): Promise<Sche
   // 2) Fair Economy fills anything FXStreet does not list (rate-limited on shared cloud IPs; may be empty).
   const ff = await fetchFF();
   for (const it of ff) {
-    if (!it.title || !it.date || it.country !== "USD") continue;
+    if (!it.title || !it.date) continue;
+    const matched = matchEventDef(it.title);
+    // US releases only, plus the handful of global oil events Fair Economy files under "OIL" / "All"
+    // (OPEC meetings, agency reports) that no other feed carries.
+    if (it.country !== "USD" && !(matched && GLOBAL_FF_IDS.has(matched.id))) continue;
     const time = new Date(it.date);
     if (isNaN(time.getTime())) continue;
     const ms = time.getTime();
     if (ms < fromMs || ms > toMs) continue;
-    const matched = matchEventDef(it.title);
     const def = matched ?? GENERIC;
     if (!matched && !/high|medium/i.test(it.impact ?? "")) continue;
     const id = `${def.id === "generic_us" ? slug(it.title) : def.id}-${dayKey(time.toISOString())}`;

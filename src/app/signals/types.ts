@@ -1,4 +1,10 @@
 import type { AssetImpact, Importance, MacroScores } from "@/lib/macro/types"
+import type { SignalFeatures } from "@/lib/signals/features/types"
+
+// Phase 4 keyless feature feeds (design F2); produced by be-features, every sub-object nullable except session.
+export type { SignalFeatures, FundingFeature, OiFeature, CvdFeature, BookFeature, VolFeature, BasisFeature, MacroRatesFeature, StablecoinFeature, SessionFeature, OiQuadrant } from "@/lib/signals/features/types"
+// Canonical UI name (ui-flow's features-contract.ts becomes a re-export of this).
+export type Features = SignalFeatures
 
 // ---------------------------------------------------------------------------
 // Verdict v2 contract (research/design-ux-ui.md F1.1). Every field is optional and nullable until the producing
@@ -38,6 +44,7 @@ export interface CallBlocks {
   timing: number
   flow: number
 }
+
 
 // Wire shape is EventWindowInfo (be-macro); this alias keeps the F1.1 name used by the verdict UI.
 export type EventWindow = EventWindowInfo
@@ -84,6 +91,11 @@ export interface OilGeo {
     score: number
     url: string
     priceReaction: { eventPrice: number; sinceEventPct: number; confirms: boolean | null } | null
+    // F2.9 (be-catalyst): decayed weight used in the net, the confirms vote hoisted to the row, and whether the row
+    // counts at all (false for GENERAL price-reporting headlines). Absent on older payloads -> glyph "-" and no weight.
+    w?: number
+    confirms?: boolean | null
+    inNet?: boolean
   }[]
   categoryBreakdown: { category: string; count: number; avgScore: number; avgReactionPct: number | null }[]
   priceContext: { current: number; change24h: number; changePct24h: number; weekHigh: number; weekLow: number } | null
@@ -177,7 +189,7 @@ export interface RegimeInfo {
   perTF: Partial<Record<RegimeTF, RegimeTFInfo>>
   notes: string[]
   /** Phase 3.3: rolling 30d BTC/SPX correlation and the macro-weight multiplier (crypto only; null otherwise). */
-  macroCoupling?: { corr30d: number; mult: number } | null
+  macroCoupling?: { corr30d: number; mult: number; /** Optional rolling 30-point corr30d history for the sparkline (F2.8); no producer yet. */ series?: number[] | null } | null
 }
 
 /** Phase 3.2 universal event gate state on the verdict. null when no relevant release is near. */
@@ -337,6 +349,10 @@ export interface SignalsResponse {
     horizonMin?: number | null
     /** Strategy family chosen by regime and ADX. Chip hidden when null. */
     mode?: CallMode | null
+    /** One-line reason for `mode` (be-strategy); tooltip only. */
+    modeReason?: string | null
+    /** Timeframe whose trend-system component carries the largest |score| (be-strategy). */
+    dominantTf?: HoldTF | null
     /** TREND / TIMING / FLOW block scores, -100..100. Header tally shown when null. */
     blocks?: CallBlocks | null
     /** Stop anchor label ("4h swing", "1h swing", "AVWAP"). Shown on the STOP tile when present. */
@@ -344,6 +360,8 @@ export interface SignalsResponse {
   }
   /** Feed names that were down at call time (engine audit 4.8). Empty or absent means all feeds were up. */
   degraded?: string[]
+  /** Phase 4 features (F2). Absent on older engine builds. */
+  features?: SignalFeatures | null
   anticipatory: {
     approachingLevels: Array<{
       level: number

@@ -14,6 +14,12 @@ export interface CatalystEvent {
   impact: Impact;
   score: number;
   priceReaction: { eventPrice: number; sinceEventPct: number; confirms: boolean | null } | null;
+  /** priceReaction.confirms hoisted to the row: true = market moved with the headline, false = against, null = undecided. */
+  confirms: boolean | null;
+  /** Weight actually used in NET: 2^(-ageHours/halfLife) x (confirms === false ? 0.3 : 1); 0 when not in the net. */
+  w: number;
+  /** false for GENERAL (price-reporting) headlines, which are shown but never vote. */
+  inNet: boolean;
 }
 
 export interface CatalystForce {
@@ -43,7 +49,14 @@ export interface CatalystResult {
   asset: CatalystAsset;
   assetName: string;
   panelTitle: string;
+  /** Net headline score the engine consumes: GENERAL excluded, confirms-weighted, exponentially decayed by age. */
   score: number;
+  /** Same value as `score`, named for the engine read site. */
+  netScore: number;
+  /** Decayed mean of the GENERAL (price-reporting) rows, panel only; null when there are none. */
+  generalScore: number | null;
+  /** Decay half-life (hours) used for `score`. */
+  halfLifeHours: number;
   label: string;
   eventCount: number;
   events: CatalystEvent[];
@@ -74,6 +87,8 @@ interface AssetConfig {
   flip: Record<string, { bull: string; bear: string }>;
   triggers: { bull: Record<string, string>; bear: Record<string, string> };
   gdeltQuery: string | null;
+  /** Exponential decay half-life for headline weight, hours (audit 3.1 #5: 6h OIL, 12h BTC). */
+  halfLifeHours: number;
 }
 
 const CACHE_TTL = 2 * 60 * 1000;
@@ -103,6 +118,7 @@ const OIL: AssetConfig = {
   assetName: "WTI Crude",
   panelTitle: "Geopolitical Catalysts",
   strikeSymbol: "WTI-USD",
+  halfLifeHours: 6,
   assetRe: /\b(crude|oil|brent|wti|petroleum|opec|barrel|diesel|refiner|tanker|hormuz|aramco)\b/i,
   gdeltQuery:
     '(crude oil OR OPEC OR brent OR WTI OR "strait of hormuz" OR "oil reserves" OR aramco OR kharg OR "tanker attack" OR "oil price" OR houthi OR "strategic petroleum" OR "diesel release" OR "G7 oil") sourcelang:eng',
@@ -224,6 +240,7 @@ const BTC: AssetConfig = {
   assetName: "Bitcoin",
   panelTitle: "Market Catalysts",
   strikeSymbol: "BTC-USD",
+  halfLifeHours: 12,
   assetRe: /\b(bitcoin|btc|crypto|cryptocurrenc|digital\s*asset)\w*/i,
   gdeltQuery: null,
   feeds: [
@@ -332,6 +349,7 @@ const GOLD: AssetConfig = {
   assetName: "Gold",
   panelTitle: "Macro & Safe-Haven Catalysts",
   strikeSymbol: "XAU-USD",
+  halfLifeHours: 12,
   assetRe: /\b(gold|bullion|xau|precious\s*metal|safe\s*haven)\w*/i,
   gdeltQuery: null,
   feeds: [
@@ -439,6 +457,7 @@ const ADA: AssetConfig = {
   assetName: "Cardano",
   panelTitle: "Ecosystem & Market Catalysts",
   strikeSymbol: "ADA-USD",
+  halfLifeHours: 12,
   assetRe: /\b(cardano|\$ada|ada\s*(price|token|coin|crypto|usd|holder|whale|stak)|ada\b(?=.{0,50}(cardano|crypto|blockchain|token|coin)))/i,
   gdeltQuery: null,
   feeds: [
@@ -690,6 +709,9 @@ function toEvent(cfg: AssetConfig, item: RawItem): CatalystEvent | null {
     impact: c.impact,
     score,
     priceReaction: null,
+    confirms: null,
+    w: 0,
+    inNet: c.category !== "GENERAL",
   };
 }
 
@@ -861,7 +883,71 @@ function attachReactions(events: CatalystEvent[], intraday: Candle[], current: n
     const pct = Math.round(((current - p) / p) * 10000) / 100;
     const confirms = e.sentiment === "neutral" || Math.abs(pct) < 0.15 ? null : (e.sentiment === "bullish" && pct > 0) || (e.sentiment === "bearish" && pct < 0);
     e.priceReaction = { eventPrice: Math.round(p * 10000) / 10000, sinceEventPct: pct, confirms };
+    e.confirms = confirms;
   }
+}
+
+// ── Net score ───────────────────────────────────────────────────────────────
+
+export const REJECTED_NARRATIVE_WEIGHT = 0.3;
+
+/** Decay weight for a headline: 2^(-age/halfLife), times 0.3 when the market already moved against it. */
+export function headlineWeight(ageMs: number, halfLifeHours: number, confirms: boolean | null): number {
+  const ageH = Math.max(0, ageMs) / 3600e3;
+  const decay = Math.pow(2, -ageH / Math.max(0.1, halfLifeHours));
+  return decay * (confirms === false ? REJECTED_NARRATIVE_WEIGHT : 1);
+}
+
+export interface HeadlineAggregate {
+  netScore: number;
+  hiBlend: boolean;
+  scoredCount: number;
+  catWeighted: Map<string, number>;
+  absWeightedTotal: number;
+  generalScore: number | null;
+}
+
+/**
+ * Net headline score (audit 3.1 #5 / F2.9): GENERAL price-reporting rows are excluded from the vote, each scored
+ * headline is weighted by 2^(-age/halfLife) and by 0.3 when `confirms === false`, and the weighted mean is blended
+ * 60/40 with the plain mean of the last 12h of high-impact headlines when there are at least three. Mutates
+ * `e.w` on every event (0 for rows outside the net) so the panel can show the weight that actually voted.
+ */
+export function aggregateHeadlines(events: CatalystEvent[], halfLifeHours: number, now = Date.now()): HeadlineAggregate {
+  const catWeighted = new Map<string, number>();
+  let ws = 0;
+  let wt = 0;
+  let gs = 0;
+  let gt = 0;
+  let scoredCount = 0;
+  const recentHi: CatalystEvent[] = [];
+  for (const e of events) {
+    e.w = 0;
+    if (e.score === 0) continue;
+    const age = now - new Date(e.publishedAt).getTime();
+    const w = headlineWeight(Number.isFinite(age) ? age : 0, halfLifeHours, e.confirms);
+    if (!e.inNet) {
+      gs += e.score * w;
+      gt += w;
+      continue;
+    }
+    e.w = Math.round(w * 1000) / 1000;
+    scoredCount++;
+    ws += e.score * w;
+    wt += w;
+    catWeighted.set(e.category, (catWeighted.get(e.category) ?? 0) + e.score * w);
+    if (e.impact === "high" && age < 12 * 3600e3) recentHi.push(e);
+  }
+  let absWeightedTotal = 0;
+  for (const v of catWeighted.values()) absWeightedTotal += Math.abs(v);
+  let netScore = wt > 0 ? Math.round(ws / wt) : 0;
+  let hiBlend = false;
+  if (recentHi.length >= 3) {
+    hiBlend = true;
+    const hiAvg = Math.round(recentHi.reduce((s, e) => s + e.score, 0) / recentHi.length);
+    netScore = Math.round(netScore * 0.4 + hiAvg * 0.6);
+  }
+  return { netScore, hiBlend, scoredCount, catWeighted, absWeightedTotal, generalScore: gt > 0 ? Math.round(gs / gt) : null };
 }
 
 // ── Verdict ─────────────────────────────────────────────────────────────────
@@ -929,7 +1015,7 @@ function buildVerdict(
   const flipCondition = dominant && flip ? (netLean === "bearish" ? flip.bear : flip.bull) : "";
 
   const netBasis =
-    `Recency-weighted average of all ${scoredCount} scored headlines (last 6h count 2x, last 24h 1.25x)` +
+    `Decayed average of ${scoredCount} scored headlines (weight halves every ${cfg.halfLifeHours}h; headlines the market already rejected count 0.3x; price-reporting headlines are shown but not scored)` +
     (hiBlend ? ", blended 60/40 with the last 12h of high-impact headlines" : "") +
     ". Card scores are per-headline averages; weight share is what moves NET.";
 
@@ -967,31 +1053,9 @@ export async function getCatalystNews(asset: CatalystAsset): Promise<CatalystRes
   events.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
   attachReactions(events, price.intraday, price.context?.current ?? null);
 
-  const now = Date.now();
-  const scored = events.filter((e) => e.score !== 0);
-  let netScore = 0;
-  let hiBlend = false;
-  const catWeighted = new Map<string, number>();
-  let absWeightedTotal = 0;
-  if (scored.length > 0) {
-    let ws = 0;
-    let wt = 0;
-    for (const e of scored) {
-      const age = now - new Date(e.publishedAt).getTime();
-      const w = age < 6 * 3600e3 ? 2 : age < 24 * 3600e3 ? 1.25 : 1;
-      ws += e.score * w;
-      wt += w;
-      catWeighted.set(e.category, (catWeighted.get(e.category) ?? 0) + e.score * w);
-    }
-    for (const v of catWeighted.values()) absWeightedTotal += Math.abs(v);
-    netScore = Math.round(ws / wt);
-    const recentHi = scored.filter((e) => e.impact === "high" && now - new Date(e.publishedAt).getTime() < 12 * 3600e3);
-    if (recentHi.length >= 3) {
-      hiBlend = true;
-      const hiAvg = Math.round(recentHi.reduce((s, e) => s + e.score, 0) / recentHi.length);
-      netScore = Math.round(netScore * 0.4 + hiAvg * 0.6);
-    }
-  }
+  const agg = aggregateHeadlines(events, cfg.halfLifeHours, Date.now());
+  const { netScore, hiBlend, catWeighted, absWeightedTotal } = agg;
+  const scored = events.filter((e) => e.inNet && e.score !== 0);
 
   const catMap = new Map<string, { count: number; scored: number; total: number; rSum: number; rN: number }>();
   for (const e of events) {
@@ -1024,6 +1088,9 @@ export async function getCatalystNews(asset: CatalystAsset): Promise<CatalystRes
     assetName: cfg.assetName,
     panelTitle: cfg.panelTitle,
     score: clamp(netScore, -100, 100),
+    netScore: clamp(netScore, -100, 100),
+    generalScore: agg.generalScore,
+    halfLifeHours: cfg.halfLifeHours,
     label: sentimentLabel(netScore),
     eventCount: events.length,
     events: events.slice(0, 30),

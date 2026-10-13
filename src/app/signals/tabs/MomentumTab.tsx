@@ -2,6 +2,7 @@
 
 import React, { useState } from "react"
 import { Activity, BarChart, BarChart3, ChevronDown, Gauge, Layers, Target, TrendingUp, Waves, Zap } from "lucide-react"
+import { VolatilityState } from "../flow/VolatilityState"
 import { cn } from "@/lib/utils"
 import type { RegimeInfo, RegimeTF, RegimeTFInfo, SignalsResponse } from "../types"
 import { AMBER, Chip, DivergenceCard, FOCUS_RING, GRAY, GREEN, LABEL, MUTED, RED, SURFACE, SectionTitle, StatCard, Tip, dirColor, dirLabel, fmt, fmtPrice } from "../shared"
@@ -183,6 +184,9 @@ export const MomentumTab = React.memo(function MomentumTab({ d }: { d: SignalsRe
     <div className="space-y-6">
       {/* Cloud / 200MA / ADX regime */}
       <RegimeSection regime={d.regime} />
+
+      {/* Volatility state (F2.4): DVOL, expected move, basis and curve stress. BTC/ETH only. */}
+      <VolatilityState d={d} />
 
       {/* Technical indicators (ADX lives in the regime cards above) */}
       <div id="sec-indicators">

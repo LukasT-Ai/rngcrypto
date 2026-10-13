@@ -16,7 +16,7 @@ import { MomentumTab } from "./tabs/MomentumTab"
 import { FlowTab } from "./tabs/FlowTab"
 import { MacroTab } from "./tabs/MacroTab"
 import { ModelsTab } from "./tabs/ModelsTab"
-import type { HistoryResponse, MarketMapResponse, SignalsResponse } from "./types"
+import type { HistoryResponse, MarketMapResponse, SessionFeature, SignalsResponse } from "./types"
 import { useMacroState } from "./MacroEventPanel"
 import { THEMES, themeStyle, type SignalsVariant } from "./themes"
 import { HotBoardState, HotPlayCard, HotStamp, hotStatus, useHotPlays } from "./HotBoard"
@@ -103,8 +103,9 @@ type Ticker = (typeof TICKERS)[number]
 
 function TickerPills({ tickers, symbol, onPick }: { tickers: Ticker[]; symbol: string; onPick: (s: string) => void }) {
   return (
-    <div className="relative hidden min-w-0 flex-1 sm:block">
-      <div className="flex items-center gap-1 overflow-x-auto snap-x pr-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)]" role="group" aria-label="Ticker">
+    <div className={cn(SURFACE_BLUR, "hidden rounded-xl px-3 py-1.5 sm:block")}>
+      {/* Every ticker stays visible: the row wraps instead of scrolling (a 27-pair strip never fit in 44px). */}
+      <div className="flex flex-wrap items-center gap-1 gap-y-1.5" role="group" aria-label="Ticker">
         {TICKER_GROUPS.map((g) => {
           const items = tickers.filter((t) => g.symbols.has(t.symbol))
           if (items.length === 0) return null
@@ -121,7 +122,7 @@ function TickerPills({ tickers, symbol, onPick }: { tickers: Ticker[]; symbol: s
                     onClick={() => onPick(t.symbol)}
                     title={t.label}
                     className={cn(
-                      "h-7 shrink-0 snap-start rounded-full border px-2.5 text-[11px] font-bold uppercase tracking-wide transition-colors",
+                      "h-7 shrink-0 rounded-full border px-2.5 text-[11px] font-bold uppercase tracking-wide transition-colors",
                       active ? "border-transparent text-[#06080F]" : "border-white/10 text-white/60 hover:border-white/25 hover:text-white",
                       FOCUS_RING
                     )}
@@ -187,14 +188,32 @@ function TickerPalette({ tickers, symbol, onPick }: { tickers: Ticker[]; symbol:
   )
 }
 
-// Session chip (F2.7): clock-derived until the engine emits features.session. Gates are amber; everything else white/60.
-function SessionChip({ crypto }: { crypto: boolean }) {
+// Session chip (F2.7): features.session from the engine when present, else clock-derived. Gates are amber; everything
+// else white/60. Engine copy: `US session · vol x1.3`, `Weekend · x0.7 · size x0.5`, `late UTC · entries gated`.
+function SessionChip({ crypto, session }: { crypto: boolean; session?: SessionFeature | null }) {
   const now = useNow(60_000)
-  if (now === 0) return null
+  if (now === 0 && !session) return null
+  const gateTip = (gate: string | null | undefined) =>
+    gate === "late_utc" ? "21:00 to 24:00 UTC: thin books and wide spreads; new entries are gated." : gate === "nonc_weekend" ? "This market is closed over the weekend; calls wait for the open." : gate ? `Session gate active: ${gate}.` : null
+  if (session) {
+    const gate = session.gate && session.gate !== "none" ? session.gate : null
+    const word = session.weekend ? "Weekend" : session.name === "us" ? "US session" : session.name === "london" ? "London" : session.name === "asia" ? "Asia" : "Late UTC"
+    const label =
+      gate === "late_utc"
+        ? "late UTC · entries gated"
+        : gate === "nonc_weekend"
+          ? "market closed · WAIT"
+          : [word, session.volScale != null ? `vol x${session.volScale}` : null, session.haircutPct ? `haircut ${session.haircutPct}%` : null].filter(Boolean).join(" · ")
+    return (
+      <Chip variant={gate ? "warning" : "vol"} size="label" className="hidden md:inline-flex" tip={gateTip(gate) ?? `Trading session from the engine: volatility scale by session${session.lowLiquidity ? ", thin liquidity" : ""}${session.haircutPct ? `, ${session.haircutPct}% confidence haircut` : ""}. Size multipliers are on the verdict SIZE tile.`}>
+        {label}
+      </Chip>
+    )
+  }
   const s = sessionFor(now, crypto)
   const gated = s.gate !== "none"
   return (
-    <Chip variant={gated ? "warning" : "vol"} size="label" className="hidden md:inline-flex" tip={gated ? (s.gate === "late_utc" ? "21:00 to 24:00 UTC: thin books and wide spreads; new entries are gated." : "This market is closed over the weekend; calls wait for the open.") : "Trading session by UTC clock. Volatility scaling by session arrives with the engine's session feature."}>
+    <Chip variant={gated ? "warning" : "vol"} size="label" className="hidden md:inline-flex" tip={gateTip(gated ? s.gate : null) ?? "Trading session by UTC clock. Volatility scaling by session arrives with the engine's session feature."}>
       {s.label}
     </Chip>
   )
@@ -355,10 +374,9 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
             {theme.name}
           </h1>
           <span className="mx-1 hidden h-5 w-px bg-white/10 sm:block" aria-hidden />
-          <TickerPills tickers={tickers} symbol={symbol} onPick={setSymbol} />
           <TickerPalette tickers={tickers} symbol={symbol} onPick={setSymbol} />
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
-            <SessionChip crypto={CRYPTO.has(symbol)} />
+            <SessionChip crypto={CRYPTO.has(symbol)} session={d && !staleTicker ? d.features?.session ?? null : null} />
             <Chip variant="vol" size="label" tip={d?.timestamp ? `Last scan ${new Date(d.timestamp).toLocaleTimeString()}. The page re-fetches every 30 seconds.` : "Connecting to the engine."}>
               <RefreshCw className="size-3 text-white/50" />
               <Countdown lastFetch={fetchTs} color="var(--brand)" />
@@ -374,6 +392,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
             </button>
           </span>
         </div>
+        <TickerPills tickers={tickers} symbol={symbol} onPick={setSymbol} />
 
         {isLoading ? (
           <SkeletonContent />

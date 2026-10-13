@@ -58,6 +58,28 @@ export function tfTooltip(tf: RegimeTF, t: RegimeTFInfo): string {
   return parts.join("\n")
 }
 
+// 30-point sparkline of the rolling correlation (F2.8): white/35 line, last point in the brand colour, no axes.
+// Renders nothing below two points.
+export function Sparkline({ series, width = 48, height = 12, className }: { series: number[] | null | undefined; width?: number; height?: number; className?: string }) {
+  const pts = (series ?? []).filter((v) => Number.isFinite(v)).slice(-30)
+  if (pts.length < 2) return null
+  const lo = Math.min(...pts)
+  const hi = Math.max(...pts)
+  const span = hi - lo || 1
+  const x = (i: number) => (i / (pts.length - 1)) * (width - 2) + 1
+  const y = (v: number) => height - 1 - ((v - lo) / span) * (height - 2)
+  const d = pts.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")
+  const last = pts[pts.length - 1]
+  return (
+    <svg aria-hidden width={width} height={height} viewBox={`0 0 ${width} ${height}`} className={cn("shrink-0", className)}>
+      <path d={d} fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth={1} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={x(pts.length - 1)} cy={y(last)} r={1.5} fill="var(--brand, #00FF88)" />
+    </svg>
+  )
+}
+
+export const couplingTip = (c: { corr30d: number; mult: number }) => `30-day correlation with risk assets ${c.corr30d.toFixed(2)}; macro and event weights are scaled by ${c.mult.toFixed(2)}.${c.mult < 0.3 ? " Macro features are mostly silenced in this regime." : ""}`
+
 export function RegimeStrip({ regime, onJump, showCoupling = false }: { regime: RegimeInfo | null | undefined; onJump: (anchor: SectionId) => void; showCoupling?: boolean }) {
   if (!regime) return null
   const directional = regime.label === "Bull regime" || regime.label === "Bear regime"
@@ -120,8 +142,9 @@ export function RegimeStrip({ regime, onJump, showCoupling = false }: { regime: 
         )
       })}
       {coupling && (
-        <Chip variant="vol" className="ml-auto" tip={`30-day correlation with risk assets ${coupling.corr30d.toFixed(2)}; macro and event weights are scaled by ${coupling.mult.toFixed(2)}.`}>
+        <Chip variant="vol" className="ml-auto" tip={couplingTip(coupling)}>
           coupling {coupling.mult.toFixed(1)}
+          <Sparkline series={coupling.series} />
         </Chip>
       )}
       <a

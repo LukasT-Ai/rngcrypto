@@ -568,7 +568,7 @@ export default function PerformanceDashboard() {
                               <td className="font-mono font-bold text-white"><a href={signalHref(s.symbol)} onClick={(e) => e.stopPropagation()} className="hover:underline" style={{ textDecorationColor: "var(--brand)" }}>{s.symbol}</a></td>
                               <td className="font-bold" style={{ color: s.bias === "LONG" ? GREEN : RED }}>{s.bias}</td>
                               <td className="text-right font-mono tabular-nums text-white/85">${fmtPrice(s.entry)}</td>
-                              <td className="text-right font-mono tabular-nums text-[#9CA3AF]">{s.pTp1 != null ? `${Math.round(s.pTp1)}% / ` : "— / "}{s.confidence} <span className="opacity-70">{s.grade}</span></td>
+                              <td className="text-right font-mono tabular-nums text-[#9CA3AF]">{s.pTp1 != null ? `${Math.round(s.pTp1 * 100)}% / ` : "— / "}{s.confidence} <span className="opacity-70">{s.grade}</span></td>
                               <td className="pl-4"><TpBadges s={s} /></td>
                               <td className="text-right font-mono tabular-nums whitespace-nowrap" style={{ color: rShown == null ? GRAY : rShown > 0 ? GREEN : rShown < 0 ? RED : "#F9FAFB" }}>
                                 {s.open ? (s.fillStatus === "pending" ? "pending fill" : "open") : s.excluded ? "n/a" : fmtR(rShown)}
@@ -602,7 +602,7 @@ export default function PerformanceDashboard() {
                           <span className="ml-auto font-mono tabular-nums" style={{ color: rShown == null ? GRAY : rShown > 0 ? GREEN : RED }}>{s.open ? (s.fillStatus === "pending" ? "pending fill" : "open") : s.excluded ? "n/a" : fmtR(rShown)}</span>
                           <ChevronRight className="size-4 text-white/40" />
                         </div>
-                        <div className="text-[#9CA3AF] font-mono">Entry ${fmtPrice(s.entry)} · {s.pTp1 != null ? `${Math.round(s.pTp1)}% / ` : ""}{s.confidence} {s.grade}</div>
+                        <div className="text-[#9CA3AF] font-mono">Entry ${fmtPrice(s.entry)} · {s.pTp1 != null ? `${Math.round(s.pTp1 * 100)}% / ` : ""}{s.confidence} {s.grade}</div>
                         <TpBadges s={s} />
                         {s.reasonText && <div className="text-[12px] leading-snug text-white/55">{s.reasonText}</div>}
                       </button>

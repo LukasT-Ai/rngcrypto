@@ -761,7 +761,7 @@ export interface SignalRowV2 {
   coverageGap?: boolean
   /** Plain-language resolution sentence (PR 13). */
   reasonText?: string | null
-  /** Calibrated P(TP1) in percent (PR 17). */
+  /** Calibrated P(TP1) as a FRACTION 0..1 (PR 17). */
   pTp1?: number | null
   // Call-time inputs logged on the row (PR 05); the audit drawer uses them when the audit endpoint is absent.
   weightedScore?: number | null

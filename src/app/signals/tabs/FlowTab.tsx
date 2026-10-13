@@ -1,11 +1,21 @@
 "use client"
 
 import React from "react"
-import { Activity, AlertTriangle, ArrowUpRight, BarChart3, Eye, GitBranch, Hash, Layers, Zap } from "lucide-react"
+import { Activity, AlertTriangle, BarChart3, BookOpen, Eye, GitBranch, Hash, Layers, Waves, Zap } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { SignalsResponse } from "../types"
-import { AMBER, Chip, GRAY, GREEN, RED, SectionTitle, StatCard, dirColor, fmt, fmtCompact, priceDp } from "../shared"
+import { AMBER, Chip, GRAY, GREEN, RED, SectionTitle, StatCard, dirColor, fmt, fmtCompact, priceDp, useNow } from "../shared"
 import { LiquidationsPanel, OrderBookPanel } from "../OrderFlowPanels"
+import { readFeatures, staleLabel } from "../flow/features-contract"
+import { FeatureTile } from "../flow/FeatureTile"
+import { CvdTile } from "../flow/CvdTile"
+import { QuarterHourTile } from "../flow/QuarterHourTile"
+import { OiChangeTiles, OiQuadrant } from "../flow/OiQuadrant"
+import { FundingTile } from "../flow/FundingTile"
+import { StablecoinTiles } from "../flow/StablecoinTiles"
+
+const CRYPTO = new Set(["BTC", "ETH", "BNB", "ADA", "HYPE", "ZEC", "PUMP", "NIGHT", "XRP", "SOL", "NEAR", "CRCL", "MINIMAX", "SPCX", "DRAM"])
+const usd = (n: number) => `$${fmtCompact(n)}`
 
 export const FlowTab = React.memo(function FlowTab({ d }: { d: SignalsResponse }) {
   const vol = d.volume
@@ -17,6 +27,17 @@ export const FlowTab = React.memo(function FlowTab({ d }: { d: SignalsResponse }
   const dp = price > 0 ? priceDp(price) : 2
   const spikeNotable = vol.spikeLabel && !["NORMAL", "no data", "ELEVATED", "DRY"].includes(vol.spikeLabel)
   const abs = vol.absorption
+  // Wave 2 feature objects (F2). Every tile renders its own "feed off" when its object is null, so the tab works
+  // before the feed lands. `now` ticks once a minute and only feeds the stale tags.
+  const f = readFeatures(d)
+  const now = useNow(60_000)
+  const isCrypto = CRYPTO.has(d.asset)
+  const lastDepth = book ? book.depth[book.depth.length - 1] : null
+  const bookImb = f?.book ?? (lastDepth ? { imbalance: lastDepth.imbalance, band: lastDepth.band } : null)
+  const bookTone = bookImb == null ? undefined : bookImb.imbalance >= 0.2 ? GREEN : bookImb.imbalance <= -0.2 ? RED : undefined
+  const bandTxt = bookImb ? `${bookImb.band * 100 < 1 ? (bookImb.band * 100).toFixed(2) : (bookImb.band * 100).toFixed(0)}%` : ""
+  const nearBid = book?.bidWalls.find((w) => w.price < price) ?? book?.bidWalls[0] ?? null
+  const nearAsk = book?.askWalls.find((w) => w.price > price) ?? book?.askWalls[0] ?? null
 
   return (
     <div className="space-y-6">
@@ -55,11 +76,71 @@ export const FlowTab = React.memo(function FlowTab({ d }: { d: SignalsResponse }
           <StatCard label="20 EMA volume" value={fmtCompact(vol.ema20)} sub="Baseline" icon={Activity} />
           <StatCard label="Spike ratio" value={`${vol.spikeRatio.toFixed(1)}x`} sub={vol.spikeLabel} color={vol.spikeLabel === "DRY" ? GRAY : undefined} icon={Zap} />
           <StatCard label="Volume ratio" value={fmt(vol.ratio, 2)} sub={vol.ratio > 1.5 ? "High volume" : vol.ratio < 0.5 ? "Low volume" : "Normal"} icon={Layers} />
-          <StatCard label="CVD" value={fmtCompact(vol.cvd)} sub={vol.cvd > 0 ? "Buyers dominate" : "Sellers dominate"} color={vol.cvd > 0 ? GREEN : RED} icon={GitBranch} />
+          <StatCard label="Candle CVD" value={fmtCompact(vol.cvd)} sub={f?.cvd ? "candle proxy · see Order flow score" : vol.cvd > 0 ? "Buyers dominate" : "Sellers dominate"} color={vol.cvd > 0 ? GREEN : RED} icon={GitBranch} hint="Candle-colour proxy for cumulative volume delta (volume signed by whether the bar closed up or down). The Order flow score section carries the real taker-based CVD when the feed is on." />
+        </div>
+      </div>
+
+      {/* Order flow score (F2.3): real CVD, quarter-hour imbalance, OI quadrant, book imbalance and nearest walls */}
+      <div id="sec-order-flow">
+        <SectionTitle
+          icon={Waves}
+          right={
+            <span className="text-[10px] text-[#9CA3AF]/80">
+              {f?.cvd ? "OKX taker feed" : "taker feed off"} · feeds the FLOW block of the verdict
+            </span>
+          }
+        >
+          Order flow score
+        </SectionTitle>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <CvdTile cvd={f?.cvd} now={now} />
+          <QuarterHourTile cvd={f?.cvd} now={now} />
+          <div className="sm:col-span-2">
+            <OiQuadrant oi={f?.oi} now={now} />
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <OiChangeTiles oi={f?.oi} now={now} fallbackChangePct={pos?.openInterestChange ?? null} />
+          <FeatureTile
+            label="Book imbalance"
+            icon={BookOpen}
+            off={bookImb == null}
+            stale={staleLabel(f?.book, now)}
+            color={bookTone}
+            hint="Resting bid depth minus ask depth as a share of both, within the stated band around mid. Beyond ±0.2 the book leans one way; it feeds the FLOW block and the squeeze note in the Order book panel below."
+            value={bookImb ? `${bookImb.imbalance >= 0 ? "+" : ""}${bookImb.imbalance.toFixed(2)}` : null}
+            sub={bookImb ? `${bookImb.imbalance >= 0.2 ? "bid-heavy" : bookImb.imbalance <= -0.2 ? "ask-heavy" : "balanced"} within ±${bandTxt}${book ? ` · ${book.venue}` : ""}` : null}
+          />
+          <FeatureTile
+            label="Nearest walls"
+            icon={Layers}
+            off={!book}
+            offText="book feed off"
+            hint="Largest resting orders closest to price on each side. A buy wall below is cover for a stop; a sell wall above is where to bank partial profit. Walls can be pulled."
+            value={
+              book ? (
+                <span className="flex flex-col gap-0.5 text-sm">
+                  <span style={{ color: GREEN }}>{nearBid ? `${usd(nearBid.usd)} bid ${nearBid.distancePct > 0 ? "+" : ""}${nearBid.distancePct}%` : "no buy wall"}</span>
+                  <span style={{ color: RED }}>{nearAsk ? `${usd(nearAsk.usd)} ask ${nearAsk.distancePct > 0 ? "+" : ""}${nearAsk.distancePct}%` : "no sell wall"}</span>
+                </span>
+              ) : null
+            }
+            sub={book ? `within ±${book.coveragePct}% · ${book.venue}` : null}
+          />
         </div>
       </div>
 
       {/* Positioning & liquidation */}
+      {!pos && (
+        <div id="sec-positioning">
+          <SectionTitle icon={Activity}>Positioning</SectionTitle>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="col-span-2">
+              <FundingTile funding={f?.funding} now={now} fallbackRate={m.fundingRate} />
+            </div>
+          </div>
+        </div>
+      )}
       {pos && (
         <div id="sec-positioning">
           <SectionTitle
@@ -75,6 +156,9 @@ export const FlowTab = React.memo(function FlowTab({ d }: { d: SignalsResponse }
             Positioning &amp; liquidation
           </SectionTitle>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="col-span-2">
+              <FundingTile funding={f?.funding} now={now} fallbackRate={m.fundingRate} />
+            </div>
             {pos.longShortRatio != null && (
               <StatCard label="Long/short ratio" value={fmt(pos.longShortRatio, 2)} sub={pos.longShortRatio > 1.5 ? "Longs crowded" : pos.longShortRatio < 0.7 ? "Shorts crowded" : "Balanced"} color={pos.longShortRatio > 1.5 ? RED : pos.longShortRatio < 0.7 ? GREEN : undefined} icon={BarChart3} />
             )}
@@ -103,16 +187,13 @@ export const FlowTab = React.memo(function FlowTab({ d }: { d: SignalsResponse }
         <SectionTitle icon={Hash}>Market data</SectionTitle>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {m.fearGreed && <StatCard label="Fear & Greed" value={String(m.fearGreed.value)} sub={m.fearGreed.classification} color={m.fearGreed.value >= 60 ? GREEN : m.fearGreed.value <= 40 ? RED : undefined} icon={Eye} />}
-          {m.fundingRate != null && (
-            <StatCard label="Funding rate (8h equiv.)" value={`${(m.fundingRate * 100).toFixed(4)}%`} sub={m.fundingRate < 0 ? "Shorts paying longs" : m.fundingRate > 0.01 ? "Overleveraged longs" : "Neutral"} color={m.fundingRate < 0 ? GREEN : m.fundingRate > 0.01 ? RED : undefined} icon={Activity} />
-          )}
           {m.openInterest != null && <StatCard label="Open interest" value={`$${fmtCompact(m.openInterest)}`} icon={BarChart3} />}
           {m.putCallRatio != null && (
             <StatCard label="Put/call ratio" value={fmt(m.putCallRatio, 2)} sub={m.putCallRatio > 1 ? "Bearish sentiment" : m.putCallRatio < 0.7 ? "Bullish sentiment" : "Neutral"} color={m.putCallRatio > 1 ? RED : m.putCallRatio < 0.7 ? GREEN : undefined} icon={Layers} />
           )}
           {m.btcDominance != null && <StatCard label="BTC dominance" value={`${m.btcDominance.toFixed(1)}%`} icon={Hash} />}
           {m.hashRate != null && <StatCard label="Hashrate" value={`${(m.hashRate / 1e9).toFixed(0)} EH/s`} icon={Zap} />}
-          {m.etfFlow && <StatCard label="ETF net flow" value={`$${fmtCompact(m.etfFlow.net)}`} sub={m.etfFlow.description} color={m.etfFlow.net > 0 ? GREEN : RED} icon={ArrowUpRight} />}
+          {isCrypto && <StablecoinTiles sc={f?.stablecoins} now={now} />}
           {m.deribitFunding8h != null && <StatCard label="Deribit funding 8h" value={`${(m.deribitFunding8h * 100).toFixed(4)}%`} color={m.deribitFunding8h < 0 ? GREEN : m.deribitFunding8h > 0.01 ? RED : undefined} icon={Activity} hint="Funding on Deribit perpetuals, 8-hour rate. Cross-venue check on the main funding figure." />}
         </div>
         <div className={cn("mt-2 text-[10px] text-white/50")}>Values update with every 30s scan.</div>

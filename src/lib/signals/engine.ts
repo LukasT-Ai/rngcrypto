@@ -7,13 +7,25 @@
  *
  * ENGINE_VERSION bumps whenever scoring behaviour changes so logged history can be bucketed per version.
  */
-import { appendSignal } from "../../app/api/signals/history/logger";
+import { appendSignal, type SignalContext, type SignalInputs } from "../../app/api/signals/history/logger";
 import { FACTOR } from "./factors";
 import { stampActiveSetups } from "./setup-tracker";
 import { fetchOrderFlowRaw, summarizeOrderFlow, type LiquidationSummary, type OrderBookSummary, type OrderFlowRaw } from "./orderflow";
 
 // Bump whenever scoring behaviour changes; every logged signal carries it so history can be bucketed.
-export const ENGINE_VERSION = "2026.10.13-feeds";
+// ENGINE_VERSION (below DEFAULT_TUNING) appends a short hash of the tuning defaults so a tuning change that
+// forgets to bump this string still opens a new version bucket (perf audit 5.7).
+export const ENGINE_VERSION_BASE = "2026.10.13-feeds";
+
+// FNV-1a 32-bit, 6 hex chars. Pure and dependency-free so the hash is identical in the backtest and the server.
+export function shortHash(input: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0").slice(0, 6);
+}
 
 /**
  * Strategy tuning. Defaults come from a 36-configuration sweep of the walk-forward backtest (scripts/backtest.ts,
@@ -44,6 +56,7 @@ export interface Tuning {
   regimeGate: "off" | "soft" | "hard";
 }
 export const DEFAULT_TUNING: Tuning = { minPublishConfidence: 60, shortNeedsHtfBear: true, stopBufferAtr: 0.5, minStopAtr: 0.8, stopFloorScale: 1.0, regimeWeight: 0.05, regimeGate: "soft" };
+export const ENGINE_VERSION = `${ENGINE_VERSION_BASE}-${shortHash(JSON.stringify(DEFAULT_TUNING))}`;
 let TUNING: Tuning = { ...DEFAULT_TUNING };
 export function setTuning(partial: Partial<Tuning>): Tuning {
   TUNING = { ...TUNING, ...partial };
@@ -84,7 +97,7 @@ export function assetClassFor(symbol: string, isCrypto: boolean): AssetClass {
 import { computeCatalystScore, getNextOilEvent, getUpcomingEvents } from "@/lib/economic-calendar";
 import { getNewsSentiment, type NewsSentimentResult } from "@/lib/news-sentiment";
 import { getCatalystNews, isCatalystAsset, type OilGeoResult } from "@/lib/oil-geopolitical-news";
-import { getMacroScores, macroAssetFor } from "@/lib/macro/service";
+import { getMacroScores, getMacroState, macroAssetFor } from "@/lib/macro/service";
 import type { MacroScores, MacroState as MacroEventIntel } from "@/lib/macro/types";
 import { computeMacroRegime, macroBonus as regimeBonus, type MacroRegimeResult } from "@/lib/ta/macro-regime";
 import { analyzeElliottMTF, type ElliottMTFResult } from "@/lib/ta/elliott";
@@ -4092,6 +4105,29 @@ function computeMultiFactorCall(
     stopMultiplier: stopMult,
     strongCategories,
     weightedScore: Math.round(weightedScore * 10) / 10,
+    // Raw component votes and the weights actually in play (0 = feed down), logged with every call so the
+    // per-component reliability table can be built from the record. Pass-through only; nothing reads it here.
+    components: {
+      marketStructure: { score: ms.score, weight: weights.marketStructure },
+      momentum: { score: mom.score, weight: weights.momentum },
+      volume: { score: vol.score, weight: weights.volume },
+      derivatives: { score: deriv.score, weight: weights.derivatives },
+      htf: { score: htf.score, weight: weights.htf },
+      bollinger: { score: boll.score, weight: weights.bollinger },
+      divergences: { score: divs.score, weight: weights.divergences },
+      sentiment: { score: sent.score, weight: weights.sentiment },
+      marketData: { score: mktData.score, weight: weights.marketData },
+      patterns: { score: pats.score, weight: weights.patterns },
+      etf: { score: etfScore.score, weight: weights.etf },
+      liquidation: { score: liq.score, weight: weights.liquidation },
+      elliott: { score: ewScore, weight: weights.elliott },
+      taSystem: { score: taScore, weight: weights.taSystem },
+      regime: { score: regimeScore, weight: weights.regime },
+      macro: { score: macroScores?.macro ?? 0, weight: weights.macro },
+      event: { score: macroScores?.event ?? 0, weight: weights.event },
+      confirmation: { score: macroScores?.confirmation ?? 0, weight: weights.confirmation },
+    } as Record<string, { score: number; weight: number }>,
+    gateNotes,
     macroBonus,
     regimeLabel: regimeInfo?.label ?? null,
     regimeScore: regimeInfo?.score ?? null,
@@ -4811,6 +4847,56 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
   }
 
   // ── Log signal for accuracy tracking (scanner passes log=0 so it does not pollute history) ──
+  // Inputs at call time (perf audit 3.1): everything the feedback loop needs is captured with the record, so
+  // calibration, the per-component reliability table and the per-call audit never have to be reconstructed.
+  const logRisk = Math.abs(call.entry - call.stopLoss);
+  const rrOf = (tp: number) => (logRisk > 0 ? Math.round((Math.abs(tp - call.entry) / logRisk) * 100) / 100 : null);
+  const logEntryType: "market" | "limit" = currentPrice > 0 && Math.abs(call.entry - currentPrice) / currentPrice > 0.001 ? "limit" : "market";
+  // getMacroState is served from the 5s cache the scores call above just filled, so this costs no network.
+  const upcomingEvents = macroAsset && macroInfo ? ((await getMacroState(macroAsset).catch(() => null))?.upcoming ?? []) : [];
+  const nextEventMin = (() => {
+    const nowT = Date.now();
+    let best: number | null = null;
+    for (const ev of upcomingEvents) {
+      if (ev.importance !== "high" && ev.importance !== "critical") continue;
+      const m = (Date.parse(ev.time) - nowT) / 60e3;
+      if (!Number.isFinite(m) || m < 0) continue;
+      if (best == null || m < best) best = m;
+    }
+    return best == null ? null : Math.round(best);
+  })();
+  const logInputs: SignalInputs = {
+    weightedScore: call.weightedScore,
+    confidenceRaw: clamp(Math.round(50 + Math.abs(call.weightedScore) / 2), 0, 100),
+    components: call.components,
+    rr1: rrOf(call.tp1),
+    rr2: rrOf(call.tp2),
+    rr3: rrOf(call.tp3),
+    entryType: logEntryType,
+    atrPct: currentPrice > 0 && tradeATR > 0 ? Math.round((tradeATR / currentPrice) * 10000) / 100 : null,
+    fundingRate: strikeFunding,
+    minutesToNextEvent: nextEventMin,
+    tuning: { ...getTuning() },
+    gateNotes: call.gateNotes,
+    engineVersion: ENGINE_VERSION,
+    calibrationVersion: null,
+    pTp1: null,
+    regime: call.regimeLabel ?? null,
+    regimeGate: call.regimeGate ?? null,
+    markAtSignal: markPrice != null && Number.isFinite(markPrice) ? round(markPrice, dec) : null,
+    lastAtSignal: lastCandle?.close != null ? round(lastCandle.close, dec) : null,
+    candleCloseTime: candles15m[candles15m.length - 1]?.time ?? null,
+  };
+  const logContext: SignalContext = {
+    factors: Object.fromEntries(call.signalFactors.map((f) => [f.category, f.assessment])),
+    catalystScore: catalystData.score,
+    oilGeoScore: oilGeoData?.score ?? null,
+    oilRegime: oilGeoRegime,
+    atr: round(tradeATR, dec),
+    tradeType: timeframeOutlook.alignment?.tradeType ?? null,
+    timeframe: "15m",
+    inputs: logInputs,
+  };
   if (shouldLog && call.bias !== "WAIT" && call.confidence >= 55) {
     appendSignal({
       symbol,
@@ -4825,15 +4911,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       tp3: call.tp3,
       priceAtSignal: round(currentPrice, dec),
       engineVersion: ENGINE_VERSION,
-      context: {
-        factors: Object.fromEntries(call.signalFactors.map((f) => [f.category, f.assessment])),
-        catalystScore: catalystData.score,
-        oilGeoScore: oilGeoData?.score ?? null,
-        oilRegime: oilGeoRegime,
-        atr: round(tradeATR, dec),
-        tradeType: timeframeOutlook.alignment?.tradeType ?? null,
-        timeframe: "15m",
-      },
+      context: logContext,
     }).catch(() => {});
   }
 

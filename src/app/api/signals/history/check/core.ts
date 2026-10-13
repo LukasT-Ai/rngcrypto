@@ -1,4 +1,4 @@
-import { getHistory, updateSignal, type SignalLog, type TpHit } from "../logger";
+import { applyUpdates, getHistory, type CoverageGap, type SignalLog, type TpHit } from "../logger";
 
 export const STRIKE_MAP: Record<string, string> = {
   BTC: "BTC-USD", ETH: "ETH-USD", BNB: "BNB-USD", ADA: "ADA-USD", HYPE: "HYPE-USD",
@@ -38,7 +38,7 @@ export function isOpen(sig: SignalLog): boolean {
   return sig.outcome === "pending";
 }
 
-function horizonFor(sig: SignalLog): number {
+export function horizonFor(sig: SignalLog): number {
   const t = sig.context?.tradeType?.toUpperCase() ?? "";
   return HORIZON_MS[t] ?? DEFAULT_HORIZON;
 }
@@ -201,6 +201,15 @@ export function evaluate(sig: SignalLog, candles: Candle[], now: number): Partia
   const window = candles.filter((c) => c.time >= fillTime && c.time + CANDLE_MS > resumeFrom && c.time < horizonEnd);
   let closed: Partial<SignalLog> | null = null;
 
+  // Coverage gap (perf audit 5.5): on resume the first fetchable candle opens after the point we stopped at,
+  // so a stop or TP inside the span could not be seen. The record keeps running on the candles we have, but
+  // the gap is recorded so the audit view and the open-signal card can say so. First gap wins.
+  let coverageGap: CoverageGap | null = sig.coverageGap ?? null;
+  const earliestFetched = candles[0]?.time ?? null;
+  if (coverageGap == null && sig.fillStatus === "filled" && earliestFetched != null && resumeFrom < horizonEnd && earliestFetched > resumeFrom + CANDLE_MS) {
+    coverageGap = { from: resumeFrom, to: Math.min(earliestFetched, horizonEnd), detectedAt: now };
+  }
+
   for (const c of window) {
     const fav = long ? c.high - sig.entry : sig.entry - c.low;
     const adv = long ? sig.entry - c.low : c.high - sig.entry;
@@ -250,6 +259,7 @@ export function evaluate(sig: SignalLog, candles: Candle[], now: number): Partia
     fillStatus: "filled",
     filledAt: fillTime,
     outcome: tpHits.length ? (`tp${tpHits[tpHits.length - 1].level}` as SignalLog["outcome"]) : "pending",
+    ...(coverageGap ? { coverageGap } : {}),
   };
 
   if (closed) return { ...base, ...closed, status: "closed" };
@@ -274,19 +284,18 @@ let legacyMigrated = false;
 export function migrateLegacyRecords(): number {
   if (legacyMigrated) return 0;
   legacyMigrated = true;
-  let reset = 0;
+  const patches = new Map<string, Partial<SignalLog>>();
   for (const sig of getHistory()) {
     if (!needsLegacyReverify(sig)) continue;
-    updateSignal(sig.id, legacyResetPatch(sig));
-    reset++;
+    patches.set(sig.id, legacyResetPatch(sig));
   }
-  return reset;
+  return applyUpdates(patches);
 }
 
-export async function runOutcomeCheck(): Promise<{ checked: number; updated: number; legacyReset: number }> {
+export async function runOutcomeCheck(): Promise<{ checked: number; updated: number; legacyReset: number; writes: number }> {
   const legacyReset = migrateLegacyRecords();
   const open = getHistory().filter(isOpen);
-  if (open.length === 0) return { checked: 0, updated: 0, legacyReset };
+  if (open.length === 0) return { checked: 0, updated: 0, legacyReset, writes: 0 };
 
   const now = Date.now();
   const bySymbol = new Map<string, SignalLog[]>();
@@ -296,7 +305,8 @@ export async function runOutcomeCheck(): Promise<{ checked: number; updated: num
     bySymbol.set(s.symbol, arr);
   }
 
-  let updated = 0;
+  // Every evaluation lands in one map and the ledger is written once per pass (perf audit 5.3).
+  const patches = new Map<string, Partial<SignalLog>>();
   await Promise.allSettled(
     [...bySymbol.entries()].map(async ([sym, sigs]) => {
       const strike = STRIKE_MAP[sym];
@@ -307,15 +317,13 @@ export async function runOutcomeCheck(): Promise<{ checked: number; updated: num
       if (candles.length === 0) return;
       for (const sig of sigs) {
         const upd = evaluate(sig, candles, now);
-        if (upd) {
-          updateSignal(sig.id, upd);
-          updated++;
-        }
+        if (upd) patches.set(sig.id, upd);
       }
     })
   );
+  const updated = applyUpdates(patches);
 
-  return { checked: open.length, updated, legacyReset };
+  return { checked: open.length, updated, legacyReset, writes: updated > 0 ? 1 : 0 };
 }
 
 export async function fetchMarks(symbols: string[]): Promise<Record<string, number>> {

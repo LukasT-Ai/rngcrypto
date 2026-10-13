@@ -128,6 +128,18 @@ describe("fill model", () => {
     expect(upd?.realizedR).toBeNull();
   });
 
+  it("flags a coverage gap when the resumed walk starts after the first fetchable candle, and keeps walking", () => {
+    // Filled at 10:05, last checked 10:10; the next fetch only reaches back to 11:00 (ten candles lost).
+    const filled = sig({ fillStatus: "filled", filledAt: C0 + CANDLE_MS, lastCheckedAt: C0 + 2 * CANDLE_MS, maxFavorable: 0, maxAdverse: 0 });
+    const cs = candles([[98_200, 98_400, 98_100, 98_300], [98_300, 99_100, 98_200, 99_000]], C0 + 12 * CANDLE_MS);
+    const upd = evaluate(filled, cs, C0 + 14 * CANDLE_MS);
+    expect(upd?.coverageGap).toEqual({ from: C0 + 2 * CANDLE_MS, to: C0 + 12 * CANDLE_MS, detectedAt: C0 + 14 * CANDLE_MS });
+    expect(upd?.tpHits?.map((h) => h.level)).toEqual([1]);
+    // No gap when the fetch covers the resume point.
+    const ok = evaluate(filled, candles([[98_200, 98_400, 98_100, 98_300]], C0 + 2 * CANDLE_MS), C0 + 3 * CANDLE_MS);
+    expect(ok?.coverageGap).toBeUndefined();
+  });
+
   it("re-verifies only legacy first-touch records with a resting limit entry", () => {
     const legacyLimit = sig({ status: undefined, outcome: "tp2", fillStatus: undefined });
     const legacyMarket = sig({ status: undefined, outcome: "tp2", fillStatus: undefined, entry: 99_900 });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
-import { getHistory, computeStats } from "./logger";
+import { getAllHistory, getHistory, computeStats } from "./logger";
 import { computePerformance } from "./performance";
 import { fetchMarks } from "./check/core";
 
@@ -11,10 +11,11 @@ export async function GET(req: NextRequest) {
   if (blocked) return blocked;
 
   const sp = req.nextUrl.searchParams;
-  const signals = getHistory();
+  const rangeRaw = sp.get("range") ?? "30d";
+  // "All time" includes the archive (records rolled out of the live file at the cap); ranged views never need it.
+  const signals = rangeRaw === "all" ? getAllHistory() : getHistory();
 
   if (sp.get("view") === "performance") {
-    const rangeRaw = sp.get("range") ?? "30d";
     const rangeDays = rangeRaw === "all" ? null : parseInt(rangeRaw, 10) || 30;
     const assets = sp.get("asset")?.split(",").filter(Boolean) ?? null;
     const grades = sp.get("grade")?.split(",").filter(Boolean) ?? null;

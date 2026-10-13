@@ -5,7 +5,13 @@ const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH
   ? join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "signals")
   : join(process.cwd(), "data");
 const FILE_PATH = join(DATA_DIR, "signal-history.json");
-const MAX_SIGNALS = 5000;
+// Records beyond the live cap are moved here instead of dropped, so "All time" never shrinks.
+const ARCHIVE_PATH = join(DATA_DIR, "signal-history-archive.json");
+export const MAX_SIGNALS = 5000;
+
+export function historyPaths(): { dir: string; live: string; archive: string } {
+  return { dir: DATA_DIR, live: FILE_PATH, archive: ARCHIVE_PATH };
+}
 
 // Mirror of the hot scanner's symbol list (hot/route.ts keeps a private copy). The scheduler in
 // instrumentation.ts walks this list every 15 minutes so logging is no longer traffic-driven.
@@ -24,6 +30,39 @@ function ensureDir(): void {
   }
 }
 
+// Everything the engine knew at call time (perf audit 3.1). Added 2026-10-13; records logged before carry
+// no `inputs` and every consumer must treat each field as absent (null) for them.
+export interface SignalInputs {
+  /** Signed weighted factor score (-100..100); positive leans long. */
+  weightedScore: number;
+  /** 50 + |weightedScore| / 2 before the whipsaw, catalyst, pre-event and counter-trend haircuts. */
+  confidenceRaw: number;
+  /** Raw component score (-100..100) and the weight in play for it (0 when its feed was down). */
+  components: Record<string, { score: number; weight: number }>;
+  rr1: number | null;
+  rr2: number | null;
+  rr3: number | null;
+  entryType: "market" | "limit";
+  /** Trade ATR as a percent of price. */
+  atrPct: number | null;
+  /** Funding as a fraction per 8h (Strike hourly x8), null when the feed was down. */
+  fundingRate: number | null;
+  /** Minutes until the next high or critical scheduled release; null when none is known. */
+  minutesToNextEvent: number | null;
+  tuning: Record<string, unknown>;
+  gateNotes: string[];
+  engineVersion: string;
+  calibrationVersion: string | null;
+  /** Calibrated P(TP1) published with the call, null until the calibration gate opens (PR 17). */
+  pTp1: number | null;
+  regime: string | null;
+  regimeGate: string | null;
+  markAtSignal: number | null;
+  lastAtSignal: number | null;
+  /** Open time of the 15m bar the decision used. */
+  candleCloseTime: number | null;
+}
+
 export interface SignalContext {
   factors: Record<string, string>;
   catalystScore: number;
@@ -32,6 +71,18 @@ export interface SignalContext {
   atr: number;
   tradeType: string | null;
   timeframe: string | null;
+  inputs?: SignalInputs;
+}
+
+// Declined calls logged for counterfactual measurement (perf audit 1.4). Never in a public number.
+export type ShadowClass = "wait_lean" | "htf_blocked_short" | "regime_blocked" | "event_gated";
+
+// A candle span the checker could not fetch while the record was filled and open; a TP or stop inside it
+// would have been missed. The record keeps running but is flagged for the audit view.
+export interface CoverageGap {
+  from: number;
+  to: number;
+  detectedAt: number;
 }
 
 export interface TpHit {
@@ -83,6 +134,17 @@ export interface SignalLog {
   // Set when a legacy first-touch record was reset for re-verification; keeps the old outcome for audit.
   legacyOutcome?: string | null;
   engineVersion?: string;
+  // Shadow records (added 2026-10-13): declined calls followed through the same fill model. Absent = real call.
+  shadow?: boolean;
+  shadowClass?: ShadowClass | null;
+  // Set by the checker when candles it needed were no longer fetchable (perf audit 5.5). Absent = full coverage.
+  coverageGap?: CoverageGap | null;
+  // Cost model (added 2026-10-13). Market orders fill at the next candle open; `fillPrice` is that open (limit
+  // orders fill at the entry). `realizedR` stays gross; `costR` is the round-trip fee + slippage + funding in R
+  // and `realizedNetR` = realizedR - costR. Records closed before this carry none of the three.
+  fillPrice?: number | null;
+  costR?: number | null;
+  realizedNetR?: number | null;
 }
 
 export interface CalibrationBucket {
@@ -131,18 +193,88 @@ function loadFromDisk(): SignalLog[] {
   return memoryCache;
 }
 
-function saveToDisk(signals: SignalLog[]): void {
-  memoryCache = signals;
+function writeAtomic(path: string, data: unknown): void {
+  ensureDir();
+  // Atomic replace: a crash mid-write must never leave a truncated ledger that loads as [] and is then
+  // overwritten by the next pass.
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(data), "utf-8");
+  renameSync(tmp, path);
+}
+
+let archiveCache: SignalLog[] | null = null;
+
+function loadArchive(): SignalLog[] {
+  if (archiveCache !== null) return archiveCache;
   try {
-    ensureDir();
-    // Atomic replace: a crash mid-write must never leave a truncated ledger that loads as [] and is then
-    // overwritten by the next pass.
-    const tmp = `${FILE_PATH}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(signals), "utf-8");
-    renameSync(tmp, FILE_PATH);
+    if (existsSync(ARCHIVE_PATH)) {
+      const parsed = JSON.parse(readFileSync(ARCHIVE_PATH, "utf-8")) as unknown;
+      archiveCache = Array.isArray(parsed) ? (parsed as SignalLog[]) : [];
+      return archiveCache;
+    }
+  } catch {
+    // corrupt archive: keep the live file authoritative, do not overwrite the archive
+    archiveCache = [];
+    return archiveCache;
+  }
+  archiveCache = [];
+  return archiveCache;
+}
+
+// Archive roll-over: when the live ledger exceeds the cap, the oldest CLOSED records beyond it move to the
+// archive file (newest first, like the live file) instead of being dropped. Open records are never archived,
+// so the checker keeps seeing them. Returns the records that remain live.
+export function rollover(signals: SignalLog[], cap = MAX_SIGNALS): { live: SignalLog[]; archived: SignalLog[] } {
+  if (signals.length <= cap) return { live: signals, archived: [] };
+  const live: SignalLog[] = [];
+  const archived: SignalLog[] = [];
+  for (let i = 0; i < signals.length; i++) {
+    const s = signals[i];
+    if (i < cap || isOpenRecord(s)) live.push(s);
+    else archived.push(s);
+  }
+  return { live, archived };
+}
+
+function saveToDisk(signals: SignalLog[]): void {
+  const { live, archived } = rollover(signals);
+  memoryCache = live;
+  try {
+    if (archived.length) {
+      const existing = loadArchive();
+      const ids = new Set(existing.map((s) => s.id));
+      const merged = [...archived.filter((s) => !ids.has(s.id)), ...existing];
+      // Archive first: if the process dies between the two writes the record exists twice, never zero times.
+      writeAtomic(ARCHIVE_PATH, merged);
+      archiveCache = merged;
+    }
+    writeAtomic(FILE_PATH, live);
   } catch {
     // disk may not be writable in all environments
   }
+}
+
+/** Test hook: forget both in-memory caches so the next read hits the disk. */
+export function resetHistoryCache(): void {
+  memoryCache = null;
+  archiveCache = null;
+}
+
+export function getArchive(): SignalLog[] {
+  return loadArchive();
+}
+
+// Live + archived, newest first, deduped by id. Use for "All time" stats; the live file alone is the last cap.
+export function getAllHistory(): SignalLog[] {
+  const live = loadFromDisk();
+  const archive = loadArchive();
+  if (!archive.length) return live;
+  const ids = new Set(live.map((s) => s.id));
+  return [...live, ...archive.filter((s) => !ids.has(s.id))];
+}
+
+export function findSignal(id: string): SignalLog | null {
+  return loadFromDisk().find((s) => s.id === id) ?? loadArchive().find((s) => s.id === id) ?? null;
 }
 
 export async function appendSignal(entry: {
@@ -159,13 +291,17 @@ export async function appendSignal(entry: {
   priceAtSignal: number;
   context?: SignalContext;
   engineVersion?: string;
+  shadow?: boolean;
+  shadowClass?: ShadowClass | null;
 }): Promise<boolean> {
   const signals = loadFromDisk();
-  if (!shouldAppend(signals, entry.symbol, entry.bias, entry.timestamp)) return false;
-  if (signals.some((s) => s.id === `${entry.symbol}-${entry.timestamp}`)) return false;
+  const shadow = entry.shadow === true;
+  if (!shouldAppend(signals, entry.symbol, entry.bias, entry.timestamp, shadow)) return false;
+  const id = shadow ? `${entry.symbol}-${entry.timestamp}-shadow` : `${entry.symbol}-${entry.timestamp}`;
+  if (signals.some((s) => s.id === id)) return false;
 
   const log: SignalLog = {
-    id: `${entry.symbol}-${entry.timestamp}`,
+    id,
     symbol: entry.symbol,
     timestamp: entry.timestamp,
     bias: entry.bias,
@@ -196,14 +332,11 @@ export async function appendSignal(entry: {
     fillStatus: "pending",
     filledAt: null,
     engineVersion: entry.engineVersion ?? "unversioned",
+    ...(shadow ? { shadow: true, shadowClass: entry.shadowClass ?? null } : {}),
   };
 
   signals.unshift(log);
-
-  if (signals.length > MAX_SIGNALS) {
-    signals.length = MAX_SIGNALS;
-  }
-
+  // The cap is enforced by saveToDisk via rollover(): the overflow is archived, never dropped.
   saveToDisk(signals);
   return true;
 }
@@ -220,9 +353,11 @@ export function isOpenRecord(s: SignalLog): boolean {
 // re-fired on the very next bar after every close (~46 signals per symbol per day), which is churn, not edge.
 export const COOLDOWN_MS = 60 * 60_000;
 
-export function shouldAppend(signals: SignalLog[], symbol: string, bias: "LONG" | "SHORT", now = Date.now()): boolean {
-  if (signals.some((s) => s.symbol === symbol && s.bias === bias && isOpenRecord(s))) return false;
-  const lastClosed = signals
+// Shadow records form their own pool: a declined call never blocks a real one and vice versa.
+export function shouldAppend(signals: SignalLog[], symbol: string, bias: "LONG" | "SHORT", now = Date.now(), shadow = false): boolean {
+  const pool = signals.filter((s) => (s.shadow === true) === shadow);
+  if (pool.some((s) => s.symbol === symbol && s.bias === bias && isOpenRecord(s))) return false;
+  const lastClosed = pool
     .filter((s) => s.symbol === symbol && !isOpenRecord(s))
     .map((s) => s.outcomeTimestamp ?? s.lastCheckedAt ?? s.timestamp)
     .reduce((a, b) => Math.max(a, b), 0);
@@ -246,8 +381,23 @@ export function updateSignal(
   saveToDisk(signals);
 }
 
+// One ledger write for a whole checker pass (perf audit 5.3). Unknown ids are ignored.
+export function applyUpdates(patches: Map<string, Partial<SignalLog>>): number {
+  if (patches.size === 0) return 0;
+  const signals = loadFromDisk();
+  let applied = 0;
+  for (let i = 0; i < signals.length; i++) {
+    const p = patches.get(signals[i].id);
+    if (!p) continue;
+    signals[i] = { ...signals[i], ...p };
+    applied++;
+  }
+  if (applied) saveToDisk(signals);
+  return applied;
+}
+
 export function replaceHistory(signals: SignalLog[]): void {
-  saveToDisk(signals.slice(0, MAX_SIGNALS));
+  saveToDisk(signals);
 }
 
 // R for a closed record: the checker's realizedR when present, otherwise derived from the outcome price.

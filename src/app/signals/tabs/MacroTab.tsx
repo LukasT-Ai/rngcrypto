@@ -9,6 +9,7 @@ import { MacroAlerts, WeeklyOilCard, type MacroApi } from "../MacroEventPanel"
 import { EconomicCalendar } from "../calendar/EconomicCalendar"
 import { PredictionOddsPanel, usePredictionState } from "../PredictionOddsPanel"
 import { RatesDollarStrip } from "../macro/RatesDollarStrip"
+import { readFeatures } from "../flow/features-contract"
 import { Sparkline, couplingTip } from "../RegimeStrip"
 import { Chip, FOCUS_RING, GRAY, GREEN, RED, SURFACE, SectionTitle, Tip, fmtPrice, signed, timeAgo, timeUntil, useNow } from "../shared"
 
@@ -284,7 +285,7 @@ export const MacroTab = React.memo(function MacroTab({ d, macro, macroLoading, m
       )}
       <MacroAlerts alerts={macro?.alerts} />
       {/* Rates & dollar strip (F2.5): BTC and GOLD lenses; ui-flow's component, mounted here */}
-      {macroLens !== "WTI" && <RatesDollarStrip macroRates={d.features?.macroRates} asset={macroLens} />}
+      {macroLens !== "WTI" && <RatesDollarStrip macroRates={readFeatures(d)?.macroRates} asset={macroLens} />}
       {/* WTI only: latest weekly inventory print + countdown to the next one */}
       {macroLens === "WTI" && <WeeklyOilCard releases={macro?.oilWeekly} />}
       {/* Economic calendar v2: the live card sits in its Live group, then upcoming and released rows, per lens */}

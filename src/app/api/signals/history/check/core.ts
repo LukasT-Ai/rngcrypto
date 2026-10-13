@@ -83,9 +83,10 @@ async function fetchCandles(strike: string, sinceMs: number): Promise<Candle[]> 
 const r4 = (n: number) => Math.round(n * 10000) / 10000;
 
 // ── Cost model (perf audit 1.3) ──────────────────────────────────────────────
-// Fees and slippage in basis points of notional per leg; funding charged over the hold. Figures are the
-// public base tiers as of 2026-10 (Hyperliquid 3.5/1 bp; Strike 5 bp flat, hourly funding) and are meant to
-// be conservative placeholders: verify against the venue fee pages before quoting them.
+// Fees and slippage in basis points of notional per leg; funding charged over the hold. Fee figures verified
+// 2026-10-13 against the venue docs: Strike tier 0 taker 0.050% with a -0.005% maker rebate, funding hourly at
+// one eighth of the 8h rate (docs.strikefinance.org/perpetuals/trading-fees, funding-rates); Hyperliquid base
+// taker 0.045%, maker 0.015%. Slippage per market leg is an assumption, not a venue figure.
 export interface CostVenue {
   venue: string;
   takerBps: number;
@@ -95,8 +96,8 @@ export interface CostVenue {
   fundingApplied: boolean;
 }
 export const COST_MODEL: Record<"HYPERLIQUID" | "STRIKE", CostVenue> = {
-  HYPERLIQUID: { venue: "Hyperliquid", takerBps: 3.5, makerBps: 1, slipBps: 3, fundingIntervalHours: 1, fundingApplied: true },
-  STRIKE: { venue: "Strike", takerBps: 5, makerBps: 5, slipBps: 3, fundingIntervalHours: 1, fundingApplied: true },
+  HYPERLIQUID: { venue: "Hyperliquid", takerBps: 4.5, makerBps: 1.5, slipBps: 3, fundingIntervalHours: 1, fundingApplied: true },
+  STRIKE: { venue: "Strike", takerBps: 5, makerBps: -0.5, slipBps: 3, fundingIntervalHours: 1, fundingApplied: true },
 };
 export function activeCostVenue(): CostVenue {
   const key = (process.env.COST_VENUE ?? "STRIKE").toUpperCase();

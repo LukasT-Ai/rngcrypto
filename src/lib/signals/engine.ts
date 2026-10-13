@@ -4970,7 +4970,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
   let shadowClass: ShadowClass | null = null;
   if (call.bias === "WAIT") {
     const eventState = (call as { eventWindow?: { state?: string } | null }).eventWindow?.state;
-    if (eventState === "blackout") shadowClass = "event_gated";
+    if (eventState === "blackout" || eventState === "releasing") shadowClass = "event_gated";
     else if (call.regimeGate === "blocked_long" || call.regimeGate === "blocked_short") shadowClass = "regime_blocked";
     else if (call.gateNotes.some((n) => n.includes("higher timeframes are not trending down"))) shadowClass = "htf_blocked_short";
     else if (call.confidence >= 55 && call.confidence < getTuning().minPublishConfidence) shadowClass = "wait_lean";

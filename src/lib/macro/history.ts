@@ -26,7 +26,9 @@ function save(list: StoredRelease[]) {
   mem = list;
   try {
     if (!fs.existsSync(DIR)) fs.mkdirSync(DIR, { recursive: true });
-    fs.writeFileSync(FILE, JSON.stringify(list), "utf-8");
+    const tmp = `${FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(list), "utf-8");
+    fs.renameSync(tmp, FILE); // atomic replace
   } catch {
     /* read-only fs */
   }

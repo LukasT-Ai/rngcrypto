@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
 import { join } from "path";
 
 const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH
@@ -135,7 +135,11 @@ function saveToDisk(signals: SignalLog[]): void {
   memoryCache = signals;
   try {
     ensureDir();
-    writeFileSync(FILE_PATH, JSON.stringify(signals), "utf-8");
+    // Atomic replace: a crash mid-write must never leave a truncated ledger that loads as [] and is then
+    // overwritten by the next pass.
+    const tmp = `${FILE_PATH}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify(signals), "utf-8");
+    renameSync(tmp, FILE_PATH);
   } catch {
     // disk may not be writable in all environments
   }

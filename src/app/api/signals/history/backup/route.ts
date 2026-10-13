@@ -4,6 +4,10 @@ import { getHistory, replaceHistory, computeStats, type SignalLog } from "../log
 
 export const dynamic = "force-dynamic";
 
+// Restoring history rewrites the public track record, so it needs the operator token. With no token
+// configured the endpoint is closed, never open.
+const RESTORE_TOKEN = process.env.HISTORY_RESTORE_TOKEN;
+
 export async function GET(req: NextRequest) {
   const blocked = rateLimit(req, 5);
   if (blocked) return blocked;
@@ -25,6 +29,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const blocked = rateLimit(req, 5);
   if (blocked) return blocked;
+  const provided = req.headers.get("x-restore-token") ?? req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  if (!RESTORE_TOKEN || provided !== RESTORE_TOKEN) {
+    return NextResponse.json({ error: RESTORE_TOKEN ? "unauthorized" : "restore disabled: HISTORY_RESTORE_TOKEN not set" }, { status: RESTORE_TOKEN ? 401 : 503 });
+  }
 
   try {
     const body = await req.json();

@@ -7,7 +7,7 @@
  *
  * Persisted next to signal-history.json so a redeploy does not zero every age.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
 
 const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH
@@ -48,7 +48,9 @@ function save(store: Store): void {
   memory = store;
   try {
     if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-    writeFileSync(FILE_PATH, JSON.stringify(store), "utf-8");
+    const tmp = `${FILE_PATH}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify(store), "utf-8");
+    renameSync(tmp, FILE_PATH); // atomic replace
   } catch {
     /* read-only filesystem: ages survive in memory for this process only */
   }

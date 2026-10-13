@@ -195,7 +195,10 @@ export function evaluate(sig: SignalLog, candles: Candle[], now: number): Partia
   // Walk candles from the fill candle (first pass) or from the last check (subsequent passes).
   const fillTime = filledAt;
   const resumeFrom = sig.fillStatus === "filled" && sig.lastCheckedAt != null ? Math.max(sig.lastCheckedAt, fillTime) : fillTime;
-  const window = candles.filter((c) => c.time >= fillTime && c.time + CANDLE_MS > resumeFrom);
+  // Candles that open after the horizon can never count: a TP or stop touched there is a trade the
+  // position was no longer in. Late evaluations (restarts, backlog) used to credit them.
+  const horizonEnd = sig.timestamp + horizonFor(sig);
+  const window = candles.filter((c) => c.time >= fillTime && c.time + CANDLE_MS > resumeFrom && c.time < horizonEnd);
   let closed: Partial<SignalLog> | null = null;
 
   for (const c of window) {
@@ -251,10 +254,10 @@ export function evaluate(sig: SignalLog, candles: Candle[], now: number): Partia
 
   if (closed) return { ...base, ...closed, status: "closed" };
 
-  if (now - sig.timestamp > horizonFor(sig)) {
-    // Horizon exit happens at the last traded close, whether or not a TP was reached earlier. Exiting
-    // at the TP price would credit a touch the position never banked.
-    const lastClose = window[window.length - 1]?.close ?? candles[candles.length - 1]?.close ?? null;
+  if (now > horizonEnd) {
+    // Horizon exit happens at the last traded close BEFORE the horizon, whether or not a TP was reached
+    // earlier. Exiting at the TP price would credit a touch the position never banked.
+    const lastClose = window[window.length - 1]?.close ?? candles.filter((c) => c.time < horizonEnd).at(-1)?.close ?? null;
     const exitR = lastClose != null ? realizedR(sig, lastClose) : null;
     if (tpHits.length) {
       const last = tpHits[tpHits.length - 1];

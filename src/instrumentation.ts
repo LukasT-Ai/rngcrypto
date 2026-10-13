@@ -98,6 +98,54 @@ export async function register() {
     schedule();
   }
 
+  // Quarter-hour taker imbalance (PR 23, research 1.4): at every :00/:15/:30/:45 UTC boundary sample the OKX
+  // trade tape for the opening minute of each crypto symbol and store the imbalance (last 96 windows per symbol
+  // under the data dir). The sampler polls /market/trades every 2s until the window closes; each symbol fails
+  // independently and a failed window is simply absent. QH_IMBALANCE=0 disables it.
+  if (process.env.QH_IMBALANCE !== "0") {
+    const { sampleAllQhWindows, nextQhBoundary, QH_SLOT_MS, getQhImbalance, getQhSeries } = await import("./lib/signals/features/qh-imbalance");
+    // Hand the store to be-features' cvd module (features.cvd.qhImbalance / qhReadings). cvd.ts lands on master
+    // one merge before this file, so the import is guarded: before that merge it simply does not register.
+    try {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment -- must stay valid both before and after cvd.ts exists
+      // @ts-ignore cvd.ts is owned by build/be-features and is absent on this branch until the wave 2 merge
+      const cvd = (await import("./lib/signals/features/cvd")) as { registerQhReader?: (fn: (ccy: string) => { value: number; readings: number[]; asOf: number } | null) => void };
+      cvd.registerQhReader?.((symbol) => {
+        const r = getQhImbalance(symbol);
+        if (!r || r.stale) return null;
+        return { value: r.ema4, readings: getQhSeries(symbol, 4).map((x) => x.imbalance), asOf: Date.parse(r.windowEnd) };
+      });
+    } catch {
+      /* cvd module not merged yet */
+    }
+    const { SYMBOL_MAP } = await import("./lib/signals/engine");
+    const qhSymbols = Object.entries(SYMBOL_MAP)
+      .filter(([, c]) => c.isCrypto && c.okx)
+      .map(([symbol, c]) => ({ symbol, instId: `${c.okx}-USDT-SWAP` }));
+    let qhBusy = false;
+    const qhSample = async (start: number) => {
+      if (qhBusy) return;
+      qhBusy = true;
+      try {
+        await sampleAllQhWindows(qhSymbols, start);
+      } catch {
+        /* next boundary */
+      } finally {
+        qhBusy = false;
+      }
+    };
+    // Re-armed from each boundary (no setInterval drift): fire 1s after the boundary so the first page already
+    // holds opening-minute trades; the sampler keeps polling until the minute is over.
+    const qhSchedule = () => {
+      const start = nextQhBoundary();
+      setTimeout(() => {
+        void qhSample(start);
+        qhSchedule();
+      }, Math.max(1_000, Math.min(QH_SLOT_MS, start + 1_000 - Date.now())));
+    };
+    qhSchedule();
+  }
+
   // Macro event loop: 15s baseline; the service itself tightens market polling inside release windows.
   let macroBusy = false;
   const macro = async () => {

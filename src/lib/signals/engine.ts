@@ -4751,7 +4751,8 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       isCrypto,
       assetClass,
       newsSentimentScore: newsSentimentData?.score ?? null,
-      oilGeoScore: oilGeoData?.score ?? null,
+      // PR 23: decayed, confirms-weighted net with GENERAL price-reporting rows excluded (catalyst-news.ts)
+      oilGeoScore: oilGeoData?.netScore ?? oilGeoData?.score ?? null,
       oilGeoRegime,
       macroScores: gatedMacroScores,
       preEventRisk: macroInfo?.preEventRisk ?? null,
@@ -4938,7 +4939,8 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
   const logContext: SignalContext = {
     factors: Object.fromEntries(call.signalFactors.map((f) => [f.category, f.assessment])),
     catalystScore: catalystData.score,
-    oilGeoScore: oilGeoData?.score ?? null,
+    // PR 23: decayed, confirms-weighted net with GENERAL price-reporting rows excluded (catalyst-news.ts)
+    oilGeoScore: oilGeoData?.netScore ?? oilGeoData?.score ?? null,
     oilRegime: oilGeoRegime,
     atr: round(tradeATR, dec),
     tradeType: timeframeOutlook.alignment?.tradeType ?? null,
@@ -5225,6 +5227,10 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
             score: e.score,
             url: e.url,
             priceReaction: e.priceReaction,
+            // PR 23 (F2.9): decayed weight that voted, confirms glyph, and whether the row is in the net at all
+            w: e.w,
+            confirms: e.confirms,
+            inNet: e.inNet,
           })),
           categoryBreakdown: oilGeoData.categoryBreakdown,
           priceContext: oilGeoData.priceContext,

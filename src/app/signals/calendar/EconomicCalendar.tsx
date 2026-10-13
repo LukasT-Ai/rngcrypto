@@ -247,7 +247,7 @@ export function EconomicCalendar({ state, isLoading, lens, predAsset }: { state:
         <Group
           id="sec-macro-results"
           title="Released"
-          caption={released.length > 0 ? `last ${Math.min(released.length, releasedShown.length)} of ${released.length} days` : undefined}
+          caption={released.length > 0 ? (releasedShown.length < released.length ? `last ${releasedShown.length} of ${released.length} days` : `${released.length} day${released.length === 1 ? "" : "s"}`) : undefined}
           days={releasedShown}
           lens={lens}
           now={now}

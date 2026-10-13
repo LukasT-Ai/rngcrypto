@@ -27,6 +27,8 @@ export interface AuditInputs {
   /** Factor assessments as logged (older records only have these). */
   factors: Record<string, string>;
   blocks?: unknown;
+  /** PR 26: block votes (-1/0/1) and agreement logged with the call. */
+  blockVotes?: unknown;
   mode?: unknown;
   eventWindow?: unknown;
 }
@@ -87,6 +89,8 @@ export function auditRecord(sig: SignalLog): AuditRecord {
     lastAtSignal: inp?.lastAtSignal ?? null,
     candleCloseTime: inp?.candleCloseTime ?? null,
     factors: sig.context?.factors ?? {},
+    blocks: inp?.blocks ?? undefined,
+    blockVotes: inp?.blockVotes ?? undefined,
   };
   const stopAt = sig.stoppedAt ?? (sig.stoppedAfterTp != null && sig.outcomeTimestamp != null ? sig.outcomeTimestamp : null);
   const resolution: AuditResolution = {

@@ -19,7 +19,8 @@ import { fetchOiRaw, type OiRaw } from "./features/oi";
 import { fetchCvdRaw, type CvdRaw } from "./features/cvd";
 import { DERIBIT_CURRENCIES, fetchDvolBars, type DvolBar } from "./features/deribit";
 import { fetchBasisFeature } from "./features/basis";
-import type { BasisFeature, FundingFeature, StablecoinFeature } from "./features/types";
+import type { BasisFeature, FundingFeature, SignalFeatures, StablecoinFeature } from "./features/types";
+import { combineBlocks, combineWithVote, getBlockOptions, scoreFlowBlock, scoreTimingBlock, scoreTrendBlock, type BlockName, type BlockVoteValue } from "./blocks";
 import { fetchMacroRatesSeries, type MacroRatesSeries } from "@/lib/macro/treasury";
 import { fetchStablecoinFeature } from "@/lib/macro/stablecoins";
 
@@ -85,6 +86,10 @@ export interface Tuning {
   sessionRules: boolean;
   /** Scale on the daily macro-regime confidence bonus (crypto only). 0 freezes it until the calibration table can score it. */
   macroBonusScale: number;
+  /** PR 26: the TREND / TIMING / FLOW blocks decide the call. "vote" = weighted vote across blocks with confidence from
+   *  agreement and magnitude; "sum" = weighted mean of the three block scores; "off" = the 18-factor weighted sum.
+   *  Validation in research/backtest-blocks.md. */
+  blockMode: "off" | "vote" | "sum";
 }
 export const DEFAULT_TUNING: Tuning = {
   minPublishConfidence: 60,
@@ -105,6 +110,7 @@ export const DEFAULT_TUNING: Tuning = {
   minRr: 0,
   sessionRules: true,
   macroBonusScale: 0,
+  blockMode: "off",
 };
 /** Horizon in minutes by dominant setup timeframe when horizonByTf is on; the flat default otherwise. */
 export const HORIZON_MIN_BY_TF: Record<"15m" | "1h" | "4h" | "1d", number> = { "15m": 12 * 60, "1h": 36 * 60, "4h": 96 * 60, "1d": 96 * 60 };
@@ -2982,6 +2988,10 @@ function computeTimeframeOutlook(params: {
 interface TaSystem {
   trendScore: number;
   exhaustionScore: number;
+  /** PR 26: TF-weighted market-structure (BOS / CHoCH) component, null when no timeframe computed it. */
+  structureScore: number | null;
+  /** PR 26: TF-weighted liquidity-sweep component, null when no timeframe computed it. */
+  sweepScore: number | null;
   score: number;
   setup: "continuation" | "reversal_confirmed" | "reversal_forming" | "none";
   direction: "bullish" | "bearish" | null;
@@ -2996,6 +3006,7 @@ function computeTaSystem(series: Record<string, Candle[]>, tfWeights: Record<str
   const perTF: TaSystem["perTF"] = {};
   const comps: Record<string, CompositeResult> = {};
   let wsum = 0, trend = 0, exh = 0;
+  let stW = 0, st = 0, swW = 0, sw = 0;
   for (const tf of Object.keys(series)) {
     const c = series[tf];
     if (!c || c.length < 60) continue;
@@ -3010,6 +3021,16 @@ function computeTaSystem(series: Record<string, Candle[]>, tfWeights: Record<str
     wsum += w;
     trend += w * r.trendScore;
     exh += w * r.exhaustionScore;
+    const structure = r.components.find((k) => k.name === "marketStructure");
+    if (structure) {
+      st += w * structure.score;
+      stW += w;
+    }
+    const sweep = r.components.find((k) => k.name === "liquiditySweep");
+    if (sweep) {
+      sw += w * sweep.score;
+      swW += w;
+    }
     perTF[tf] = {
       trend: r.trendScore,
       exhaustion: r.exhaustionScore,
@@ -3059,7 +3080,18 @@ function computeTaSystem(series: Record<string, Candle[]>, tfWeights: Record<str
     score = Math.round(0.6 * trendScore + 0.4 * exhaustionScore);
     notes.push(`Trend system flat (${trendScore > 0 ? "+" : ""}${trendScore}); exhaustion ${exhaustionScore > 0 ? "+" : ""}${exhaustionScore}`);
   }
-  return { trendScore, exhaustionScore, score: clamp(score, -100, 100), setup, direction, confirmedBy, notes, perTF };
+  return {
+    trendScore,
+    exhaustionScore,
+    structureScore: stW > 0 ? Math.round((st / stW) * 10) / 10 : null,
+    sweepScore: swW > 0 ? Math.round((sw / swW) * 10) / 10 : null,
+    score: clamp(score, -100, 100),
+    setup,
+    direction,
+    confirmedBy,
+    notes,
+    perTF,
+  };
 }
 
 // ── Cloud / 200MA / ADX regime factor ───────────────────────────────────────
@@ -3406,6 +3438,8 @@ function computeMultiFactorCall(
     eventWindow?: EventWindow | null;
     /** Decision time in ms (session rules). Defaults to Date.now(); the backtest passes the bar close. */
     now?: number;
+    /** Phase 4 features for the FLOW block (PR 26). null / absent = every order-flow member abstains (candles-only backtest). */
+    features?: SignalFeatures | null;
   },
   dec: number
 ) {
@@ -3613,7 +3647,7 @@ function computeMultiFactorCall(
   // Catalyst risk is direction-neutral (event proximity, closed markets), so it is NOT a vote in the
   // weighted score; it haircuts confidence below instead.
   const weightSum = (Object.values(weights).reduce((a, b) => a + b, 0) - weights.catalyst) || 1;
-  const weightedScore =
+  const sumWeightedScore =
     (ms.score * weights.marketStructure +
       mom.score * weights.momentum +
       vol.score * weights.volume +
@@ -3670,6 +3704,65 @@ function computeMultiFactorCall(
       [etfScore.score, weights.etf],
     ]),
   };
+
+  // ── PR 26: TREND / TIMING / FLOW blocks, one vote per idea (src/lib/signals/blocks.ts) ─────────────────────────
+  // Always computed and emitted (call.blocks / call.blockVotes); they decide the call only when TUNING.blockMode is
+  // "vote" or "sum". Mean reversion in TIMING counts only toward a trending regime; a TIMING vote against the TREND
+  // vote needs the trend system's confirmed reversal; HTF alignment gates the TREND vote; funding gates FLOW.
+  const features = params.features ?? null;
+  const blockOpts = getBlockOptions();
+  const blockRegimeDir: 1 | -1 | 0 = regimeTrending && taSystem?.setup !== "reversal_confirmed" ? (regimeInfo!.label === "Bull regime" ? 1 : -1) : 0;
+  const trendBlock = scoreTrendBlock(
+    { ema9, ema21, ema50, supertrendDir, regimeScore: regimeInfo ? regimeInfo.score : null, structureScore: taSystem?.structureScore ?? null, trend1h, trend4h },
+    blockOpts
+  );
+  const timingBlock = scoreTimingBlock(
+    {
+      price,
+      rsi,
+      stochK: stochRsi.k,
+      stochD: stochRsi.d,
+      macdHist,
+      atr,
+      bbUpper,
+      bbLower,
+      squeeze,
+      rsiDiv15m,
+      rsiDiv1h,
+      macdDiv,
+      volDiv,
+      pattern,
+      sweepScore: taSystem?.sweepScore ?? null,
+      regimeDir: blockRegimeDir,
+      trendVote: trendBlock.vote,
+      reversalConfirmed: taSystem?.setup === "reversal_confirmed" ? (taSystem.direction === "bullish" ? 1 : -1) : 0,
+    },
+    blockOpts
+  );
+  const crowdedFallback: "long" | "short" | null = fundingRate != null ? (fundingRate > FUNDING.HIGH ? "long" : fundingRate < -FUNDING.HIGH ? "short" : null) : null;
+  const flowBlock = scoreFlowBlock(
+    {
+      cvd: features?.cvd ?? null,
+      oi: features?.oi ?? null,
+      funding: features?.funding ?? null,
+      book: features?.book ?? null,
+      longLiqs24h,
+      shortLiqs24h,
+      volumeProxy: volData.available ? vol.score : null,
+      crowdedFallback,
+    },
+    blockOpts
+  );
+  const blockSet = { trend: trendBlock, timing: timingBlock, flow: flowBlock };
+  const blockMode = TUNING.blockMode;
+  const blocksOn = blockMode !== "off";
+  const combineMode: "vote" | "sum" = blockMode === "sum" ? "sum" : "vote";
+  const combined = combineBlocks(blockSet, combineMode, blockOpts);
+  const weightedScore = blocksOn ? combined.composite : sumWeightedScore;
+  const blocks = { trend: trendBlock.score, timing: timingBlock.score, flow: flowBlock.score };
+  const blockVotes = { trend: trendBlock.vote, timing: timingBlock.vote, flow: flowBlock.vote, agreement: combined.agreement };
+  // The late-session rule was validated on the first-cut blocks (PR 15); it reads the real blocks only when they decide.
+  const sessionBlocks = blocksOn ? blocks : blocksEarly;
 
   const whipsawPenalty = oilGeoRegime === "whipsaw" ? -8 : 0;
   // Conviction is the MAGNITUDE of the evidence. A strongly bearish board is a high-confidence SHORT, not a
@@ -4003,8 +4096,8 @@ function computeMultiFactorCall(
     }
     if (bias !== "WAIT" && session.gate === "late_utc") {
       const side = bias === "LONG" ? 1 : -1;
-      const trendAgrees = Math.sign(blocksEarly.trend) === side && Math.abs(blocksEarly.trend) >= 20;
-      const flowAgrees = Math.sign(blocksEarly.flow) === side && Math.abs(blocksEarly.flow) >= 20;
+      const trendAgrees = Math.sign(sessionBlocks.trend) === side && Math.abs(sessionBlocks.trend) >= 20;
+      const flowAgrees = Math.sign(sessionBlocks.flow) === side && Math.abs(sessionBlocks.flow) >= 20;
       if (!(trendAgrees && flowAgrees)) {
         gateNotes.unshift(`Late session (${hourUtc}:00 UTC): trend and flow do not both back the ${bias.toLowerCase()}, standing aside until the Asia open`);
         bias = "WAIT";
@@ -4029,10 +4122,13 @@ function computeMultiFactorCall(
 
   // A+ requires several factors AGREEING with the call; factors voting the other way are not conviction.
   const biasSign = bias === "LONG" ? 1 : bias === "SHORT" ? -1 : weightedScore >= 0 ? 1 : -1;
-  const strongCategories = signalFactors.filter((f) => {
-    const dir = ASSESSMENT_DIR[f.assessment] ?? 0;
-    return dir !== 0 && Math.sign(dir) === biasSign;
-  }).length;
+  // Block mode: "A+ needs regime + two more blocks agreeing" (research 2.3): the count is the agreeing block votes.
+  const strongCategories = blocksOn
+    ? (["trend", "timing", "flow"] as const).filter((n) => blockSet[n].vote === biasSign).length
+    : signalFactors.filter((f) => {
+        const dir = ASSESSMENT_DIR[f.assessment] ?? 0;
+        return dir !== 0 && Math.sign(dir) === biasSign;
+      }).length;
 
   const grade = gradeFor(confidence, strongCategories);
 
@@ -4380,6 +4476,32 @@ function computeMultiFactorCall(
   const gatedWait = bias === "WAIT" && Math.abs(weightedScore) >= publishStrength && gateNotes.length > 0;
   if (gatedWait) {
     flipRows.push({ text: gateNotes[0].replace(/[:,] standing aside.*$/, "").replace(/: plan shown, no trade$/, ""), factor: "gate", distance: 0, direction: leanSign > 0 ? "to_long" : "to_short" });
+  } else if (blocksOn) {
+    // Block mode: the single block vote whose change crosses the publish threshold, found by re-running the combiner.
+    const BLOCK_LABEL: Record<BlockName, string> = { trend: "TREND", timing: "TIMING", flow: "FLOW" };
+    const leanVote: BlockVoteValue = leanSign > 0 ? 1 : -1;
+    for (const n of ["trend", "timing", "flow"] as const) {
+      const blk = blockSet[n];
+      if (bias === "WAIT") {
+        if (blk.vote === leanVote) continue;
+        if (Math.abs(combineWithVote(blockSet, n, leanVote, combineMode, blockOpts).composite) < publishStrength) continue;
+        const pts = Math.max(1, Math.ceil(blockOpts.voteThreshold - blk.score * leanVote));
+        flipRows.push({
+          text: blk.gate
+            ? `${BLOCK_LABEL[n]} vote withheld: ${blk.gate.replace(/: vote withheld$/, "")}`
+            : `${BLOCK_LABEL[n]} joins the ${leanVote > 0 ? "long" : "short"} (needs ${leanVote > 0 ? "+" : "-"}${blockOpts.voteThreshold}, now ${blk.score > 0 ? "+" : ""}${blk.score})`,
+          factor: n,
+          distance: blk.gate ? 0 : pts,
+          direction: leanVote > 0 ? "to_long" : "to_short",
+        });
+      } else {
+        if (blk.vote !== biasSign) continue;
+        if (Math.abs(combineWithVote(blockSet, n, 0, combineMode, blockOpts).composite) >= publishStrength) continue;
+        const pts = Math.max(1, blk.magnitude - blockOpts.voteThreshold + 1);
+        flipRows.push({ text: `${BLOCK_LABEL[n]} drops its vote (falls ${pts} pts, below ${blockOpts.voteThreshold})`, factor: n, distance: pts, direction: "to_wait" });
+      }
+    }
+    flipRows.sort((a, b) => a.distance - b.distance);
   } else {
     const needed = bias === "WAIT" ? publishStrength - Math.abs(weightedScore) : Math.abs(weightedScore) - publishStrength;
     // Direction the factor has to move: toward the lean for a WAIT, against the call for a trade.
@@ -4424,7 +4546,19 @@ function computeMultiFactorCall(
     invalidation,
     flips,
     stopAnchor: bias === "WAIT" ? null : stopAnchor,
-    blocks: blocksEarly,
+    // PR 26: real block scores (-100..100), votes (-1/0/1) with the weighted agreement, and the members behind them.
+    // blockMode "off" = reporting only (the weighted sum still decides); see research/backtest-blocks.md.
+    blocks,
+    blockVotes,
+    blockDetail: {
+      mode: blockMode,
+      composite: combined.composite,
+      agreeing: combined.agreeing,
+      magnitude: combined.magnitude,
+      trend: { members: trendBlock.members, notes: trendBlock.notes, gate: trendBlock.gate },
+      timing: { members: timingBlock.members, notes: timingBlock.notes, gate: timingBlock.gate },
+      flow: { members: flowBlock.members, notes: flowBlock.notes, gate: flowBlock.gate },
+    },
     setup: taSystem?.setup ?? "none",
     reasoning,
     bullCase: bullCase.slice(0, 3),
@@ -4977,6 +5111,23 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
   const taSystem = computeTaSystem({ "15m": candles15m, "4h": candles4h, "1d": candlesDaily }, { "15m": 0.25, "4h": 0.4, "1d": 0.35 }, { weights: { ichimoku: 0.3, deathGoldenCross: 0 } });
   const regime = computeRegime({ "15m": candles15m, "4h": candles4h, "1d": candlesDaily }, dec, { squeeze });
 
+  // ── Phase 4 keyless feature feeds (F2), built before the call so the FLOW block can read them (PR 26) ──
+  const features = buildFeatures({
+    ccy: isCrypto ? config.okx : undefined,
+    isCrypto,
+    price: currentPrice,
+    priceChange24hPct: Number.isFinite(change24h) ? change24h : null,
+    assetDaily: candlesDaily.map((c) => ({ day: new Date(c.time < 1e12 ? c.time * 1000 : c.time).toISOString().slice(0, 10), value: c.close })),
+    funding: (getResult(17) as FundingFeature | null) ?? null,
+    oi: (getResult(18) as OiRaw | null) ?? null,
+    cvd: (getResult(19) as CvdRaw | null) ?? null,
+    orderBook,
+    dvol: (getResult(20) as DvolBar[] | null) ?? null,
+    basis: (getResult(21) as BasisFeature | null) ?? null,
+    macroRates: (getResult(22) as MacroRatesSeries | null) ?? null,
+    stablecoins: (getResult(23) as StablecoinFeature | null) ?? null,
+  });
+
   // ── Compute trade call ─────────────────────────────────────────────────────
   const call = computeMultiFactorCall(
     {
@@ -5045,6 +5196,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       regime,
       eventWindow,
       now: Date.now(),
+      features,
     },
     dec
   );
@@ -5206,6 +5358,8 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
     markAtSignal: markPrice != null && Number.isFinite(markPrice) ? round(markPrice, dec) : null,
     lastAtSignal: lastCandle?.close != null ? round(lastCandle.close, dec) : null,
     candleCloseTime: candles15m[candles15m.length - 1]?.time ?? null,
+    blocks: call.blocks,
+    blockVotes: call.blockVotes,
   };
   const logContext: SignalContext = {
     factors: Object.fromEntries(call.signalFactors.map((f) => [f.category, f.assessment])),
@@ -5363,22 +5517,8 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       topTraderLongRatio,
     },
     orderBook,
-    // Phase 4 keyless feature feeds (F2). Emitted for the UI and the log; scoring use is PR 26's job.
-    features: buildFeatures({
-      ccy: isCrypto ? config.okx : undefined,
-      isCrypto,
-      price: currentPrice,
-      priceChange24hPct: Number.isFinite(change24h) ? change24h : null,
-      assetDaily: candlesDaily.map((c) => ({ day: new Date(c.time < 1e12 ? c.time * 1000 : c.time).toISOString().slice(0, 10), value: c.close })),
-      funding: (getResult(17) as FundingFeature | null) ?? null,
-      oi: (getResult(18) as OiRaw | null) ?? null,
-      cvd: (getResult(19) as CvdRaw | null) ?? null,
-      orderBook,
-      dvol: (getResult(20) as DvolBar[] | null) ?? null,
-      basis: (getResult(21) as BasisFeature | null) ?? null,
-      macroRates: (getResult(22) as MacroRatesSeries | null) ?? null,
-      stablecoins: (getResult(23) as StablecoinFeature | null) ?? null,
-    }),
+    // Phase 4 keyless feature feeds (F2), built above; the FLOW block reads cvd / oi / funding / book (PR 26).
+    features,
     positioning: isCrypto ? {
       longShortRatio,
       longShortChange: longShortChange != null ? Math.round(longShortChange * 100) / 100 : null,
@@ -5692,6 +5832,8 @@ export function scoreFromCandles(input: ScoreInput) {
     horizonMin: call.horizonMin,
     setup: call.setup,
     blocks: call.blocks,
+    blockVotes: call.blockVotes,
+    blockDetail: call.blockDetail,
     components: call.components,
     gateNotes: call.gateNotes,
     sizeMultiplier: call.sizeMultiplier,

@@ -44,6 +44,13 @@ export interface CallBlocks {
   timing: number
   flow: number
 }
+/** PR 26: block votes (-1 / 0 / +1) and the weighted vote agreement (-1..1) behind call.blocks. */
+export interface CallBlockVotes {
+  trend: -1 | 0 | 1
+  timing: -1 | 0 | 1
+  flow: -1 | 0 | 1
+  agreement: number
+}
 
 
 // Wire shape is EventWindowInfo (be-macro); this alias keeps the F1.1 name used by the verdict UI.
@@ -355,6 +362,18 @@ export interface SignalsResponse {
     dominantTf?: HoldTF | null
     /** TREND / TIMING / FLOW block scores, -100..100. Header tally shown when null. */
     blocks?: CallBlocks | null
+    /** PR 26: block votes and agreement; decides the call only when blockDetail.mode is "vote" or "sum". */
+    blockVotes?: CallBlockVotes | null
+    /** PR 26: combiner read and the members / notes / gate behind each block (Models tab, audit). */
+    blockDetail?: {
+      mode: "off" | "vote" | "sum"
+      composite: number
+      agreeing: number
+      magnitude: number
+      trend: { members: { name: string; score: number; weight: number; note?: string }[]; notes: string[]; gate: string | null }
+      timing: { members: { name: string; score: number; weight: number; note?: string }[]; notes: string[]; gate: string | null }
+      flow: { members: { name: string; score: number; weight: number; note?: string }[]; notes: string[]; gate: string | null }
+    } | null
     /** Stop anchor label ("4h swing", "1h swing", "AVWAP"). Shown on the STOP tile when present. */
     stopAnchor?: string | null
   }

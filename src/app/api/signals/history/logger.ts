@@ -63,6 +63,9 @@ export interface SignalInputs {
   lastAtSignal: number | null;
   /** Open time of the 15m bar the decision used. */
   candleCloseTime: number | null;
+  /** PR 26: TREND / TIMING / FLOW block scores (-100..100) and votes (-1/0/1 plus agreement) at decision time. */
+  blocks?: Record<string, number> | null;
+  blockVotes?: Record<string, number> | null;
 }
 
 export interface SignalContext {

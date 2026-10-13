@@ -48,12 +48,14 @@ export interface Mix {
 
 export interface Score {
   copyability: number
-  success: number
-  activity: number
-  focus: number
-  consistency: number
-  risk: number
+  success: number | null
+  activity: number | null
+  focus: number | null
+  consistency: number | null
+  risk: number | null
   grade: Grade
+  /** Rubric 2.4: true when null sub-scores were substituted; render the chip hollow and the bars hatched. */
+  thin?: boolean
   reasons: string[]
 }
 

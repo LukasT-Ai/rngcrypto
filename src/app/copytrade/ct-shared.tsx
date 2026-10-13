@@ -347,10 +347,12 @@ export function ScoreChip({ score, className }: { score: Score | null | undefine
     <div className="max-w-[260px] space-y-1">
       <div className="text-[11px] font-semibold text-white/90">
         Grade {score.grade} · copyability {score.copyability}/100 · {GRADE_WORD[score.grade]}
+        {score.thin && <span className="text-white/60"> · thin sample</span>}
       </div>
       <div className="font-mono text-[11px] tabular-nums text-white/70">
-        success {score.success} · activity {score.activity} · focus {score.focus} · consistency {score.consistency} · risk {score.risk}
+        success {fmtNum(score.success, 0)} · activity {fmtNum(score.activity, 0)} · focus {fmtNum(score.focus, 0)} · consistency {fmtNum(score.consistency, 0)} · risk {fmtNum(score.risk, 0)}
       </div>
+      {score.thin && <div className="text-[11px] text-white/60">Thin data: missing sub-scores were substituted; read the grade as provisional.</div>}
       {score.reasons?.length > 0 && (
         <ul className="list-disc pl-4 text-[11px] text-white/80">
           {score.reasons.map((r, i) => (
@@ -361,14 +363,14 @@ export function ScoreChip({ score, className }: { score: Score | null | undefine
     </div>
   )
   return (
-    <Chip variant="grade" className={cn("rounded-md", className)} tip={tip} value={score.grade}>
-      <span style={score.grade === "A" ? { boxShadow: "inset 0 0 0 1px var(--brand, #00FF88)", borderRadius: 4, padding: "0 3px", margin: "0 -3px" } : undefined}>{score.grade}</span>
+    <Chip variant="grade" className={cn("rounded-md", score.thin && "bg-transparent! shadow-[inset_0_0_0_1px_rgba(255,255,255,0.25)]", className)} tip={tip} value={score.grade}>
+      <span style={score.grade === "A" && !score.thin ? { boxShadow: "inset 0 0 0 1px var(--brand, #00FF88)", borderRadius: 4, padding: "0 3px", margin: "0 -3px" } : undefined}>{score.grade}</span>
       <span className="font-mono tabular-nums opacity-80">{score.copyability}</span>
     </Chip>
   )
 }
 
-export const SUBSCORES: { k: keyof Omit<Score, "grade" | "reasons" | "copyability">; l: string; hint: string }[] = [
+export const SUBSCORES: { k: keyof Omit<Score, "grade" | "reasons" | "copyability" | "thin">; l: string; hint: string }[] = [
   { k: "success", l: "Success", hint: "Rank-scaled 30d realized PnL in copyable markets, blended with win rate and ROI." },
   { k: "activity", l: "Activity", hint: "Trades per day and recency of the last fill." },
   { k: "focus", l: "Focus", hint: "Share of 30d volume in BTC, ADA, GOLD and WTI. Below 50% it hard-caps the copyability score." },

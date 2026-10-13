@@ -169,6 +169,7 @@ function buildTrader(i: number): Seed {
     pnlOther: Math.round((r() - 0.4) * otherVol * 0.015),
   }
   const score = buildScore(mix, stats, groups, r)
+  if (i === 9) Object.assign(score, { thin: true, consistency: null, risk: null, reasons: ["Thin sample: under 20 copyable fills", ...score.reasons.slice(0, 3)] })
   const monthPnl = pnlCopyable + stats.pnlOther
   const volume = ASSET_GROUPS.reduce((s, g) => s + (groups[g]?.volumeUsd ?? 0), 0) + otherVol
   return {

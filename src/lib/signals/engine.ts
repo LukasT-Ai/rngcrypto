@@ -12,6 +12,15 @@ import { FACTOR } from "./factors";
 import { stampActiveSetups } from "./setup-tracker";
 import { pTp1For } from "./calibration";
 import { fetchOrderFlowRaw, summarizeOrderFlow, type LiquidationSummary, type OrderBookSummary, type OrderFlowRaw } from "./orderflow";
+import { buildFeatures } from "./features";
+import { fetchFundingFeature } from "./features/funding";
+import { fetchOiRaw, type OiRaw } from "./features/oi";
+import { fetchCvdRaw, type CvdRaw } from "./features/cvd";
+import { DERIBIT_CURRENCIES, fetchDvolBars, type DvolBar } from "./features/deribit";
+import { fetchBasisFeature } from "./features/basis";
+import type { BasisFeature, FundingFeature, StablecoinFeature } from "./features/types";
+import { fetchMacroRatesSeries, type MacroRatesSeries } from "@/lib/macro/treasury";
+import { fetchStablecoinFeature } from "@/lib/macro/stablecoins";
 
 // Bump whenever scoring behaviour changes; every logged signal carries it so history can be bucketed.
 // ENGINE_VERSION (below DEFAULT_TUNING) appends a short hash of the tuning defaults so a tuning change that
@@ -4303,6 +4312,8 @@ export function analyzeCandles(p: {
  * Full engine run for one symbol: market data + external feeds -> scored call -> API response body.
  * `log` (default true) appends a non-WAIT call with confidence >= 55 to the signal history.
  */
+const EMPTY_CATALYST: Awaited<ReturnType<typeof computeCatalystScore>> = { score: 0, events: [], catalystRisk: null };
+
 export async function computeSignal(symbolIn: string, opts: { log?: boolean } = {}): Promise<EngineResult> {
   const symbol = symbolIn.toUpperCase();
   const shouldLog = opts.log ?? true;
@@ -4370,47 +4381,63 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       : Promise.resolve(null),
     // 10: CoinGecko global
     fetchJSON("https://api.coingecko.com/api/v3/global"),
-    // 11: ETF flow (BTC only)
-    isBTC
-      ? fetchJSON(
-          "https://api.coinglass.com/api/v3/etf/bitcoin/flow-total"
-        ).catch(() => null)
-      : Promise.resolve(null),
-    // 12: Order flow: OKX liquidation tape + full order book (crypto with an OKX swap). Replaces Coinglass,
+    // 11: Order flow: OKX liquidation tape + full order book (crypto with an OKX swap). Replaces Coinglass,
     // which needs a paid key and had returned null for months.
     isCrypto ? fetchOrderFlowRaw(config.okx) : Promise.resolve(null),
-    // 13: News sentiment (crypto only)
+    // 12: News sentiment (crypto only)
     isCrypto
       ? getNewsSentiment(symbol).catch(() => null)
       : Promise.resolve(null),
-    // 14: Binance OI (crypto with binance mapping only)
-    config.binance
-      ? fetchJSON(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${config.binance}`)
-      : Promise.resolve(null),
-    // 15: Binance long/short ratio (crypto with binance mapping only)
-    config.binance
-      ? fetchJSON(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${config.binance}&period=1h&limit=5`)
-      : Promise.resolve(null),
-    // 16: Binance top trader position ratio
-    config.binance
-      ? fetchJSON(`https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=${config.binance}&period=1h&limit=5`)
-      : Promise.resolve(null),
-    // 17: OKX long/short ratio (fallback for geo-blocked Binance)
+    // 13: OKX long/short ratio. (The three Binance calls that used to sit here answered "restricted location"
+    // on every run and the Coinglass ETF call had no key: both dropped, audit 4.6 / 4.7.)
     config.okx
       ? fetchJSON(`https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=${config.okx}&period=1H`).catch(() => null)
       : Promise.resolve(null),
-    // 18: OKX open interest + volume
+    // 14: OKX open interest + volume
     config.okx
       ? fetchJSON(`https://www.okx.com/api/v5/rubik/stat/contracts/open-interest-volume?ccy=${config.okx}&period=1H`).catch(() => null)
       : Promise.resolve(null),
-    // 19: OKX taker buy/sell volume
+    // 15: OKX taker buy/sell volume
     config.okx
       ? fetchJSON(`https://www.okx.com/api/v5/rubik/stat/taker-volume-contract?instId=${config.okx}-USDT-SWAP&period=1H&limit=5`).catch(() => null)
       : Promise.resolve(null),
-    // 20: Catalyst headline engine (OIL, BTC, GOLD, ADA)
+    // 16: Catalyst headline engine (OIL, BTC, GOLD, ADA)
     isCatalystAsset(symbol)
       ? getCatalystNews(symbol).catch(() => null)
       : Promise.resolve(null),
+    // ── Phase 4 keyless feature feeds (each cached, timed out, null on failure) ──
+    // 17: funding z + venue spread (OKX history + Hyperliquid predictedFundings)
+    isCrypto ? fetchFundingFeature(config.okx) : Promise.resolve(null),
+    // 18: OI history 1H x 100 + 1D x 31 (OKX)
+    isCrypto ? fetchOiRaw(config.okx) : Promise.resolve(null),
+    // 19: real CVD: OKX taker volume at 5m in USD
+    isCrypto ? fetchCvdRaw(config.okx) : Promise.resolve(null),
+    // 20: Deribit DVOL daily history (BTC/ETH)
+    fetchDvolBars(DERIBIT_CURRENCIES[symbol]),
+    // 21: Deribit dated-futures basis (BTC/ETH)
+    fetchBasisFeature(DERIBIT_CURRENCIES[symbol]),
+    // 22: Treasury real yield + DXY daily (BTC and GOLD lenses)
+    symbol === "BTC" || symbol === "GOLD" ? fetchMacroRatesSeries() : Promise.resolve(null),
+    // 23: DefiLlama stablecoin supply (crypto)
+    isCrypto ? fetchStablecoinFeature() : Promise.resolve(null),
+    // ── Formerly sequential cold-cache awaits (audit 4.5), now in the batch ──
+    // 24: macro signals (weekly stochastic, golden cross)
+    isCrypto ? fetchMacroSignals() : Promise.resolve(null),
+    // 25: economic calendar catalyst score
+    computeCatalystScore(symbol, assetClassFor(symbol, isCrypto)),
+    // 26: macro scores for the lens asset
+    macroAssetFor(symbol) ? getMacroScores(macroAssetFor(symbol)!).catch(() => null) : Promise.resolve(null),
+    // 27: event gate inputs for the lens
+    getEventGateInputs(macroLensFor(symbol)).catch(() => null),
+    // 28: next oil / catalyst event
+    symbol === "OIL"
+      ? getNextOilEvent()
+      : isCatalystAsset(symbol)
+        ? (async () => {
+            const up = await getUpcomingEvents(120, symbol);
+            return up.find((e) => e.impact === "high") ?? up.find((e) => e.impact === "medium") ?? null;
+          })()
+        : Promise.resolve(null),
   ];
 
   const results = await Promise.allSettled(fetches);
@@ -4522,32 +4549,11 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
         : null;
   }
 
-  // ETF flows
-  let etfFlowData: { net: number; description: string } | null = null;
-  const etfRaw = getResult(11);
-  if (etfRaw != null) {
-    try {
-      const etf = etfRaw as {
-        data?: { netFlow?: number; date?: string }[];
-      };
-      if (etf?.data && etf.data.length > 0) {
-        const latest = etf.data[0];
-        const net = latest.netFlow ?? 0;
-        etfFlowData = {
-          net,
-          description:
-            net > 0
-              ? `Net inflow $${(net / 1e6).toFixed(0)}M`
-              : `Net outflow $${(Math.abs(net) / 1e6).toFixed(0)}M`,
-        };
-      }
-    } catch {
-      /* graceful degradation */
-    }
-  }
+  // ETF flows: no keyless source (Coinglass needs a key, Farside 403s). Kept in the response shape as null.
+  const etfFlowData: { net: number; description: string } | null = null;
 
   // Liquidations + order book walls, summarized against the mark price
-  const orderFlow = summarizeOrderFlow(getResult(12) as OrderFlowRaw | null, markPrice ?? 0);
+  const orderFlow = summarizeOrderFlow(getResult(11) as OrderFlowRaw | null, markPrice ?? 0);
   const liqSummary: LiquidationSummary | null = orderFlow.liquidations;
   const orderBook: OrderBookSummary | null = orderFlow.orderBook;
   // Scoring keeps the long/short split it was designed around; the window is whatever OKX returned (<= 24h).
@@ -4556,10 +4562,10 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
     : null;
 
   // News sentiment
-  const newsSentimentData = getResult(13) as NewsSentimentResult | null;
+  const newsSentimentData = getResult(12) as NewsSentimentResult | null;
 
   // Oil geopolitical news + regime classification
-  const oilGeoData = getResult(20) as OilGeoResult | null;
+  const oilGeoData = getResult(16) as OilGeoResult | null;
   let oilGeoRegime: "calm" | "elevated" | "extreme" | "whipsaw" | null = null;
   if (oilGeoData) {
     const bd = oilGeoData.categoryBreakdown.filter((b) => b.category !== "GENERAL" && b.scoredCount >= 3);
@@ -4582,44 +4588,17 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
           : "calm";
   }
 
-  // Binance Open Interest
-  let binanceOI: number | null = null;
-  const binanceOIRaw = getResult(14);
-  if (binanceOIRaw != null) {
-    const oi = binanceOIRaw as { openInterest?: string };
-    binanceOI = oi?.openInterest ? parseFloat(oi.openInterest) : null;
-  }
-
-  // Binance Long/Short Ratio
+  // Binance OI / long-short / top-trader feeds are gone (geo-blocked, always null); the fields stay null in
+  // the response shape and OKX is the long/short source.
+  const binanceOI: number | null = null;
   let longShortRatio: number | null = null;
-  const lsRaw = getResult(15);
-  if (lsRaw != null && Array.isArray(lsRaw) && lsRaw.length > 0) {
-    const latest = lsRaw[lsRaw.length - 1] as { longShortRatio?: string };
-    longShortRatio = latest?.longShortRatio ? parseFloat(latest.longShortRatio) : null;
-  }
-
-  // Long/short ratio change (squeeze signal)
   let longShortChange: number | null = null;
-  if (lsRaw != null && Array.isArray(lsRaw) && lsRaw.length >= 3) {
-    const recent = parseFloat((lsRaw[lsRaw.length - 1] as { longShortRatio: string }).longShortRatio);
-    const older = parseFloat((lsRaw[0] as { longShortRatio: string }).longShortRatio);
-    if (!isNaN(recent) && !isNaN(older) && older > 0) {
-      longShortChange = ((recent - older) / older) * 100;
-    }
-  }
-
-  // Top trader position ratio
-  let topTraderLongRatio: number | null = null;
-  const topTraderRaw = getResult(16);
-  if (topTraderRaw != null && Array.isArray(topTraderRaw) && topTraderRaw.length > 0) {
-    const latest = topTraderRaw[topTraderRaw.length - 1] as { longAccount?: string };
-    topTraderLongRatio = latest?.longAccount ? parseFloat(latest.longAccount) : null;
-  }
+  const topTraderLongRatio: number | null = null;
 
   // OKX fallback for long/short ratio (Binance is geo-restricted from US)
-  const okxLSRaw = getResult(17) as { code?: string; data?: string[][] } | null;
+  const okxLSRaw = getResult(13) as { code?: string; data?: string[][] } | null;
   // OKX rubik stat arrays are NEWEST-FIRST (verified against the live API): index 0 is the latest sample.
-  if (longShortRatio == null && okxLSRaw?.code === "0" && Array.isArray(okxLSRaw.data) && okxLSRaw.data.length > 0) {
+  if (okxLSRaw?.code === "0" && Array.isArray(okxLSRaw.data) && okxLSRaw.data.length > 0) {
     const latest = okxLSRaw.data[0];
     if (latest?.[1]) longShortRatio = parseFloat(latest[1]);
     if (okxLSRaw.data.length >= 3) {
@@ -4634,7 +4613,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
   // OKX OI + volume
   let okxOI: number | null = null;
   let okxOIChange: number | null = null;
-  const okxOIRaw = getResult(18) as { code?: string; data?: string[][] } | null;
+  const okxOIRaw = getResult(14) as { code?: string; data?: string[][] } | null;
   if (okxOIRaw?.code === "0" && Array.isArray(okxOIRaw.data) && okxOIRaw.data.length > 0) {
     const latest = okxOIRaw.data[0]; // newest-first
     if (latest?.[1]) okxOI = parseFloat(latest[1]);
@@ -4649,32 +4628,33 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
 
   // OKX taker buy/sell volume (buy vs sell pressure)
   let takerBuySellRatio: number | null = null;
-  const okxTakerRaw = getResult(19) as { code?: string; data?: string[][] } | null;
+  // OKX rows are [ts, sellVol, buyVol] (docs + live check 2026-10-13); the old parse had the columns swapped.
+  const okxTakerRaw = getResult(15) as { code?: string; data?: string[][] } | null;
   if (okxTakerRaw?.code === "0" && Array.isArray(okxTakerRaw.data) && okxTakerRaw.data.length > 0) {
     let totalBuy = 0, totalSell = 0;
     for (const row of okxTakerRaw.data) {
-      totalBuy += parseFloat(row[1] ?? "0");
-      totalSell += parseFloat(row[2] ?? "0");
+      totalSell += parseFloat(row[1] ?? "0");
+      totalBuy += parseFloat(row[2] ?? "0");
     }
     if (totalSell > 0) takerBuySellRatio = totalBuy / totalSell;
   }
 
   // ── Macro signals (weekly stochastic, golden cross, event blackout) ────────
-  const macroState = isCrypto ? await fetchMacroSignals() : null;
+  const macroState = (getResult(24) as MacroState | null) ?? null;
 
   // Previous RSI for momentum cross detection
   const prevRsi15m = rsiArr.length >= 2 ? rsiArr[rsiArr.length - 2] : null;
 
   // ── Economic calendar / catalyst scoring ────────────────────────────────────
   const assetClass = assetClassFor(symbol, isCrypto);
-  const catalystData = await computeCatalystScore(symbol, assetClass);
+  const catalystData = (getResult(25) as Awaited<ReturnType<typeof computeCatalystScore>> | null) ?? EMPTY_CATALYST;
   const macroAsset = macroAssetFor(symbol);
-  const macroInfo = macroAsset ? await getMacroScores(macroAsset).catch(() => null) : null;
+  const macroInfo = macroAsset ? ((getResult(26) as Awaited<ReturnType<typeof getMacroScores>> | null) ?? null) : null;
 
   // ── Universal event gate + macro coupling (Phase 3.2 / 3.3) ───────────────
   // Every symbol reads the macro calendar through its lens (crypto -> BTC, metals -> GOLD, energy -> WTI).
   const lens = macroLensFor(symbol);
-  const gateInputs = await getEventGateInputs(lens).catch(() => null);
+  const gateInputs = (getResult(27) as Awaited<ReturnType<typeof getEventGateInputs>> | null) ?? null;
   const eventWindow: EventWindow = gateInputs
     ? computeEventWindow({ now: nowMs, events: gateInputs.events, lens, firstMoveFor: (t) => firstFiveMinuteMove(candles5m, t, nowMs) })
     : NO_WINDOW;
@@ -4686,15 +4666,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       ? { ...macroInfo.scores, event: 0, weights: { ...macroInfo.scores.weights, event: 0 }, note: `${macroInfo.scores.note}; first move unconfirmed, event vote withdrawn` }
       : macroInfo.scores
     : null;
-  const nextOilEvent =
-    symbol === "OIL"
-      ? await getNextOilEvent()
-      : isCatalystAsset(symbol)
-        ? await (async () => {
-            const up = await getUpcomingEvents(120, symbol);
-            return up.find((e) => e.impact === "high") ?? up.find((e) => e.impact === "medium") ?? null;
-          })()
-        : null;
+  const nextOilEvent = (getResult(28) as Awaited<ReturnType<typeof getNextOilEvent>> | null) ?? null;
 
   // ── Elliott Wave count across timeframes (pure, local) ───────────────────
   let elliottMTF: ElliottMTFResult | null = null;
@@ -4744,7 +4716,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       volDiv,
       squeeze,
       pattern: candlestickPattern,
-      etfNet: etfFlowData?.net ?? null,
+      etfNet: (etfFlowData as { net: number } | null)?.net ?? null,
       fibLevels,
       fibExtension,
       volData,
@@ -5090,6 +5062,22 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       topTraderLongRatio,
     },
     orderBook,
+    // Phase 4 keyless feature feeds (F2). Emitted for the UI and the log; scoring use is PR 26's job.
+    features: buildFeatures({
+      ccy: isCrypto ? config.okx : undefined,
+      isCrypto,
+      price: currentPrice,
+      priceChange24hPct: Number.isFinite(change24h) ? change24h : null,
+      assetDaily: candlesDaily.map((c) => ({ day: new Date(c.time < 1e12 ? c.time * 1000 : c.time).toISOString().slice(0, 10), value: c.close })),
+      funding: (getResult(17) as FundingFeature | null) ?? null,
+      oi: (getResult(18) as OiRaw | null) ?? null,
+      cvd: (getResult(19) as CvdRaw | null) ?? null,
+      orderBook,
+      dvol: (getResult(20) as DvolBar[] | null) ?? null,
+      basis: (getResult(21) as BasisFeature | null) ?? null,
+      macroRates: (getResult(22) as MacroRatesSeries | null) ?? null,
+      stablecoins: (getResult(23) as StablecoinFeature | null) ?? null,
+    }),
     positioning: isCrypto ? {
       longShortRatio,
       longShortChange: longShortChange != null ? Math.round(longShortChange * 100) / 100 : null,

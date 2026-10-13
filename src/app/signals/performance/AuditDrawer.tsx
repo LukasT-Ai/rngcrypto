@@ -27,20 +27,21 @@ function buildTimeline(s: AuditRow, res: AuditRecord["resolution"] | null): Step
   const fillPrice = res?.fillPrice ?? s.fillPrice ?? (s.fillStatus === "filled" ? s.entry : null)
   steps.push({ at: s.timestamp, label: `Call published (${s.bias} ${s.symbol}, entry ${fmtPrice(s.entry)})`, kind: "info" })
   if (res?.firstEligibleCandle != null) steps.push({ at: res.firstEligibleCandle, label: "First eligible candle", kind: "eligible" })
+  if (res?.fillWindowEnd != null && (res.fillCandle == null || res.fillCandle > res.fillWindowEnd)) steps.push({ at: res.fillWindowEnd, label: "Fill window closed", kind: "eligible" })
   const fillAt = res?.fillCandle ?? s.filledAt
   if (fillAt != null) steps.push({ at: fillAt, label: `Filled${s.entryType ? ` (${s.entryType})` : ""}`, price: fillPrice, r: 0, kind: "fill" })
   else if (s.fillStatus === "pending") steps.push({ at: null, label: "Awaiting fill", kind: "fill" })
   else if (s.fillStatus === "unfilled") steps.push({ at: null, label: "Never filled inside the fill window", kind: "fill" })
   const touches = res?.tpTouches ?? s.tpLevels.filter((t) => t.at != null).map((t) => ({ level: t.level, at: t.at as number, price: t.price }))
   for (const t of touches) steps.push({ at: t.at, label: `TP${t.level} touched`, price: t.price, r: rAt(s, t.price, fillPrice), kind: "tp" })
-  if (res?.stopTouch) steps.push({ at: res.stopTouch.at, label: "Stop touched", price: res.stopTouch.price, r: rAt(s, res.stopTouch.price, fillPrice), kind: "stop" })
+  if (res?.stopTouch) steps.push({ at: res.stopTouch.at, label: res.stopTouch.afterTp ? `Stop touched after TP${res.stopTouch.afterTp}` : "Stop touched", price: res.stopTouch.price, r: rAt(s, res.stopTouch.price, fillPrice), kind: "stop" })
   else if (!res && s.closedReason === "stop" && s.closedAt != null) steps.push({ at: s.closedAt, label: "Stop touched", price: s.stopLoss, r: rAt(s, s.stopLoss, fillPrice), kind: "stop" })
   if (res?.horizonEnd != null) steps.push({ at: res.horizonEnd, label: (res.closedReason ?? s.closedReason) === "horizon" ? "Horizon reached, exited at last close" : "Horizon end", kind: "horizon" })
   else if (!res && s.closedReason === "horizon" && s.closedAt != null) steps.push({ at: s.closedAt, label: "Horizon reached, exited at last close", kind: "horizon" })
   const gross = res?.grossR ?? s.realizedR
   const net = res?.netR ?? s.realizedNetR
   const cost = res?.costR ?? s.costR
-  if (!s.open && !s.excluded && (gross != null || net != null)) steps.push({ at: s.closedAt ?? null, label: `Result: ${fmtR(gross)} gross${net != null ? `, ${fmtR(net)} net` : ""}${cost != null ? ` (cost ${fmtR(-Math.abs(cost))})` : ""}`, kind: "cost" })
+  if (!s.open && !s.excluded && (gross != null || net != null)) steps.push({ at: res?.closedAt ?? s.closedAt ?? null, label: `Result: ${fmtR(gross)} gross${net != null ? `, ${fmtR(net)} net` : ""}${cost != null ? ` (cost ${fmtR(-Math.abs(cost))})` : ""}`, kind: "cost" })
   return steps.sort((a, b) => (a.at ?? Infinity) - (b.at ?? Infinity))
 }
 
@@ -161,8 +162,9 @@ export default function AuditDrawer({ row, onClose }: { row: AuditRow | null; on
                     <Kv k="Closed reason" v={res?.closedReason ?? row.closedReason ?? (row.open ? "open" : "—")} mono={false} />
                     <Kv k="Gross R" v={fmtR(res?.grossR ?? row.realizedR)} />
                     <Kv k="Net R" v={(res?.netR ?? row.realizedNetR) != null ? fmtR(res?.netR ?? row.realizedNetR) : "— not yet available"} />
-                    <Kv k={row.costEstimated ? "Cost (estimated, no funding)" : "Cost"} v={(res?.costR ?? row.costR) != null ? fmtR(-Math.abs((res?.costR ?? row.costR) as number)) : "—"} />
-                    <Kv k="MFE / MAE" v={`${row.mfeR == null ? "—" : `+${row.mfeR.toFixed(2)}`} / ${row.maeR == null ? "—" : `-${row.maeR.toFixed(2)}`}`} />
+                    <Kv k={(res?.costEstimated ?? row.costEstimated) ? "Cost (estimated, no funding)" : "Cost"} v={(res?.costR ?? row.costR) != null ? fmtR(-Math.abs((res?.costR ?? row.costR) as number)) : "—"} />
+                    <Kv k="MFE / MAE" v={`${(res?.mfeR ?? row.mfeR) == null ? "—" : `+${(res?.mfeR ?? row.mfeR)!.toFixed(2)}`} / ${(res?.maeR ?? row.maeR) == null ? "—" : `-${(res?.maeR ?? row.maeR)!.toFixed(2)}`}`} />
+                    {res?.lastCheckedAt != null && <Kv k="Last check" v={utc(res.lastCheckedAt)} />}
                     <Kv k="Stop · TP1 · TP2 · TP3" v={`${fmtPrice(row.stopLoss)} · ${fmtPrice(row.tp1)} · ${fmtPrice(row.tp2)} · ${fmtPrice(row.tp3)}`} />
                     <Kv k="Engine" v={inputs?.engineVersion ?? row.engineVersion} />
                     {inputs?.calibrationVersion && <Kv k="Calibration" v={inputs.calibrationVersion} />}
@@ -193,6 +195,9 @@ export default function AuditDrawer({ row, onClose }: { row: AuditRow | null; on
                       )}
                       <Kv k="Weighted score" v={inputs.weightedScore == null ? "—" : inputs.weightedScore.toFixed(2)} />
                       <Kv k="Confidence raw → published" v={`${inputs.confidenceRaw == null ? "—" : inputs.confidenceRaw.toFixed(0)} → ${row.confidence}`} />
+                      {inputs.pTp1 != null && <Kv k="Calibrated P(TP1)" v={`${Math.round(inputs.pTp1)}%`} />}
+                      {(inputs.regime || inputs.regimeGate) && <Kv k="Regime · gate" v={`${inputs.regime ?? "—"} · ${inputs.regimeGate ?? "none"}`} mono={false} />}
+                      {inputs.markAtSignal != null && <Kv k="Mark · last at signal" v={`${fmtPrice(inputs.markAtSignal)} · ${inputs.lastAtSignal == null ? "—" : fmtPrice(inputs.lastAtSignal)}`} />}
                       <Kv k="Mode" v={inputs.mode ?? "—"} mono={false} />
                       <Kv k="Entry type" v={inputs.entryType ?? row.entryType ?? "—"} mono={false} />
                       <Kv k="rr1 · rr2 · rr3" v={[inputs.rr1, inputs.rr2, inputs.rr3].map((x) => (x == null ? "—" : x.toFixed(2))).join(" · ")} />
@@ -204,6 +209,12 @@ export default function AuditDrawer({ row, onClose }: { row: AuditRow | null; on
                         <div className="mt-3">
                           <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-white/50">Gate notes</div>
                           <ul className="list-disc pl-4 text-xs text-white/75 space-y-0.5">{inputs.gateNotes.map((g, i) => <li key={i}>{g}</li>)}</ul>
+                        </div>
+                      )}
+                      {inputs.factors && Object.keys(inputs.factors).length > 0 && !inputs.components && (
+                        <div className="mt-3">
+                          <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-white/50">Factor assessments</div>
+                          {Object.entries(inputs.factors).map(([k, v]) => <Kv key={k} k={k} v={v} mono={false} />)}
                         </div>
                       )}
                       {inputs.tuning && (

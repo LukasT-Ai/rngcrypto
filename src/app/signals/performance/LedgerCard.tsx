@@ -42,7 +42,7 @@ export default function LedgerCard({ ledger, recordCount }: { ledger?: PerfLedge
           )}
         </span>
         {ledger?.hashedAt && <span>hashed {new Date(ledger.hashedAt).toISOString().replace("T", " ").slice(0, 16)} UTC</span>}
-        <span><span className="font-mono text-white/85">{recordCount}</span> records{ledger?.bytes ? <> · <span className="font-mono text-white/85">{fmtBytes(ledger.bytes)}</span></> : null}</span>
+        <span><span className="font-mono text-white/85">{ledger?.count ?? recordCount}</span> records{ledger?.bytes ? <> · <span className="font-mono text-white/85">{fmtBytes(ledger.bytes)}</span></> : null}</span>
       </div>
       <p className="mt-2 text-[11px] text-white/45">The hash is recomputed daily at 00:05 UTC and served as a header on the same route, so a downloaded file can be checked against the number shown here.</p>
     </div>

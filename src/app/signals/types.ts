@@ -660,11 +660,13 @@ export interface PerfVersionRow {
 }
 
 export interface PerfLedger {
+  /** ?format=raw: the exact bytes the hash covers */
   url: string
   csvUrl: string
   sha256: string
   hashedAt: string
   bytes: number
+  count?: number
 }
 
 export interface PerfChangelogEntry {
@@ -739,9 +741,10 @@ export interface OpenSignalV2 {
   checkerStalled?: boolean
 }
 
-/** GET /api/signals/history/:id */
+/** GET /api/signals/history/:id (be-measure PR 13). Times are epoch ms UTC; every scalar nullable. */
 export interface AuditRecord {
   signal: Record<string, unknown>
+  row?: Record<string, unknown>
   inputs: {
     weightedScore?: number | null
     confidenceRaw?: number | null
@@ -757,22 +760,35 @@ export interface AuditRecord {
     gateNotes?: string[] | null
     engineVersion?: string | null
     calibrationVersion?: string | null
+    pTp1?: number | null
+    regime?: string | null
+    regimeGate?: string | null
+    markAtSignal?: number | null
+    lastAtSignal?: number | null
+    candleCloseTime?: number | null
+    factors?: Record<string, string> | null
     blocks?: Record<string, number> | null
     mode?: string | null
     eventWindow?: Record<string, unknown> | null
   } | null
   resolution: {
     firstEligibleCandle?: number | null
+    fillWindowEnd?: number | null
     fillCandle?: number | null
     fillPrice?: number | null
     tpTouches?: { level: 1 | 2 | 3; at: number; price: number }[]
-    stopTouch?: { at: number; price: number } | null
+    stopTouch?: { at: number; price: number; afterTp?: number | null } | null
     horizonEnd?: number | null
+    closedAt?: number | null
     closedReason?: string | null
     grossR?: number | null
     netR?: number | null
     costR?: number | null
-    coverageGap?: boolean | { from: number; to: number } | null
+    costEstimated?: boolean | null
+    coverageGap?: boolean | { from: number; to: number; detectedAt?: number | null } | null
+    lastCheckedAt?: number | null
+    mfeR?: number | null
+    maeR?: number | null
     reasonText?: string | null
   } | null
 }

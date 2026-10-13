@@ -528,8 +528,9 @@ export default function PerformanceDashboard() {
                           </div>
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#9CA3AF]">
                             <span className="font-mono" title="Distance to next target / to stop, in R">→TP {s.distToNextTpR == null ? "—" : s.distToNextTpR.toFixed(2)} · SL {s.distToSlR == null ? "—" : s.distToSlR.toFixed(2)}</span>
-                            {s.fillStatus === "pending" && <span>fill window: <span className="font-mono text-white/80">{windowLeft == null ? "—" : windowLeft === 0 ? "closing" : `${dur(windowLeft)} left`}</span></span>}
-                            <span>last check: <span className="font-mono text-white/80">{s.lastCheckAt != null ? utc(s.lastCheckAt).replace(" UTC", "") + " UTC candle" : "—"}</span></span>
+                            {s.fillStatus === "pending" && windowLeft != null && <span>fill window: <span className="font-mono text-white/80">{windowLeft === 0 ? "closing" : `${dur(windowLeft)} left`}</span></span>}
+                            {s.lastCheckAt != null && <span>last check: <span className="font-mono text-white/80">{utc(s.lastCheckAt).replace(" UTC", "")} UTC candle</span></span>}
+                            {s.coverageGap && <Chip color={AMBER} className="rounded-md normal-case tracking-normal" title="The checker was offline for part of this signal's life">coverage gap</Chip>}
                             {stalled && <Chip color={AMBER} className="rounded-md normal-case tracking-normal">checker stalled</Chip>}
                           </div>
                         </div>

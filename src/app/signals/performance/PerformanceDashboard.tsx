@@ -157,6 +157,8 @@ function deepestDrawdown(series: { i: number; v: number }[]): { from: number; to
   return best
 }
 
+const f3 = (x: number | null | undefined) => (x == null ? "—" : x.toFixed(3))
+const f2s = (x: number | null | undefined) => (x == null ? "—" : `${x > 0 ? "+" : ""}${x.toFixed(2)}`)
 const RANGES = [{ k: "7", l: "7d" }, { k: "30", l: "30d" }, { k: "90", l: "90d" }, { k: "all", l: "All" }]
 const GRADES = ["A+", "A", "B", "C"]
 const TABS = [
@@ -170,6 +172,9 @@ const TABS = [
   { k: "byRegime", l: "Cloud/200MA", col: "Regime factor" },
   { k: "byRegimeAlignment", l: "With / against regime", col: "Alignment" },
   { k: "byEngineVersion", l: "Engine", col: "Version" },
+  { k: "byEntryType", l: "Entry type", col: "Entry" },
+  { k: "byRr1", l: "rr1", col: "rr1" },
+  { k: "byAtrPct", l: "ATR %", col: "ATR % of price" },
 ] as const
 
 export default function PerformanceDashboard() {
@@ -292,8 +297,8 @@ export default function PerformanceDashboard() {
                 <div className="flex items-start gap-2 rounded-xl border border-[#F59E0B]/50 bg-[#F59E0B]/10 px-4 py-3 text-xs text-white/85">
                   <Info className="mt-0.5 size-4 shrink-0 text-[#F59E0B]" />
                   <span>
-                    <span className="font-bold text-[#F59E0B]">Provisional: <span className="font-mono">{decidedN}</span> of <span className="font-mono">{data.meta.provisionalTarget}</span> decided signals.</span>{" "}
-                    Every rate below is a preview until {data.meta.provisionalTarget} filled signals have reached a verdict.
+                    <span className="font-bold text-[#F59E0B]">Provisional: <span className="font-mono">{data.stats.meta.decidedNCurrentVersion ?? decidedN}</span> of <span className="font-mono">{data.meta.provisionalTarget}</span> decided signals{data.stats.meta.decidedNCurrentVersion != null ? " on the current engine" : ""}.</span>{" "}
+                    Every rate below is a preview until {data.meta.provisionalTarget} filled signals have reached a verdict on one engine version.
                     {engineVersion && <> Engine <span className="font-mono text-white">{engineVersion}</span>{engineSince ? ` since ${shortDate(engineSince)}` : ""}.</>}
                     {early ? ` ${data.meta.sampleNote}` : ""}
                   </span>
@@ -308,6 +313,7 @@ export default function PerformanceDashboard() {
                 <span title="Entry never traded within the fill window; excluded from every rate"><span className="font-mono text-white">{data.meta.unfilledN}</span> unfilled</span>
                 <span title="Candles needed to verify the fill are no longer available; excluded"><span className="font-mono text-white">{data.meta.unverifiableN}</span> unverifiable</span>
                 <span title="Filled, but neither TP1 nor the stop was touched before the horizon. Counted in R, excluded from hit and stop rates"><span className="font-mono text-white">{data.meta.expiredN ?? 0}</span> expired, no verdict</span>
+                {data.stats.meta.shadowN != null && data.stats.meta.shadowN > 0 && <span title="Calls declined by a gate and logged for audit only; never in any public number"><span className="font-mono text-white">{data.stats.meta.shadowN}</span> shadow, excluded</span>}
                 {k.fillRate && (
                   <span title={`market n=${k.fillRate.nMarket}, limit n=${k.fillRate.nLimit}`}>fill rate mkt <span className="font-mono text-white">{fmtPct(k.fillRate.market)}</span> · lim <span className="font-mono text-white">{fmtPct(k.fillRate.limit)}</span></span>
                 )}
@@ -346,11 +352,11 @@ export default function PerformanceDashboard() {
                 <Kpi
                   label="Brier skill"
                   icon={Percent}
-                  value={brier ? `BSS ${brier.bss > 0 ? "+" : ""}${brier.bss.toFixed(2)}` : <NotYet what="Brier skill score" />}
-                  color={!brier || brier.n < 100 ? undefined : brier.bss > 0.05 ? GREEN : brier.bss < -0.05 ? RED : undefined}
-                  sub={brier ? `Brier ${brier.naive.toFixed(3)} · base ${brier.base.toFixed(3)}${brier.calibrated != null ? ` · cal ${brier.calibrated.toFixed(3)}` : ""}` : "needs calibration update"}
-                  hint={brier ? `Murphy decomposition: reliability ${brier.reliability.toFixed(3)}, resolution ${brier.resolution.toFixed(3)}, uncertainty ${brier.uncertainty.toFixed(3)}, n=${brier.n}. BSS at or below zero means stated confidence carries no information beyond the base rate.` : "Brier skill score of the stated confidence against the base hit rate. At or below zero means the confidence number adds nothing."}
-                  dim={!brier}
+                  value={brier && brier.bss != null ? `BSS ${f2s(brier.bss)}` : <NotYet what="Brier skill score" />}
+                  color={!brier || brier.bss == null || brier.n < 100 ? undefined : brier.bss > 0.05 ? GREEN : brier.bss < -0.05 ? RED : undefined}
+                  sub={brier ? `Brier ${f3(brier.naive)} · base ${f3(brier.base)}${brier.calibrated != null ? ` · cal ${f3(brier.calibrated)}` : ""} · n ${brier.n}` : "needs calibration update"}
+                  hint={brier ? `Murphy decomposition: reliability ${f3(brier.reliability)}, resolution ${f3(brier.resolution)}, uncertainty ${f3(brier.uncertainty)}, n=${brier.n}. BSS at or below zero means stated confidence carries no information beyond the base rate.` : "Brier skill score of the stated confidence against the base hit rate. At or below zero means the confidence number adds nothing."}
+                  dim={!brier || brier.bss == null}
                 />
                 <Kpi
                   label="Fill rate"
@@ -409,7 +415,7 @@ export default function PerformanceDashboard() {
                   {equity.dd && <p className="mt-1 text-[11px] text-white/45">Shaded span: deepest drawdown, {fmtR(-equity.dd.depth)} from signal #{equity.dd.from} to #{equity.dd.to}.</p>}
                 </div>
 
-                <RHistogram bins={data.stats.rHistogram} mode={mode} seExpectancyR={k.seExpectancyR} n={closedN} />
+                <RHistogram bins={data.stats.rHistogram} mode={mode} seExpectancyR={k.seExpectancyR} shareAbove2R={k.shareAbove2R} n={closedN} />
               </div>
 
               <div className={cn(CARD, "p-4 space-y-3")}>
@@ -445,7 +451,7 @@ export default function PerformanceDashboard() {
                   {cal?.byGrade?.length ? <div className="mt-3"><CalibrationTable rows={cal.byGrade} label="Grade" mode={mode} base={base} /></div> : null}
                   {cal?.byRr1?.length ? <div className="mt-3"><CalibrationTable rows={cal.byRr1} label="rr1" mode={mode} base={base} /></div> : null}
                   {brier ? (
-                    <p className="mt-2 font-mono text-[11px] text-white/60 tabular-nums">Brier naive {brier.naive.toFixed(3)} · base {brier.base.toFixed(3)} · BSS {brier.bss.toFixed(2)} · rel {brier.reliability.toFixed(3)} · res {brier.resolution.toFixed(3)} · unc {brier.uncertainty.toFixed(3)} · n {brier.n}{cal?.platt ? ` · calibrated ${brier.calibrated?.toFixed(3) ?? "—"} (${cal.platt.version}, holdout ${cal.platt.holdoutBrier.toFixed(3)})` : ""}</p>
+                    <p className="mt-2 font-mono text-[11px] text-white/60 tabular-nums">Brier naive {f3(brier.naive)} · base {f3(brier.base)} · BSS {f2s(brier.bss)} · rel {f3(brier.reliability)} · res {f3(brier.resolution)} · unc {f3(brier.uncertainty)} · n {brier.n}{cal?.platt ? ` · calibrated ${f3(brier.calibrated)} (${cal.platt.version}, holdout ${f3(cal.platt.holdoutBrier)})` : ""}</p>
                   ) : (
                     <p className="mt-2 text-[11px] text-white/45 flex items-center gap-1.5"><Hint text="Brier score, its Murphy decomposition and the skill score against the base rate appear once the calibration update ships." /> Brier decomposition not yet available.</p>
                   )}
@@ -468,7 +474,7 @@ export default function PerformanceDashboard() {
                       </button>
                     ))}
                   </div>
-                  <BucketTable rows={data.stats.breakdowns[tab]} label={TABS.find((t) => t.k === tab)!.col} mode={mode} base={base} />
+                  <BucketTable rows={(data.stats.breakdowns as Record<string, Bucket[] | undefined>)[tab] ?? []} label={TABS.find((t) => t.k === tab)!.col} mode={mode} base={base} />
                 </div>
                 <div className={cn(CARD, "p-4")}>
                   <CardTitle>Engine versions</CardTitle>

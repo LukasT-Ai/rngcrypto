@@ -93,7 +93,14 @@ export default function AuditDrawer({ row, onClose }: { row: AuditRow | null; on
     },
   })
   const res = data?.resolution ?? null
-  const inputs = data?.inputs ?? null
+  // Fall back to the call-time inputs logged on the row itself when the audit endpoint is absent.
+  const rowInputs = useMemo<AuditRecord["inputs"]>(() => {
+    if (!row) return null
+    const has = row.components || row.weightedScore != null || row.confidenceRaw != null || row.rr1 != null || row.atrPct != null
+    if (!has) return null
+    return { weightedScore: row.weightedScore, confidenceRaw: row.confidenceRaw, components: row.components ?? undefined, rr1: row.rr1, entryType: row.entryType, atrPct: row.atrPct, minutesToNextEvent: row.minutesToNextEvent, engineVersion: row.engineVersion, calibrationVersion: row.calibrationVersion }
+  }, [row])
+  const inputs = data?.inputs ?? rowInputs
   const timeline = useMemo(() => (row ? buildTimeline(row, res) : []), [row, res])
   const reason = res?.reasonText ?? row?.reasonText ?? row?.outcomeLabel ?? null
   const fillAt = res?.fillCandle ?? row?.filledAt ?? null

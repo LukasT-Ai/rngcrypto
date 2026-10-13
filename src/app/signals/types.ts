@@ -567,6 +567,9 @@ export interface PerfKpisV2 {
   fillRate?: { market: number | null; limit: number | null; nMarket: number; nLimit: number } | null
   expiryRate?: number | null
   medianHoldMin?: { winners: number | null; losers: number | null } | null
+  /** Share of closed signals beyond +2R, percent. */
+  shareAbove2R?: number | null
+  holdMin?: Record<"all" | "winners" | "losers", { n: number; p25: number | null; median: number | null; p75: number | null }> | null
 }
 
 export interface PerfRHistogramBin {
@@ -592,14 +595,14 @@ export interface PerfCalBucket {
 }
 
 export interface PerfBrier {
-  naive: number
+  naive: number | null
   calibrated: number | null
-  base: number
-  bss: number
+  base: number | null
+  bss: number | null
   bssCalibrated: number | null
-  reliability: number
-  resolution: number
-  uncertainty: number
+  reliability: number | null
+  resolution: number | null
+  uncertainty: number | null
   n: number
 }
 
@@ -677,11 +680,25 @@ export interface PerformanceStatsV2 {
   versions?: PerfVersionRow[]
   ledger?: PerfLedger | null
   changelog?: PerfChangelogEntry[]
+  breakdowns?: { byEntryType?: PerfBucketLike[]; byRr1?: PerfBucketLike[]; byAtrPct?: PerfBucketLike[] }
   meta: {
     /** Current engine version and when it started, for the provisional banner. */
     engineVersion?: string | null
     engineVersionSince?: number | null
+    /** Decided signals on the current engine version: the calibration-gate counter toward 100. */
+    decidedNCurrentVersion?: number | null
+    /** Shadow (declined) rows logged; never in any public number. */
+    shadowN?: number | null
   }
+}
+
+export interface PerfBucketLike {
+  key: string
+  n: number
+  tp1Rate: number | null
+  expectancyR: number | null
+  wins: number
+  losses: number
 }
 
 /** Optional per-row additions on NormalizedSignal (be-measure PR 04 names). realizedR stays gross. */
@@ -699,6 +716,14 @@ export interface SignalRowV2 {
   reasonText?: string | null
   /** Calibrated P(TP1) in percent (PR 17). */
   pTp1?: number | null
+  // Call-time inputs logged on the row (PR 05); the audit drawer uses them when the audit endpoint is absent.
+  weightedScore?: number | null
+  confidenceRaw?: number | null
+  rr1?: number | null
+  atrPct?: number | null
+  calibrationVersion?: string | null
+  components?: Record<string, { score: number; weight: number }> | null
+  minutesToNextEvent?: number | null
 }
 
 /** Optional additions on open rows. */

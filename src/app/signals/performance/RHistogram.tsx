@@ -12,7 +12,7 @@ const binValue = (bin: string) => {
   return Number.isFinite(n) ? n : 0
 }
 
-export default function RHistogram({ bins, mode, seExpectancyR, n }: { bins?: PerfRHistogramBin[] | null; mode: "net" | "gross"; seExpectancyR?: number | null; n: number }) {
+export default function RHistogram({ bins, mode, seExpectancyR, shareAbove2R, n }: { bins?: PerfRHistogramBin[] | null; mode: "net" | "gross"; seExpectancyR?: number | null; shareAbove2R?: number | null; n: number }) {
   const data = useMemo(
     () =>
       (bins ?? []).map((b) => {
@@ -22,7 +22,7 @@ export default function RHistogram({ bins, mode, seExpectancyR, n }: { bins?: Pe
     [bins, mode]
   )
   const total = data.reduce((s, d) => s + d.count, 0)
-  const beyond2 = total ? (data.filter((d) => d.v >= 2).reduce((s, d) => s + d.count, 0) / total) * 100 : null
+  const beyond2 = shareAbove2R ?? (total ? (data.filter((d) => d.v >= 2).reduce((s, d) => s + d.count, 0) / total) * 100 : null)
   const zeroBin = data.find((d) => d.v >= 0)?.bin
 
   return (

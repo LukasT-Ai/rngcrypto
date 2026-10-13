@@ -5,6 +5,7 @@ import { computePerformance, computeStats } from "./performance";
 import { fetchMarks } from "./check/core";
 import { ENGINE_VERSION } from "@/lib/signals/engine";
 import { readCalibration } from "@/lib/signals/calibration";
+import { readChangelog, readLedgerHash } from "./ledger";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,9 @@ export async function GET(req: NextRequest) {
   if (blocked) return blocked;
 
   const sp = req.nextUrl.searchParams;
+  if (sp.get("view") === "changelog") {
+    return NextResponse.json({ changelog: readChangelog() }, { headers: { "Cache-Control": "public, s-maxage=300" } });
+  }
   const rangeRaw = sp.get("range") ?? "30d";
   // "All time" includes the archive (records rolled out of the live file at the cap); ranged views never need it.
   const signals = rangeRaw === "all" ? getAllHistory() : getHistory();
@@ -26,7 +30,9 @@ export async function GET(req: NextRequest) {
     const dedupe = sp.get("dedupe") !== "0";
     const limit = Math.min(1000, parseInt(sp.get("limit") ?? "500", 10) || 500);
 
-    const perf = computePerformance(signals, { rangeDays, assets, grades, bias, dedupe, limit, engineVersion: ENGINE_VERSION, calibration: readCalibration() });
+    const hash = readLedgerHash();
+    const ledger = hash ? { url: "/api/signals/history/backup?format=raw", csvUrl: "/api/signals/history/backup?format=csv", sha256: hash.sha256, hashedAt: hash.hashedAt, bytes: hash.bytes, count: hash.count } : null;
+    const perf = computePerformance(signals, { rangeDays, assets, grades, bias, dedupe, limit, engineVersion: ENGINE_VERSION, calibration: readCalibration(), ledger, changelog: readChangelog() });
 
     // Live distance-to-TP1 / distance-to-SL for open signals, in R.
     const marks = await fetchMarks([...new Set(perf.open.map((s) => s.symbol))]);

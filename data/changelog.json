@@ -1,0 +1,38 @@
+[
+  {
+    "at": "2026-10-13T04:49:43Z",
+    "commit": "12ed7e2",
+    "title": "Cost model and next-open fills; net R beside gross",
+    "effect": "Market orders now fill at the next 5-minute open instead of the decision price, with risk and R measured from that fill. Every closed signal carries a round-trip cost (taker/maker fee, slippage per market leg, funding over the hold; Strike defaults) and a net R. Expectancy, profit factor, equity and the histogram show net with gross alongside. Records closed before this carry an estimated cost without funding."
+  },
+  {
+    "at": "2026-10-13T04:45:37Z",
+    "commit": "f41aafd",
+    "title": "Inputs logged at call time; engine version hash; coverage gaps; archive instead of truncate",
+    "effect": "Every new record stores the weighted score, each component score and weight, raw confidence, R:R to each target, entry type, ATR%, funding, minutes to the next release, the tuning snapshot and regime. The engine version now carries a hash of its tuning defaults, so the versions table separates builds automatically. A checker that resumes after an outage flags the unverified span instead of skipping it. The live ledger rolls old records into an archive at 5,000 instead of dropping them, so All time never shrinks."
+  },
+  {
+    "at": "2026-10-13T04:13:02Z",
+    "commit": "8ec089e",
+    "title": "Horizon enforced inside the candle walk; atomic ledger writes; token-gated restore",
+    "effect": "A TP or stop touched after the horizon is no longer credited: late evaluations exit at the last close before the horizon. Ledger writes are atomic (tmp + rename) and the restore endpoint requires the operator token."
+  },
+  {
+    "at": "2026-10-13T04:11:37Z",
+    "commit": "7a98e24",
+    "title": "Engine 2026.10.13-feeds: OKX sample order, Strike funding unit, idle macro weights",
+    "effect": "Long/short ratio and open-interest signs were inverted by newest-first arrays; Strike hourly funding is now scaled to the 8h unit the thresholds use; macro weights leave the denominator when the feed is idle, so BTC, GOLD and OIL confidence is no longer compressed by about 20%."
+  },
+  {
+    "at": "2026-10-12T22:32:38Z",
+    "commit": "7399b3f",
+    "title": "Expired no-verdict signals excluded from the hit rate",
+    "effect": "A filled signal that reaches the horizon without touching TP1 or the stop still counts in expectancy and profit factor (its horizon exit is real P&L) but no longer drags the TP1 and stop rates, since it reached no verdict."
+  },
+  {
+    "at": "2026-10-07T01:09:57Z",
+    "commit": "68f1864",
+    "title": "Fill model: market vs limit, fill windows, legacy re-verification",
+    "effect": "A signal counts only after a candle opened after the call trades through its entry. Entries within 0.1% of the signal price are market orders; resting limits must fill within 2h (scalp) or 8h, otherwise the record is a non-trade. Legacy first-touch records with a resting entry were re-run through the model."
+  }
+]

@@ -90,6 +90,8 @@ export interface NormalizedSignal {
   calibrationVersion: string | null;
   components: Record<string, { score: number; weight: number }> | null;
   minutesToNextEvent: number | null;
+  /** Plain-language resolution sentence (design F4.3), rendered inline under the row. */
+  reasonText: string;
 }
 
 export interface CalBucket extends Bucket {
@@ -427,7 +429,7 @@ export function normalize(s: SignalLog): NormalizedSignal {
       : highest > 0
         ? `TP${highest} hit${stoppedAfterTp ? " · then stopped" : closedReason === "horizon" ? " · expired" : ""}`
         : "Expired";
-  return {
+  const row: NormalizedSignal = {
     id: s.id,
     symbol: s.symbol,
     assetClass: assetClassOf(s.symbol),
@@ -476,7 +478,10 @@ export function normalize(s: SignalLog): NormalizedSignal {
     calibrationVersion: inputs?.calibrationVersion ?? null,
     components: inputs?.components ?? null,
     minutesToNextEvent: inputs?.minutesToNextEvent ?? null,
+    reasonText: "",
   };
+  row.reasonText = reasonText(row, s);
+  return row;
 }
 
 // Same symbol, bias and entry (4 significant figures) logged again within 30 minutes of the kept record.
@@ -658,6 +663,53 @@ export function calibration(rows: CalRow[], mapping: { a: number; b: number } | 
     },
     platt,
   };
+}
+
+const fmtUtc = (t: number) => {
+  const d = new Date(t);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[d.getUTCMonth()]} ${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
+};
+const fmtDur = (ms: number) => {
+  const m = Math.max(0, Math.round(ms / 60e3));
+  const d = Math.floor(m / 1440);
+  const h = Math.floor((m % 1440) / 60);
+  const mm = m % 60;
+  return d ? `${d}d ${h}h` : h ? `${h}h ${mm}m` : `${mm}m`;
+};
+const fmtPx = (p: number) => (p >= 1000 ? p.toLocaleString("en-US", { maximumFractionDigits: 2 }) : p >= 1 ? p.toFixed(2) : p.toPrecision(4));
+
+/** Plain-language resolution sentence for a row (design F4.3 "reasonText"). */
+export function reasonText(s: NormalizedSignal, raw?: Pick<SignalLog, "coverageGap" | "stoppedAt" | "context">): string {
+  const horizonH = (() => {
+    const t = s.tradeType?.toUpperCase() ?? "";
+    return t === "SCALP" ? 4 : t === "SWING" ? 48 : t === "POSITION" || t === "ULTIMATE" ? 168 : 24;
+  })();
+  const sinceFill = (t: number | null) => (t != null && s.filledAt != null ? `, ${fmtDur(t - s.filledAt)} after fill` : "");
+  const gap = raw?.coverageGap ? ` Coverage gap: candles from ${fmtUtc(raw.coverageGap.from)} to ${fmtUtc(raw.coverageGap.to)} could not be verified.` : "";
+  if (s.open) {
+    if (s.fillStatus === "pending") return `Waiting for a fill at ${fmtPx(s.entry)}; the ${s.entryType ?? "limit"} order has not traded yet.`;
+    const top = s.highestTp ? ` TP${s.highestTp} reached; running toward TP${Math.min(3, s.highestTp + 1)}.` : "";
+    return `Filled at ${fmtPx(s.fillPrice ?? s.entry)} on ${s.filledAt != null ? fmtUtc(s.filledAt) : "an earlier candle"}; horizon ${horizonH}h.${top}${gap}`;
+  }
+  if (s.closedReason === "unfilled") return `Never filled: price did not trade through ${fmtPx(s.entry)} inside the fill window. Not a trade.`;
+  if (s.closedReason === "unverifiable") return "Could not be verified: the candles needed to check the fill were no longer available. Not a trade.";
+  const net = s.realizedNetR != null ? ` (${s.realizedNetR >= 0 ? "+" : ""}${s.realizedNetR.toFixed(2)}R net)` : "";
+  const gross = s.realizedR != null ? `${s.realizedR >= 0 ? "+" : ""}${s.realizedR.toFixed(2)}R` : "no R";
+  if (s.stoppedAfterTp === 0) {
+    return `Stopped at ${fmtPx(s.stopLoss)}${s.closedAt != null ? ` on ${fmtUtc(s.closedAt)}` : ""}${sinceFill(s.closedAt)} before TP1; ${gross}${net}.${gap}`;
+  }
+  if (s.closedReason === "stop_after_tp" && s.highestTp) {
+    return `Reached TP${s.highestTp} at ${fmtPx(s.highestTp === 3 ? s.tp3 : s.highestTp === 2 ? s.tp2 : s.tp1)}, then stopped${s.closedAt != null ? ` on ${fmtUtc(s.closedAt)}` : ""}; exit booked at TP${s.highestTp}, ${gross}${net}.${gap}`;
+  }
+  if (s.closedReason === "tp3") {
+    return `Reached TP3 at ${fmtPx(s.tp3)}${s.closedAt != null ? ` on ${fmtUtc(s.closedAt)}` : ""}${sinceFill(s.closedAt)}; horizon ${horizonH}h; ${gross}${net}.${gap}`;
+  }
+  if (s.closedReason === "horizon") {
+    const reached = s.highestTp ? `TP${s.highestTp} reached, then ` : "";
+    return `${reached ? reached.charAt(0).toUpperCase() + reached.slice(1) : ""}${reached ? "h" : "H"}orizon of ${horizonH}h ran out${s.closedAt != null ? ` on ${fmtUtc(s.closedAt)}` : ""}; exit at the last close before the horizon, ${gross}${net}.${gap}`;
+  }
+  return `${s.outcomeLabel}; ${gross}${net}.${gap}`;
 }
 
 export function toCalRow(s: NormalizedSignal): CalRow {

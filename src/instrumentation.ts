@@ -20,6 +20,36 @@ export async function register() {
   setTimeout(outcomes, 15_000);
   setInterval(outcomes, 60_000);
 
+  // Daily ledger integrity + calibration refresh (be-measure PR 13/17): SHA-256 of the ledger file written to
+  // ledger-hash.json once per UTC day at 00:05 (and once at boot so a fresh deploy serves a hash), then the
+  // Stage 0 calibration refit on the same schedule. Each is idempotent per day.
+  const { computeLedgerHash } = await import("./app/api/signals/history/ledger");
+  const { getAllHistory } = await import("./app/api/signals/history/logger");
+  const { refreshCalibration } = await import("./lib/signals/calibration");
+  const { ENGINE_VERSION } = await import("./lib/signals/engine");
+  const daily = () => {
+    try {
+      computeLedgerHash();
+    } catch {
+      /* next day */
+    }
+    try {
+      refreshCalibration(getAllHistory(), ENGINE_VERSION);
+    } catch {
+      /* next day */
+    }
+  };
+  setTimeout(daily, 30_000);
+  const scheduleDaily = () => {
+    const now = new Date();
+    const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 5, 0);
+    setTimeout(() => {
+      daily();
+      scheduleDaily();
+    }, Math.max(60_000, next - now.getTime()));
+  };
+  scheduleDaily();
+
   // Scheduled signal logging: every symbol runs through the engine with log=1 once per 15m candle,
   // 20s after the close so the candle is final. Logging no longer depends on someone loading a page,
   // and the dedupe rule in appendSignal keeps one open record per symbol and bias.

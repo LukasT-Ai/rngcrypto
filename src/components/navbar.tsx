@@ -58,10 +58,13 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
-  useEffect(() => {
+  // Close menus on navigation using the render-time state adjustment pattern (no setState inside an effect).
+  const [lastPath, setLastPath] = useState(pathname)
+  if (lastPath !== pathname) {
+    setLastPath(pathname)
     setMobileOpen(false)
     setOpenMenu(null)
-  }, [pathname])
+  }
 
   const openNow = (label: string) => {
     if (closeTimer.current) window.clearTimeout(closeTimer.current)

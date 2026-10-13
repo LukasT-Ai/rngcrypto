@@ -27,7 +27,7 @@ export const CvdTile = React.memo(function CvdTile({ cvd, now }: { cvd: CvdFeatu
       sub={
         cvd ? (
           <>
-            slope 1h {fmtSignedUsd(cvd.slope1hUsd)} · taker {cvd.takerRatio1h.toFixed(2)}
+            slope 1h {fmtSignedUsd(cvd.slope1hUsd)}{cvd.takerRatio1h != null ? ` · taker ${cvd.takerRatio1h.toFixed(2)}` : ""}
           </>
         ) : null
       }

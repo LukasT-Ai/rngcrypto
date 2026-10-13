@@ -16,13 +16,13 @@ export const StablecoinTiles = React.memo(function StablecoinTiles({ sc, now }: 
   const off = sc == null
   const stale = staleLabel(sc, now)
   const flagColor = sc?.flag === "tailwind" ? GREEN : sc?.flag === "headwind" ? RED : undefined
-  const mintFlag = !off && (sc.mintFlag ?? sc.usdtMint24hUsd >= MINT_FLAG_USD)
+  const mintFlag = !off && (sc.mintFlag ?? (sc.usdtMint24hUsd != null && sc.usdtMint24hUsd >= MINT_FLAG_USD))
   return (
     <>
       <FeatureTile
         label="Stablecoin supply 7d"
         icon={Coins}
-        off={off}
+        off={off || sc.supply7dChgPct == null}
         offText="DefiLlama off"
         stale={stale}
         hint="Change in total stablecoin supply over 7 days (DefiLlama, daily). Growing supply is dry powder for crypto; shrinking supply is money leaving. Slow feature: it sets the backdrop, not the entry."
@@ -45,7 +45,7 @@ export const StablecoinTiles = React.memo(function StablecoinTiles({ sc, now }: 
       <FeatureTile
         label="USDT mint 24h"
         icon={Droplets}
-        off={off}
+        off={off || sc.usdtMint24hUsd == null}
         offText="DefiLlama off"
         stale={stale}
         hint="Net USDT issued in the last 24h. Mints of $500M or more have historically preceded buying pressure within days; the flag marks that threshold."

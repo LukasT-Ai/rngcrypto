@@ -30,10 +30,12 @@ const CELLS: Cell[] = [
 export const OiQuadrant = React.memo(function OiQuadrant({ oi, now }: { oi: OiFeature | null | undefined; now: number }) {
   const off = oi == null
   const stale = staleLabel(oi, now)
-  const inside = !off && Math.abs(oi.sd) < 1
-  const active = !off && !inside ? oi.quadrant : null
+  const sd = oi?.sd ?? null
+  const inside = sd != null && Math.abs(sd) < 1
+  // Null sd (no 30d history yet): fall back to the sign-only quadrant so the glyph still reads.
+  const active = off ? null : inside ? null : (oi.quadrant ?? oi.quadrantRaw)
   const activeCell = CELLS.find((c) => c.key === active) ?? null
-  const caption = off ? "feed off" : inside ? `inside ±1 sd · OI ${fmtSignedPct(oi.change24hPct)} · price ${fmtSignedPct(oi.priceChange24hPct)}` : `OI ${fmtSignedPct(oi.change24hPct)} (${fmtSd(oi.sd)}) · price ${fmtSignedPct(oi.priceChange24hPct)}`
+  const caption = off ? "feed off" : inside ? `inside ±1 sd · OI ${fmtSignedPct(oi.change24hPct)} · price ${fmtSignedPct(oi.priceChange24hPct)}` : `OI ${fmtSignedPct(oi.change24hPct)}${sd != null ? ` (${fmtSd(sd)})` : " · sd pending"} · price ${fmtSignedPct(oi.priceChange24hPct)}`
 
   return (
     <div className={cn(SURFACE, "min-w-0 px-3 py-2.5 sm:px-4 sm:py-3")}>
@@ -94,9 +96,9 @@ export const OiQuadrant = React.memo(function OiQuadrant({ oi, now }: { oi: OiFe
 // who wants the two numbers without decoding the grid.
 export const OiChangeTiles = React.memo(function OiChangeTiles({ oi, now, fallbackChangePct }: { oi: OiFeature | null | undefined; now: number; fallbackChangePct?: number | null }) {
   const stale = staleLabel(oi, now)
-  const change = oi ? oi.change24hPct : (fallbackChangePct ?? null)
+  const change = oi?.change24hPct ?? fallbackChangePct ?? null
   const off = change == null
-  const big = oi ? Math.abs(oi.sd) >= 1 : Math.abs(change ?? 0) > 15
+  const big = oi?.sd != null ? Math.abs(oi.sd) >= 1 : Math.abs(change ?? 0) > 15
   return (
     <>
       <FeatureTile
@@ -106,14 +108,14 @@ export const OiChangeTiles = React.memo(function OiChangeTiles({ oi, now, fallba
         color={big ? (change! >= 0 ? GREEN : RED) : undefined}
         hint="Change in open interest over 24h. Rising with price means new longs; falling means positions closing. The sd figure is the change relative to its 30-day distribution."
         value={change != null ? fmtSignedPct(change) : null}
-        sub={oi ? `${fmtSd(oi.sd)} · ${big ? "outside" : "inside"} ±1 sd` : "fixed-threshold read · features off"}
+        sub={oi ? (oi.sd != null ? `${fmtSd(oi.sd)} · ${big ? "outside" : "inside"} ±1 sd` : "sd pending · 30d history filling") : "fixed-threshold read · features off"}
       />
       <FeatureTile
         label="Price change 24h"
-        off={oi == null}
+        off={oi?.priceChange24hPct == null}
         stale={stale}
-        color={oi ? (oi.priceChange24hPct >= 0 ? GREEN : RED) : undefined}
-        value={oi ? fmtSignedPct(oi.priceChange24hPct) : null}
+        color={oi?.priceChange24hPct != null ? (oi.priceChange24hPct >= 0 ? GREEN : RED) : undefined}
+        value={oi?.priceChange24hPct != null ? fmtSignedPct(oi.priceChange24hPct) : null}
         sub="paired with OI for the quadrant"
       />
     </>

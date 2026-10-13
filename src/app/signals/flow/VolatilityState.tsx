@@ -23,11 +23,13 @@ export const VolatilityState = React.memo(function VolatilityState({ d }: { d: S
   const basis = f?.basis ?? null
   const price = d.price.mark
 
-  const hot = vol != null && vol.dvolPct >= 80
-  const compressed = vol != null && vol.dvolPct < 20
+  const pctl = vol?.dvolPct ?? null
+  const hot = pctl != null && pctl >= 80
+  const compressed = pctl != null && pctl < 20
+  const em24hUsd = vol ? (vol.expectedMove24hUsd ?? price * (vol.expectedMove24hPct / 100)) : null
   // 4h move: the feed's own figure when present, else the 24h move scaled by sqrt(4/24).
   const em4hPct = vol ? (vol.expectedMove4hPct ?? vol.expectedMove24hPct * SQRT_4H) : null
-  const em4hUsd = vol ? (vol.expectedMove4hUsd ?? (Number.isFinite(vol.expectedMove24hUsd) && vol.expectedMove24hUsd > 0 ? vol.expectedMove24hUsd : price * (vol.expectedMove24hPct / 100)) * SQRT_4H) : null
+  const em4hUsd = vol ? (vol.expectedMove4hUsd ?? (em24hUsd ?? 0) * SQRT_4H) : null
 
   return (
     <div id="sec-volatility">
@@ -41,7 +43,7 @@ export const VolatilityState = React.memo(function VolatilityState({ d }: { d: S
               </Chip>
             )}
             {hot && (
-              <Chip variant="warning" tip={`Implied volatility is in its ${fmtPct(vol.dvolPct)} over the past year. Stops sized on a calm tape will be too tight; the engine widens them.`}>
+              <Chip variant="warning" tip={`Implied volatility is in its ${fmtPct(pctl)} over the past year. Stops sized on a calm tape will be too tight; the engine widens them.`}>
                 wider stops
               </Chip>
             )}
@@ -64,7 +66,7 @@ export const VolatilityState = React.memo(function VolatilityState({ d }: { d: S
           sub={
             vol ? (
               <span className="inline-flex flex-wrap items-center gap-1.5">
-                {fmtPct(vol.dvolPct)} · 24h {fmtSignedPct(vol.change24hPct, 0)}
+                {pctl != null ? fmtPct(pctl) : "pct pending"} · 24h {fmtSignedPct(vol.change24hPct, 0)}
                 {compressed && <Chip variant="vol">compressed</Chip>}
               </span>
             ) : null
@@ -78,7 +80,7 @@ export const VolatilityState = React.memo(function VolatilityState({ d }: { d: S
           stale={staleLabel(vol, now)}
           hint="One standard deviation move over the next 24h implied by DVOL (DVOL / sqrt(365)). Price stays inside this band about two thirds of the time; the Levels chart draws it as two hairlines."
           value={vol ? `±${vol.expectedMove24hPct.toFixed(2)}%` : null}
-          sub={vol ? `±$${fmt(vol.expectedMove24hUsd > 0 ? vol.expectedMove24hUsd : price * (vol.expectedMove24hPct / 100), price >= 1000 ? 0 : 2)} · 1 sd` : null}
+          sub={em24hUsd != null ? `±$${fmt(em24hUsd, price >= 1000 ? 0 : 2)} · 1 sd` : null}
         />
         <FeatureTile
           label="Expected move 4h"
@@ -98,7 +100,7 @@ export const VolatilityState = React.memo(function VolatilityState({ d }: { d: S
           stale={staleLabel(basis, now)}
           hint="Annualized premium of the front Deribit future over index. Positive and rising means leveraged longs are paying for exposure; negative (backwardation) means stress. z is against the 90-day distribution; curve is the slope from front to next expiry."
           value={basis ? `${basis.annPct >= 0 ? "+" : ""}${basis.annPct.toFixed(1)}% ann` : null}
-          sub={basis ? `z ${basis.z == null ? "n/a" : fmtSd(basis.z).replace(" sd", "")} · curve ${basis.curveSlope >= 0 ? "+" : ""}${basis.curveSlope.toFixed(1)}${basis.stress ? " · stress" : ""}` : null}
+          sub={basis ? `z ${basis.z == null ? "n/a" : fmtSd(basis.z).replace(" sd", "")} · curve ${basis.curveSlope == null ? "n/a" : `${basis.curveSlope >= 0 ? "+" : ""}${basis.curveSlope.toFixed(1)}`}${basis.stress ? " · stress" : ""}` : null}
           color={basis?.stress ? AMBER : undefined}
         />
       </div>

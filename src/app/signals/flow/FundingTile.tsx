@@ -11,9 +11,9 @@ import { fmtSd, staleLabel, type FundingFeature, type FundingVenueKey } from "./
 // so no green/red. Venue dots go grey when that venue is null. Null feature: raw rate fallback when the legacy
 // `market.fundingRate` exists, else `feed off`.
 
-const VENUE_LABEL: Record<FundingVenueKey, string> = { strike: "Strike", okx: "OKX", hl: "Hyperliquid", binance: "Binance", bybit: "Bybit" }
+const VENUE_LABEL: Record<FundingVenueKey, string> = { okx: "OKX", hl: "Hyperliquid", binance: "Binance", bybit: "Bybit" }
 // Fixed display order so the dots never reshuffle between polls.
-const VENUE_ORDER: FundingVenueKey[] = ["strike", "okx", "hl", "binance", "bybit"]
+const VENUE_ORDER: FundingVenueKey[] = ["okx", "hl", "binance", "bybit"]
 
 const pct8h = (r: number) => `${(r * 100).toFixed(4)}%/8h`
 
@@ -54,16 +54,18 @@ export const FundingTile = React.memo(function FundingTile({ funding, now, fallb
     )
   }
   const crowded = funding.crowded
+  const z = funding.z
   return (
     <FeatureTile
       label="Funding"
       icon={Activity}
       stale={staleLabel(funding, now)}
       hint="Funding z-score: today's 8h-equivalent rate against its 30-day distribution. Beyond ±2 sd one side is paying heavily to stay in, which raises squeeze risk against the crowd. Not a direction vote by itself."
-      value={fmtSd(funding.z)}
+      value={z == null ? "—" : fmtSd(z)}
       sub={
         <>
           {pct8h(funding.rate8h)}
+          {z == null && ` · z pending (n ${funding.n})`}
           {crowded && (
             <>
               {" · "}
@@ -76,9 +78,11 @@ export const FundingTile = React.memo(function FundingTile({ funding, now, fallb
         <div className="flex flex-wrap items-center justify-between gap-2">
           <VenueDots venues={funding.venues} />
           <div className="flex items-center gap-1.5">
-            <Chip variant="neutral" tip="Highest venue rate divided by the lowest. A wide spread means one venue is carrying the crowding.">spread {funding.spreadRatio.toFixed(1)}x</Chip>
-            {crowded && Math.abs(funding.z) >= 2 && (
-              <Chip variant="warning" tip={`Funding is ${Math.abs(funding.z).toFixed(1)} sd ${funding.z > 0 ? "above" : "below"} normal: ${crowded}s are paying to hold. A move against them can cascade.`}>
+            {funding.spreadRatio != null && (
+              <Chip variant="neutral" tip="Highest venue rate divided by the lowest. A wide spread means one venue is carrying the crowding.">spread {funding.spreadRatio.toFixed(1)}x</Chip>
+            )}
+            {crowded && z != null && Math.abs(z) >= 2 && (
+              <Chip variant="warning" tip={`Funding is ${Math.abs(z).toFixed(1)} sd ${z > 0 ? "above" : "below"} normal: ${crowded}s are paying to hold. A move against them can cascade.`}>
                 crowded {crowded}
               </Chip>
             )}

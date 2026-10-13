@@ -1,154 +1,145 @@
 // ---------------------------------------------------------------------------
-// Wave 2 `features.*` contract (research/design-ux-ui.md F2, CONTRACT.md wave 2).
-//
-// TEMPORARY MIRROR: be-features owns the canonical type `SignalFeatures` in src/lib/signals/features/types.ts,
-// re-exported from ../types.ts as `features?: SignalFeatures | null` on SignalsResponse. Until that lands on master
-// this file carries a structurally compatible subset so the Flow / Momentum / Levels / Macro tiles type-check and
-// render their "feed off" fallback. When the canonical type exists, replace the declarations below with
-//   export type { SignalFeatures as Features } from "@/lib/signals/features/types"
-// and keep the helpers. Nothing else imports from here except ui-flow owned files (and RatesDollarStrip's props).
-// Fields marked "be-features extra" are additive on their side and optional here.
-//
-// Every feature object may also carry `{ asOf, ttlMs }` (F2 preamble); both are optional here so a producer that
-// omits them still type-checks. Tiles show a `stale {age}` tag only when `asOf` is present and older than 3x ttl.
+// Wave 2 `features.*` contract. TEMPORARY MIRROR of be-features' canonical types (build/be-features 1e6837a,
+// src/lib/signals/features/types.ts, re-exported from ../types.ts as `features?: SignalFeatures | null`). The type
+// block below is copied verbatim so the tiles are compiled against the real nullability. After the branches merge,
+// replace the block with
+//   export type { SignalFeatures as Features, FundingFeature, OiFeature, CvdFeature, BookFeature, VolFeature, BasisFeature, MacroRatesFeature, StablecoinFeature, SessionFeature } from "@/lib/signals/features/types"
+// and keep the helpers. Only ui-flow owned files import from here.
 // ---------------------------------------------------------------------------
 
-export interface FeatureMeta {
-  /** Epoch ms when the feed last produced this value. */
-  asOf?: number
-  /** Feed refresh interval in ms; stale = now - asOf > 3 * ttlMs. */
-  ttlMs?: number
+// The `features` object on SignalsResponse (design-ux-ui.md F2, Phase 4). Names follow F2; a few extra fields the
+// research spec asked for ride alongside. Every feature object is null when its feed is off, and every numeric
+// field inside can be null when that particular transform had too little history. Each object carries asOf and
+// ttlMs so the UI can label "stale" at 3x TTL.
+
+export interface FundingFeature {
+  asOf: number;
+  ttlMs: number;
+  rate8h: number; // OKX realized 8h rate, fraction (0.0001 = 0.01%)
+  z: number | null; // vs OKX 30-day funding history (100 x 8h)
+  venues: { okx: number; hl: number | null; binance: number | null; bybit: number | null }; // all 8h-equivalent
+  spreadRatio: number | null; // max/min absolute venue rate (same sign), null when any venue is at zero
+  crowded: "long" | "short" | null; // |z| > 2 only; never a direction vote
+  regime: "neutral" | "crowded_long" | "crowded_short";
+  n: number; // history samples behind z
 }
 
-export type FundingVenueKey = "hl" | "binance" | "bybit" | "okx" | "strike"
+export type OiQuadrant = "new_longs" | "short_cover" | "new_shorts" | "long_flush";
 
-export interface FundingFeature extends FeatureMeta {
-  /** Funding z-score vs the 30d distribution, in sd. */
-  z: number
-  /** 8h-equivalent rate as a fraction (0.0001 = 0.01%). */
-  rate8h: number
-  /** Per-venue 8h rates; null when a venue is unavailable. Keys are whatever the producer has. */
-  venues: Partial<Record<FundingVenueKey, number | null>>
-  spreadRatio: number
-  crowded: "long" | "short" | null
-  /** be-features extra. */
-  regime?: "neutral" | "crowded_long" | "crowded_short"
-  n?: number
+export interface OiFeature {
+  asOf: number;
+  ttlMs: number;
+  oi: number; // base currency units (OKX oiCcy)
+  oiUsd: number | null;
+  change1hPct: number | null;
+  change24hPct: number | null;
+  sd: number | null; // change24hPct in units of its 30-day daily SD
+  priceChange24hPct: number | null;
+  quadrant: OiQuadrant | null; // null when |sd| < 1 or price change unknown
+  quadrantRaw: OiQuadrant | null; // sign-only label regardless of the 1 SD filter
 }
 
-export type OiQuadrantKey = "new_longs" | "short_cover" | "new_shorts" | "long_flush"
-
-export interface OiFeature extends FeatureMeta {
-  change24hPct: number
-  /** OI change in sd of its 30d distribution. */
-  sd: number
-  quadrant: OiQuadrantKey | null
-  priceChange24hPct: number
-  /** be-features extras. */
-  oi?: number
-  oiUsd?: number
-  change1hPct?: number
-  quadrantRaw?: OiQuadrantKey | null
+export interface CvdFeature {
+  asOf: number;
+  ttlMs: number;
+  cum4hUsd: number; // taker buy - sell over the last 4h, USD
+  slope1hUsd: number; // last 1h taker buy - sell, USD
+  takerRatio1h: number | null; // buy/sell over the last hour
+  takerImbalance15m: number | null; // (buy-sell)/(buy+sell) over the last 15 min, -1..1
+  series15m: number[]; // cumulative CVD at 15-minute steps over the last 4h (16 points), USD, oldest first
+  qhImbalance: number | null; // EMA(4) of quarter-hour boundary imbalance (be-catalyst's store); null until it exists
+  qhReadings: number[]; // last readings behind qhImbalance, oldest first
 }
 
-export interface CvdFeature extends FeatureMeta {
-  cum4hUsd: number
-  slope1hUsd: number
-  takerRatio1h: number
-  /** Quarter-hour taker imbalance, EMA of the last 4 readings; null before the first :15 boundary. */
-  qhImbalance: number | null
-  /** Raw quarter-hour readings, oldest first (up to 4). */
-  qhReadings: number[]
-  /** 15m cumulative CVD series for the sparkline, oldest first (16 points over 4h). */
-  series15m?: number[]
-  /** be-features extra. */
-  takerImbalance15m?: number
+export interface BookFeature {
+  asOf: number;
+  ttlMs: number;
+  imbalance: number; // (bid-ask)/(bid+ask) within `band`
+  band: number; // fraction of mid the imbalance was measured in (0.01 / 0.02 / 0.05)
+  bidWallPct: number | null; // distance of the nearest bid wall from mid, negative
+  askWallPct: number | null; // distance of the nearest ask wall from mid, positive
+  venue: "OKX" | "Hyperliquid";
 }
 
-export interface BookFeature extends FeatureMeta {
-  imbalance: number
-  band: number
-  /** be-features extras: signed distance to the nearest wall on each side, and the sampled venue. */
-  bidWallPct?: number | null
-  askWallPct?: number | null
-  venue?: string
+export interface VolFeature {
+  asOf: number;
+  ttlMs: number;
+  dvol: number; // Deribit DVOL, annualized vol in percent
+  dvolPct: number | null; // 1-year percentile, 0..100
+  dvolPct90d: number | null; // 90-day percentile, 0..100
+  change24hPct: number | null; // DVOL change vs the prior daily close, percent
+  expectedMove24hPct: number; // 1 sd, DVOL / sqrt(365)
+  expectedMove24hUsd: number | null;
+  expectedMove4hPct: number; // 1 sd, DVOL / sqrt(365 * 6)
+  expectedMove4hUsd: number | null;
 }
 
-export interface VolFeature extends FeatureMeta {
-  dvol: number
-  /** DVOL percentile over its 1y history, 0..100. */
-  dvolPct: number
-  expectedMove24hPct: number
-  expectedMove24hUsd: number
-  change24hPct: number
-  /** be-features extras; the 4h tile uses these when present, else sqrt-time scaling of the 24h move. */
-  dvolPct90d?: number
-  expectedMove4hPct?: number
-  expectedMove4hUsd?: number
+export interface BasisFeature {
+  asOf: number;
+  ttlMs: number;
+  annPct: number; // annualized basis of the nearest dated future > 30d, percent
+  z: number | null; // vs up to 90 daily samples collected by this process
+  curveSlope: number | null; // b(~6m) - b(~3m), percentage points
+  stress: boolean; // nearest dated future (>= 7d) marks below index: backwardation
+  front: { instrument: string; daysToExpiry: number; annPct: number } | null;
+  n: number; // samples behind z
 }
 
-export interface BasisFeature extends FeatureMeta {
-  annPct: number
-  /** null until 10 daily samples exist in the per-process store. */
-  z: number | null
-  curveSlope: number
-  stress: boolean
-  /** be-features extras. */
-  front?: { instrument: string; daysToExpiry: number; annPct: number }
-  n?: number
+export interface MacroRatesFeature {
+  asOf: number;
+  ttlMs: number;
+  realYield10y: number | null; // percent
+  realYield5dChgBp: number | null;
+  dxy: number | null;
+  dxy5dChgPct: number | null;
+  corr30d: number | null; // rolling 30-day correlation of the asset's daily returns with the stronger of the two drivers
+  corrRealYield30d: number | null;
+  corrDxy30d: number | null;
+  gated: boolean; // true = |corr30d| < 0.3, feature silenced
+  realYieldSeries: number[]; // last 20 daily closes, oldest first
+  dxySeries: number[];
 }
 
-export interface MacroRatesFeature extends FeatureMeta {
-  realYield10y: number
-  realYield5dChgBp: number
-  dxy: number
-  dxy5dChgPct: number
-  /** The stronger of corrRealYield30d / corrDxy30d. */
-  corr30d: number
-  /** true when |corr30d| < 0.3. */
-  gated: boolean
-  /** Last 20 daily closes, oldest first. */
-  realYieldSeries?: number[]
-  dxySeries?: number[]
-  /** be-features extras. */
-  corrRealYield30d?: number
-  corrDxy30d?: number
-}
-
-export interface StablecoinFeature extends FeatureMeta {
-  supply7dChgPct: number
-  z: number
-  usdtMint24hUsd: number
-  flag: "tailwind" | "headwind" | null
-  /** be-features extras; `mintFlag` is the >= $500M flag computed upstream. */
-  supplyUsd?: number
-  usdcMint24hUsd?: number
-  mintFlag?: boolean
+export interface StablecoinFeature {
+  asOf: number;
+  ttlMs: number;
+  supplyUsd: number;
+  supply7dChgPct: number | null;
+  z: number | null; // 7d change vs 1 year of 7d changes
+  usdtMint24hUsd: number | null; // USDT circulating - circulatingPrevDay
+  usdcMint24hUsd: number | null;
+  flag: "tailwind" | "headwind" | null; // z > +1 / z < -1
+  mintFlag: boolean; // usdtMint24hUsd >= $500M
 }
 
 export interface SessionFeature {
-  name: "asia" | "london" | "us" | "off"
-  volScale: number
-  weekend: boolean
-  haircutPct: number
-  gate: "none" | "late_utc" | "nonc_weekend"
-  lowLiquidity?: boolean
-  hourUtc?: number
+  asOf: number;
+  ttlMs: number;
+  name: "asia" | "london" | "us" | "off";
+  volScale: number; // expected-move multiplier: US 1.3, Asia 0.8, London 1.0, off 0.9; weekend 0.7
+  weekend: boolean;
+  lowLiquidity: boolean; // weekend or off-hours
+  haircutPct: number; // confidence haircut suggested (weekend 10)
+  gate: "none" | "late_utc" | "nonc_weekend";
+  hourUtc: number;
 }
 
-export interface Features {
-  funding: FundingFeature | null
-  oi: OiFeature | null
-  cvd: CvdFeature | null
-  book: BookFeature | null
-  vol: VolFeature | null
-  basis: BasisFeature | null
-  macroRates: MacroRatesFeature | null
-  stablecoins: StablecoinFeature | null
-  session?: SessionFeature | null
-  /** Not produced by be-features (coupling stays at regime.macroCoupling); kept optional for the F2 block. */
-  macroCoupling?: { corr30d: number; mult: number } | null
+export interface SignalFeatures {
+  funding: FundingFeature | null;
+  oi: OiFeature | null;
+  cvd: CvdFeature | null;
+  book: BookFeature | null;
+  vol: VolFeature | null;
+  basis: BasisFeature | null;
+  macroRates: MacroRatesFeature | null;
+  stablecoins: StablecoinFeature | null;
+  session: SessionFeature;
 }
+
+export type Features = SignalFeatures
+export type OiQuadrantKey = OiQuadrant
+export type FundingVenueKey = keyof FundingFeature["venues"]
+export type FeatureMeta = { asOf?: number; ttlMs?: number }
 
 /** Reads `features` off a response object without requiring the canonical field to exist on the type yet. */
 export function readFeatures(d: unknown): Partial<Features> | null {

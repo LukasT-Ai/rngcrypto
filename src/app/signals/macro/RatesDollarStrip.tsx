@@ -19,8 +19,8 @@ export type RatesAsset = "BTC" | "GOLD" | "WTI"
 
 const GATE_CORR = 0.3
 
-function effectColor(open: boolean, corr: number, change: number): string | undefined {
-  if (!open || change === 0) return undefined
+function effectColor(open: boolean, corr: number | null, change: number | null): string | undefined {
+  if (!open || corr == null || change == null || change === 0) return undefined
   const product = -corr * change
   return product > 0 ? GREEN : RED
 }
@@ -29,7 +29,8 @@ export const RatesDollarStrip = React.memo(function RatesDollarStrip({ macroRate
   const now = useNow(60_000)
   const r = macroRates ?? null
   const off = r == null
-  const open = !off && !r.gated && Math.abs(r.corr30d) >= GATE_CORR
+  const corr = r?.corr30d ?? null
+  const open = !off && !r.gated && corr != null && Math.abs(corr) >= GATE_CORR
   const stale = staleLabel(r, now)
   const dim = !off && !open
 
@@ -39,16 +40,18 @@ export const RatesDollarStrip = React.memo(function RatesDollarStrip({ macroRate
 
   const gateTip = off
     ? "Rolling 30-day correlation between the asset and the real yield / dollar complex. Unavailable while the Treasury feed is off."
-    : open
-      ? `30d correlation ${r.corr30d.toFixed(2)}: rates and the dollar are moving ${assetWord} right now, so their 5-day changes are colored by the sign of their effect on ${assetWord} (a rise in yields with a negative correlation is a headwind, shown red).`
-      : `30d correlation ${r.corr30d.toFixed(2)} is inside ±${GATE_CORR}: ${assetWord} is not trading off rates or the dollar at the moment, so these tiles are shown for context only and carry no color.`
+    : corr == null
+      ? "Correlation not available yet (the 30-day window is still filling), so the gate stays closed and these tiles carry no color."
+      : open
+      ? `30d correlation ${corr.toFixed(2)}: rates and the dollar are moving ${assetWord} right now, so their 5-day changes are colored by the sign of their effect on ${assetWord} (a rise in yields with a negative correlation is a headwind, shown red).`
+      : `30d correlation ${corr.toFixed(2)} is inside ±${GATE_CORR}: ${assetWord} is not trading off rates or the dollar at the moment, so these tiles are shown for context only and carry no color.`
 
   return (
     <div className={cn("space-y-2", className)} data-gate={off ? "off" : open ? "open" : "closed"}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-white/50">Rates &amp; dollar</span>
         <Chip variant={off ? "neutral" : open ? "neutral" : "vol"} size="label" tip={gateTip} className={cn(off && "opacity-70")}>
-          {off ? "corr30d — · feed off" : `corr30d ${r.corr30d >= 0 ? "+" : ""}${r.corr30d.toFixed(2)} · ${open ? "active" : "silenced"}`}
+          {off ? "corr30d — · feed off" : corr == null ? "corr30d pending · silenced" : `corr30d ${corr >= 0 ? "+" : ""}${corr.toFixed(2)} · ${open ? "active" : "silenced"}`}
         </Chip>
         {!off && !open && <span className="text-[10px] text-white/40">gate closed · context only</span>}
       </div>
@@ -56,15 +59,15 @@ export const RatesDollarStrip = React.memo(function RatesDollarStrip({ macroRate
         <FeatureTile
           label="10y real yield"
           icon={Landmark}
-          off={off}
+          off={off || r.realYield10y == null}
           offText="Treasury feed off"
           stale={stale}
           hint={`10-year TIPS real yield from the Treasury daily series. Higher real yields raise the opportunity cost of holding ${assetWord}; the 5-day change in basis points is what the correlation gate scores.`}
-          value={r ? `${r.realYield10y.toFixed(2)}%` : null}
+          value={r?.realYield10y != null ? `${r.realYield10y.toFixed(2)}%` : null}
           sub={
             r ? (
               <>
-                5d <span style={yieldColor ? { color: yieldColor } : undefined}>{r.realYield5dChgBp >= 0 ? "+" : ""}{Math.round(r.realYield5dChgBp)}bp</span>
+                5d <span style={yieldColor ? { color: yieldColor } : undefined}>{r.realYield5dChgBp == null ? "—" : `${r.realYield5dChgBp >= 0 ? "+" : ""}${Math.round(r.realYield5dChgBp)}bp`}</span>
                 {dim ? " · silenced" : ""}
               </>
             ) : null
@@ -74,15 +77,15 @@ export const RatesDollarStrip = React.memo(function RatesDollarStrip({ macroRate
         <FeatureTile
           label="DXY"
           icon={DollarSign}
-          off={off}
+          off={off || r.dxy == null}
           offText="Treasury feed off"
           stale={stale}
           hint={`US dollar index. A stronger dollar usually weighs on ${assetWord}; the 5-day change is colored by its effect on ${assetWord} only when the correlation gate is open.`}
-          value={r ? r.dxy.toFixed(1) : null}
+          value={r?.dxy != null ? r.dxy.toFixed(1) : null}
           sub={
             r ? (
               <>
-                5d <span style={dxyColor ? { color: dxyColor } : undefined}>{r.dxy5dChgPct >= 0 ? "+" : ""}{r.dxy5dChgPct.toFixed(1)}%</span>
+                5d <span style={dxyColor ? { color: dxyColor } : undefined}>{r.dxy5dChgPct == null ? "—" : `${r.dxy5dChgPct >= 0 ? "+" : ""}${r.dxy5dChgPct.toFixed(1)}%`}</span>
                 {dim ? " · silenced" : ""}
               </>
             ) : null

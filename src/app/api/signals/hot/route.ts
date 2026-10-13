@@ -84,6 +84,11 @@ export async function GET(req: NextRequest) {
         stopLoss: data.call?.stopLoss ?? 0,
         tp1: data.call?.tp1 ?? 0,
         riskReward: data.call?.riskReward ?? 0,
+        // Calibrated P(TP1) with its interval; null until the calibration gate (100 decided on this engine
+        // version) opens. The board shows confidence with the "evidence" label until then.
+        pTp1: typeof data.call?.pTp1 === "number" ? data.call.pTp1 : null,
+        pTp1Ci: Array.isArray(data.call?.pTp1Ci) ? (data.call.pTp1Ci as [number, number]) : null,
+        calibrationVersion: typeof data.call?.calibrationVersion === "string" ? data.call.calibrationVersion : null,
         regime: data.call?.regime ?? "unknown",
         reasoning: (data.call?.reasoning ?? []).slice(0, 3),
         volSpikeRatio: data.volume?.spikeRatio ?? null,

@@ -156,6 +156,24 @@ describe("buildCalibration gate and guard", () => {
     expect(pTp1For(70, "LONG", "other-version", file).pTp1).toBeNull();
   });
 
+  it("honours the CALIBRATION=off kill switch", () => {
+    let seed = 3;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const rows = Array.from({ length: 120 }, (_, i) => {
+      const score = Math.round(rnd() * 80);
+      return decided(i, score, rnd() < sigmoid(0.05 * score - 1.5));
+    });
+    const file = buildCalibration(rows, V, 1_790_900_000_000);
+    expect(file.active).toBe(true);
+    process.env.CALIBRATION = "off";
+    try {
+      expect(pTp1For(70, "LONG", V, file).pTp1).toBeNull();
+    } finally {
+      delete process.env.CALIBRATION;
+    }
+    expect(pTp1For(70, "LONG", V, file).pTp1).not.toBeNull();
+  });
+
   it("reverts when the previously published mapping scores worse than raw confidence over the last 50", () => {
     // Stated confidence tracks the outcome well; a stale inverted mapping must lose the guard.
     const rows = Array.from({ length: 120 }, (_, i) => decided(i, (i % 2 === 0 ? 70 : 10), i % 2 === 0));

@@ -10,6 +10,7 @@
 import { appendSignal, type ShadowClass, type SignalContext, type SignalInputs } from "../../app/api/signals/history/logger";
 import { FACTOR } from "./factors";
 import { stampActiveSetups } from "./setup-tracker";
+import { pTp1For } from "./calibration";
 import { fetchOrderFlowRaw, summarizeOrderFlow, type LiquidationSummary, type OrderBookSummary, type OrderFlowRaw } from "./orderflow";
 
 // Bump whenever scoring behaviour changes; every logged signal carries it so history can be bucketed.
@@ -4865,6 +4866,9 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
     }
     return best == null ? null : Math.round(best);
   })();
+  // Calibrated P(TP1) (PR 17): nulls until >= 100 decided calls exist on this engine version and the
+  // auto-revert guard is clear. Confidence is untouched; this is a display layer on top of it.
+  const calib = pTp1For(call.weightedScore, call.bias, ENGINE_VERSION);
   const logInputs: SignalInputs = {
     weightedScore: call.weightedScore,
     confidenceRaw: clamp(Math.round(50 + Math.abs(call.weightedScore) / 2), 0, 100),
@@ -4879,8 +4883,8 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
     tuning: { ...getTuning() },
     gateNotes: call.gateNotes,
     engineVersion: ENGINE_VERSION,
-    calibrationVersion: null,
-    pTp1: null,
+    calibrationVersion: calib.calibrationVersion,
+    pTp1: calib.pTp1,
     regime: call.regimeLabel ?? null,
     regimeGate: call.regimeGate ?? null,
     markAtSignal: markPrice != null && Number.isFinite(markPrice) ? round(markPrice, dec) : null,
@@ -4952,8 +4956,9 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       shadowClass = null;
     }
   }
-  // Surfaced on the call so the verdict can say "declined ... logged as shadow" (design F2.10).
-  Object.assign(call, { shadowClass });
+  // Surfaced on the call: shadowClass for the verdict's "declined ... logged as shadow" line (design F2.10),
+  // confidenceRaw for the tooltip, pTp1 / pTp1Ci / calibrationVersion for the probability chip (F1.1).
+  Object.assign(call, { shadowClass, confidenceRaw: logInputs.confidenceRaw, pTp1: calib.pTp1, pTp1Ci: calib.pTp1Ci, calibrationVersion: calib.calibrationVersion });
 
   // ── Build response ─────────────────────────────────────────────────────────
   // A limit entry (resting at support/resistance) must actually trade before the call counts; see the fill model.

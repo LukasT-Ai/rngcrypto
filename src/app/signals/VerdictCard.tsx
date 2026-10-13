@@ -4,7 +4,7 @@ import React from "react"
 import { ArrowDownRight, ArrowUpRight, CalendarClock, History, Pause, RefreshCw, Repeat, ShieldAlert, Target, TrendingDown, TrendingUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Recommendation, RecoLink, SectionId } from "./recommendation"
-import type { EventWindow, SignalsResponse } from "./types"
+import type { EventWindowInfo, SignalsResponse } from "./types"
 import { AMBER, BRAND, Chip, EYEBROW, FOCUS_RING, GREEN, LABEL, RED, Tip, dirLabel, fmt, fmtMinutes, fmtPrice, pctColor, pctFrom, signed, timeAgo, useNow } from "./shared"
 import { RegimeStrip } from "./RegimeStrip"
 
@@ -12,6 +12,12 @@ const TONE: Record<RecoLink["tone"], string> = { pos: GREEN, neg: RED, neutral: 
 const MIN_RR = 1.5
 const STALE_S = 90
 const NO_SCAN_S = 15 * 60
+const SHADOW_LABEL: Record<NonNullable<SignalsResponse["call"]["shadowClass"]>, string> = {
+  wait_lean: "lean below the publish bar",
+  htf_blocked_short: "short blocked by the higher timeframe",
+  regime_blocked: "blocked by the regime gate",
+  event_gated: "gated by the event window",
+}
 
 function JumpLink({ link, onJump, className }: { link: RecoLink; onJump: (anchor: SectionId) => void; className?: string }) {
   if (!link.anchor) return <span className={cn("text-white/75", className)}>{link.text}</span>
@@ -52,14 +58,13 @@ function EventClock({ at, tickMs, prefix }: { at: number; tickMs: number; prefix
   )
 }
 
-function EventWindowBar({ ew, callTs, onJump }: { ew: EventWindow; callTs: number; onJump: (anchor: SectionId) => void }) {
-  if (!ew.event) return null
-  // minutesLeft counts down to the release before it; minutesSince counts up after it.
-  const minutesTo = ew.minutesSince != null ? -ew.minutesSince : ew.minutesLeft
-  const releaseAt = callTs + minutesTo * 60_000
+function EventWindowBar({ ew, callTs, onJump }: { ew: EventWindowInfo; callTs: number; onJump: (anchor: SectionId) => void }) {
+  const title = ew.event?.title ?? "Scheduled release"
+  // Release instant: the event time when present, else reconstructed from the signed minutes-since at call time.
+  const releaseAt = ew.event?.time ? new Date(ew.event.time).getTime() : ew.minutesSince != null ? callTs - ew.minutesSince * 60_000 : null
   const label = ew.state === "pre" ? "Event window · pre" : ew.state === "blackout" ? "No entry" : ew.state === "releasing" ? "Releasing" : "Post window"
   const gate = ew.firstMoveGate
-  const gateWord = gate === "confirmed" ? "confirmed" : gate === "unconfirmed" ? "failed" : "pending"
+  const gatePct = ew.firstMovePct != null ? ` ${signed(ew.firstMovePct, 1)}%` : ""
   const frame =
     ew.state === "blackout"
       ? { borderColor: `${AMBER}66`, backgroundColor: `${AMBER}14` }
@@ -76,21 +81,21 @@ function EventWindowBar({ ew, callTs, onJump }: { ew: EventWindow; callTs: numbe
       }}
       className={cn("mt-2.5 flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-1.5 text-[12px] text-white/70 transition-colors hover:bg-white/[0.03]", FOCUS_RING)}
       style={frame}
-      aria-label={`${label}: ${ew.event.title}. Jump to the calendar`}
+      aria-label={`${label}: ${title}. Jump to the calendar`}
     >
       <span className={cn(EYEBROW, "shrink-0")} style={{ color: ew.state === "blackout" ? AMBER : ew.state === "releasing" ? BRAND : "rgba(255,255,255,0.6)" }}>
         {label}
       </span>
-      <span className="font-medium text-white/85">{ew.event.title}</span>
+      <span className="font-medium text-white/85">{title}</span>
       {ew.state === "pre" && (
         <>
-          <EventClock at={releaseAt} tickMs={tickMs} />
-          <span className="text-white/50">· size x{ew.sizeMult} from T-60m · no new entries from T-30m</span>
+          {releaseAt != null ? <EventClock at={releaseAt} tickMs={tickMs} /> : <span className="font-mono tabular-nums text-white/90">in {fmtMinutes(ew.minutesLeft)}</span>}
+          <span className="text-white/50">· size x{ew.sizeMult} · no new entries from T-30m</span>
         </>
       )}
       {ew.state === "blackout" && (
         <>
-          <EventClock at={releaseAt} tickMs={tickMs} prefix={minutesTo > 0 ? "releasing " : "released "} />
+          {releaseAt != null ? <EventClock at={releaseAt} tickMs={tickMs} prefix={(ew.minutesSince ?? -1) < 0 ? "releasing " : "released "} /> : <span className="font-mono tabular-nums text-white/90">{fmtMinutes(ew.minutesLeft)} left</span>}
           <span className="text-white/50">· calls paused until T+10m</span>
         </>
       )}
@@ -98,7 +103,8 @@ function EventWindowBar({ ew, callTs, onJump }: { ew: EventWindow; callTs: numbe
         <>
           <span className="text-white/50">out · first-5-minute gate:</span>
           <span className="font-mono" style={{ color: gate === "unconfirmed" ? RED : gate === "confirmed" ? GREEN : "rgba(255,255,255,0.8)" }}>
-            {gateWord}
+            {gate ?? "pending"}
+            {gatePct}
           </span>
         </>
       )}
@@ -108,9 +114,11 @@ function EventWindowBar({ ew, callTs, onJump }: { ew: EventWindow; callTs: numbe
           <span className="text-white/50">· size x{ew.sizeMult} · stop x{ew.stopMult} · confirmation</span>
           <span className="font-mono" style={{ color: gate === "unconfirmed" ? RED : "rgba(255,255,255,0.8)" }}>
             {gate === "unconfirmed" ? "reversing" : gate === "confirmed" ? "confirming" : "pending"}
+            {gatePct}
           </span>
         </>
       )}
+      {ew.note && <span className="hidden text-white/50 lg:inline">· {ew.note}</span>}
       <ArrowDownRight className="ml-auto size-3 text-white/50" />
     </a>
   )
@@ -209,7 +217,7 @@ export function VerdictCard({
   const gradeTip =
     p != null
       ? `Calibrated probability of reaching TP1${call.calibrationVersion ? ` (calibration ${call.calibrationVersion})` : ""}${ci ? `, 95% interval ${Math.round(ci[0] * 100)}–${Math.round(ci[1] * 100)}%` : ""}. Raw evidence strength ${call.confidenceRaw ?? call.confidence}.${ciWide ? " Wide interval: few decided calls in this bucket." : ""}`
-      : `Evidence strength ${call.confidence} is the raw factor score, not a probability. A calibrated P(TP1) appears after 100 decided calls on engine ${d.engineVersion ?? "current"}.`
+      : `Evidence strength ${call.confidence} is the raw factor score, not a probability. A calibrated probability appears after 100 decided calls on engine ${d.engineVersion ?? "current"}.`
 
   // Plan numbers
   const risk = Math.abs(call.entry - call.stopLoss)
@@ -219,11 +227,13 @@ export function VerdictCard({
   const holdFallback = reco.plan?.horizon ?? d.activeSetups?.[0]?.expectedDuration ?? "24h"
   const sizing = call.sizing ?? null
   const sizeFinal = sizing ? sizing.total : call.sizeMultiplier ?? 1
+  // Parts do not multiply to the total (headline and counter-trend combine by min, the event window multiplies on top):
+  // show the two largest haircuts and print the engine's total.
   const sizeParts = sizing ? [...sizing.parts].filter((x) => x.mult !== 1).sort((a, b) => Math.abs(1 - b.mult) - Math.abs(1 - a.mult)) : []
   const sizeSub = sizing ? (sizeParts.length ? sizeParts.slice(0, 2).map((x) => x.label).join(" · ") : "full size") : call.sizeMultiplier != null && call.sizeMultiplier < 1 ? "gap risk" : "full size"
   const sizeTip = sizing
     ? sizing.parts.length
-      ? sizing.parts.map((x) => `${x.label} x${x.mult}`).join("\n")
+      ? [...sizing.parts.map((x) => `${x.label} x${x.mult}`), `total x${sizing.total}${call.stopMultiplier != null && call.stopMultiplier !== 1 ? ` · stop x${call.stopMultiplier}` : ""}`].join("\n")
       : "No size haircuts apply."
     : reco.plan?.sizeNote ?? "Size multiplier from the engine's gap-risk rule."
 
@@ -325,6 +335,11 @@ export function VerdictCard({
         </span>
       </div>
       <p className="mt-1.5 text-[13px] text-white/65 leading-relaxed max-w-3xl">{reco.oneLiner}</p>
+      {dir === "WAIT" && call.shadowClass && (
+        <p className="mt-0.5 text-[11px] text-white/50">
+          declined: {SHADOW_LABEL[call.shadowClass]} · logged as shadow
+        </p>
+      )}
 
       {/* Row 3: cloud / 200MA / ADX regime strip, with the macro coupling chip for the three macro lenses */}
       <RegimeStrip regime={d.regime} onJump={onJump} showCoupling={lensCoupling} />

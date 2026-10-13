@@ -26,7 +26,9 @@ describe("matchEventDef", () => {
     expect(matchEventDef("Non-Farm Employment Change")?.id).toBe("nfp");
     expect(matchEventDef("Crude Oil Inventories")?.id).toBe("eia_crude");
     expect(matchEventDef("FOMC Press Conference")?.id).toBe("fomc_presser");
-    expect(matchEventDef("Fed Chair Powell Speaks")?.id).toBe("fed_speech");
+    expect(matchEventDef("Fed Chair Powell Speaks")?.id).toBe("fed_chair_speech");
+    expect(matchEventDef("Fed Chairman Warsh Speaks")?.id).toBe("fed_chair_speech");
+    expect(matchEventDef("FOMC Member Waller Speaks")?.id).toBe("fed_speech");
     expect(matchEventDef("Advance GDP q/q")?.id).toBe("gdp_qq");
   });
   it("does not match unrelated titles", () => {

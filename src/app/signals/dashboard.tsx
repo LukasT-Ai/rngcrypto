@@ -198,14 +198,13 @@ function SessionChip({ crypto, session }: { crypto: boolean; session?: SessionFe
     const gate = session.gate && session.gate !== "none" ? session.gate : null
     const word = session.weekend ? "Weekend" : session.name === "us" ? "US session" : session.name === "london" ? "London" : session.name === "asia" ? "Asia" : "Late UTC"
     const label =
-      session.label ??
-      (gate === "late_utc"
+      gate === "late_utc"
         ? "late UTC · entries gated"
         : gate === "nonc_weekend"
           ? "market closed · WAIT"
-          : [word, session.volMult != null ? `vol x${session.volMult}` : null, session.sizeMult != null && session.sizeMult !== 1 ? `size x${session.sizeMult}` : null].filter(Boolean).join(" · "))
+          : [word, session.volScale != null ? `vol x${session.volScale}` : null, session.haircutPct ? `haircut ${session.haircutPct}%` : null].filter(Boolean).join(" · ")
     return (
-      <Chip variant={gate ? "warning" : "vol"} size="label" className="hidden md:inline-flex" tip={gateTip(gate) ?? "Trading session from the engine: volatility and size multipliers by session and weekend."}>
+      <Chip variant={gate ? "warning" : "vol"} size="label" className="hidden md:inline-flex" tip={gateTip(gate) ?? `Trading session from the engine: volatility scale by session${session.lowLiquidity ? ", thin liquidity" : ""}${session.haircutPct ? `, ${session.haircutPct}% confidence haircut` : ""}. Size multipliers are on the verdict SIZE tile.`}>
         {label}
       </Chip>
     )

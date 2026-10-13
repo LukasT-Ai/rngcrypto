@@ -28,6 +28,7 @@ export const KIND_WORDS: Record<string, { above: string; below: string }> = {
   oil_production: { above: "higher than expected", below: "lower than expected" },
   policy_rate: { above: "more hawkish than expected", below: "more dovish than expected" },
   sentiment: { above: "stronger than expected", below: "weaker than expected" },
+  housing: { above: "stronger than expected", below: "weaker than expected" },
 };
 
 export function computeSurprise(

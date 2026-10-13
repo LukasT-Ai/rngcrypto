@@ -99,6 +99,17 @@ const FX_ALIASES: [RegExp, string][] = [
   [/^durable goods orders$/i, "durable_goods"],
   [/^(ny empire state manufacturing index|philadelphia fed manufacturing survey|richmond fed manufacturing index)$/i, "empire_philly"],
   [/^s&p global (manufacturing|services) pmi$/i, "flash_pmi"],
+  // Housing: FXStreet lists the level ("(MoM)" with potency M) and a separate "Change" line; only the level is mapped.
+  [/^housing starts \(mom\)$/i, "housing_starts"],
+  [/^building permits \(mom\)$/i, "building_permits"],
+  [/^existing home sales \(mom\)$/i, "existing_home_sales"],
+  [/^new home sales \(mom\)$/i, "new_home_sales"],
+  [/^pending home sales \(mom\)$/i, "pending_home_sales"],
+  [/^nahb housing market index$/i, "nahb"],
+  [/^s&p\/case-shiller home price indices \(yoy\)$/i, "case_shiller"],
+  [/^housing price index \(mom\)$/i, "fhfa_hpi"],
+  [/^construction spending \(mom\)$/i, "construction_spending"],
+  [/^mba mortgage applications$/i, "mba_mortgage"],
 ];
 
 export function fxDefFor(name: string): MacroEventDef | null {

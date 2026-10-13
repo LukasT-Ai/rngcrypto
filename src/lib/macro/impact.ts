@@ -40,6 +40,11 @@ export function transmission(def: MacroEventDef, surpriseScore: number | null, r
       g = -s;
       r = -0.6 * s;
       break;
+    case "housing":
+      // Rate-sensitive activity: a beat is growth-positive and mildly hawkish, a miss is the reverse.
+      g = s;
+      r = 0.4 * s;
+      break;
     case "policy_rate":
       r = s;
       break;

@@ -217,6 +217,70 @@ export const EVENT_DEFS: MacroEventDef[] = [
     source: { provider: "NONE" },
     logic: "Flash PMIs are the earliest monthly growth read.",
   },
+  // ── Housing / real estate ─────────────────────────────────────────────────────────────────────────────────
+  // Rate-sensitive activity data: strong housing reads as growth (and keeps the Fed patient); weak housing is the
+  // first place higher rates bite, so a miss leans dovish and feeds recession talk. Price indices are shelter
+  // inflation inputs and are typed as inflation. Relevance is kept >= 0.3 so the whole block shows on every ticker.
+  {
+    id: "housing_starts", title: "Housing Starts", aliases: /^housing starts$/i, kind: "housing", importance: "medium", unit: "m", decimals: 2,
+    typicalSurpriseSD: 0.06, relevance: { BTC: 0.4, GOLD: 0.4, WTI: 0.3 },
+    source: { provider: "FRED", series: "HOUST", transform: "level_m" },
+    logic: "Starts are the most rate-sensitive activity gauge; a weak print says higher rates are biting and leans dovish, a strong print supports growth and nudges yields up.",
+  },
+  {
+    id: "building_permits", title: "Building Permits", aliases: /^building permits$/i, kind: "housing", importance: "medium", unit: "m", decimals: 2,
+    typicalSurpriseSD: 0.05, relevance: { BTC: 0.4, GOLD: 0.4, WTI: 0.3 },
+    source: { provider: "FRED", series: "PERMIT", transform: "level_m" },
+    logic: "Permits lead starts by one to two months; the forward-looking half of the Census housing report.",
+  },
+  {
+    id: "existing_home_sales", title: "Existing Home Sales", aliases: /^existing home sales$/i, kind: "housing", importance: "medium", unit: "m", decimals: 2,
+    typicalSurpriseSD: 0.1, relevance: { BTC: 0.4, GOLD: 0.4, WTI: 0.3 },
+    source: { provider: "NONE" },
+    logic: "Roughly 90% of home sales; the cleanest read on whether mortgage rates are freezing demand. A miss leans dovish, a beat supports growth.",
+  },
+  {
+    id: "new_home_sales", title: "New Home Sales", aliases: /^new home sales$/i, kind: "housing", importance: "medium", unit: "k", decimals: 0,
+    typicalSurpriseSD: 40, relevance: { BTC: 0.4, GOLD: 0.4, WTI: 0.3 },
+    source: { provider: "FRED", series: "HSN1F", transform: "level" },
+    logic: "Builder sales are volatile and heavily revised, but they move first when rates change; markets react to large misses.",
+  },
+  {
+    id: "pending_home_sales", title: "Pending Home Sales m/m", aliases: /^pending home sales m\/m$/i, kind: "housing", importance: "medium", unit: "pct", decimals: 1,
+    typicalSurpriseSD: 2.5, relevance: { BTC: 0.3, GOLD: 0.3, WTI: 0.3 },
+    source: { provider: "NONE" },
+    logic: "Contract signings lead existing sales by one to two months.",
+  },
+  {
+    id: "nahb", title: "NAHB Housing Market Index", aliases: /^nahb housing market index$/i, kind: "housing", importance: "medium", unit: "index", decimals: 0,
+    typicalSurpriseSD: 2, relevance: { BTC: 0.3, GOLD: 0.3, WTI: 0.3 },
+    source: { provider: "NONE" },
+    logic: "Builder confidence is the earliest monthly housing read; sub-50 means more builders see conditions as poor.",
+  },
+  {
+    id: "case_shiller", title: "S&P/Case-Shiller HPI y/y", aliases: /^s&p\/cs composite-20 hpi y\/y$/i, kind: "inflation", importance: "medium", unit: "pct", decimals: 1,
+    typicalSurpriseSD: 0.4, relevance: { BTC: 0.4, GOLD: 0.5, WTI: 0.2 },
+    source: { provider: "FRED", series: "CSUSHPINSA", transform: "yoy_pct" },
+    logic: "Home prices feed shelter inflation with a lag of roughly a year; hotter prices keep core CPI sticky and the Fed cautious.",
+  },
+  {
+    id: "fhfa_hpi", title: "FHFA House Price Index m/m", aliases: /^hpi m\/m$/i, kind: "inflation", importance: "medium", unit: "pct", decimals: 1,
+    typicalSurpriseSD: 0.3, relevance: { BTC: 0.3, GOLD: 0.4, WTI: 0.2 },
+    source: { provider: "NONE" },
+    logic: "Conforming-mortgage home prices; same shelter-inflation read as Case-Shiller, released the same morning.",
+  },
+  {
+    id: "construction_spending", title: "Construction Spending m/m", aliases: /^construction spending m\/m$/i, kind: "housing", importance: "low", unit: "pct", decimals: 1,
+    typicalSurpriseSD: 0.5, relevance: { BTC: 0.3, GOLD: 0.3, WTI: 0.3 },
+    source: { provider: "FRED", series: "TTLCONS", transform: "mom_pct" },
+    logic: "Residential plus non-residential outlays; a GDP input that rarely moves markets on its own.",
+  },
+  {
+    id: "mba_mortgage", title: "MBA Mortgage Applications", aliases: /^mba mortgage applications$/i, kind: "housing", importance: "low", unit: "pct", decimals: 1,
+    typicalSurpriseSD: 4, relevance: { BTC: 0.3, GOLD: 0.3, WTI: 0.3 },
+    source: { provider: "NONE" },
+    logic: "Weekly mortgage demand; the fastest read on how rate moves hit housing, but noisy week to week.",
+  },
 ];
 
 export function matchEventDef(title: string): MacroEventDef | null {

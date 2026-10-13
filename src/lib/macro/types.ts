@@ -19,6 +19,7 @@ export type EventKind =
   | "fed_communication"
   | "sentiment"
   | "auction"
+  | "housing"
   | "crypto";
 
 export type Unit = "pct" | "k" | "m" | "index" | "mb" | "rate" | "text";

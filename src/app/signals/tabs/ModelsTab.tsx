@@ -487,6 +487,40 @@ function OilForecast({ f, price }: { f: NonNullable<SignalsResponse["oilForecast
   )
 }
 
+// TREND / TIMING / FLOW block bars (P1-13, F1.1 call.blocks): one signed two-arm bar per block, -100..100.
+// Direction is the arm side, magnitude the arm length; the number sits right-aligned, never a bar length.
+const BLOCKS: { key: "trend" | "timing" | "flow"; label: string; what: string }[] = [
+  { key: "trend", label: "Trend", what: "regime, market structure, higher timeframes" },
+  { key: "timing", label: "Timing", what: "momentum, bands, divergences, patterns, exhaustion" },
+  { key: "flow", label: "Flow", what: "volume, derivatives, liquidations, ETF flows" },
+]
+
+function BlockBars({ blocks }: { blocks: { trend: number; timing: number; flow: number } }) {
+  return (
+    <div className={cn(SURFACE, "px-4 py-2")}>
+      {BLOCKS.map((b) => {
+        const v = Math.max(-100, Math.min(100, blocks[b.key]))
+        const color = v > 0 ? GREEN : v < 0 ? RED : "rgba(255,255,255,0.5)"
+        const opacity = Math.abs(v) >= 60 ? 1 : Math.abs(v) >= 25 ? 0.7 : 0.5
+        return (
+          <div key={b.key} className="flex items-center gap-3 py-2 border-b border-white/[0.04] last:border-0">
+            <Tip content={`${b.label} block: ${b.what}. Score ${signed(v)} of ±100.`}>
+              <span className="w-32 sm:w-36 shrink-0 text-[13px] font-semibold uppercase tracking-[0.06em] text-white/70 underline decoration-dotted decoration-white/20 underline-offset-2">{b.label}</span>
+            </Tip>
+            <div className="relative h-1.5 flex-1 rounded-full bg-white/[0.06]">
+              <span aria-hidden className="absolute left-1/2 top-[-3px] h-3 w-px bg-white/20" />
+              {v !== 0 && <span className="absolute top-0 h-1.5 rounded-full" style={{ backgroundColor: color, opacity, width: `${Math.abs(v) / 2}%`, ...(v > 0 ? { left: "50%" } : { right: "50%" }) }} />}
+            </div>
+            <span className="w-12 shrink-0 text-right font-mono text-sm font-bold tabular-nums" style={{ color, opacity: v === 0 ? 0.8 : opacity }}>
+              {signed(v)}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export interface ModelsTabProps {
   d: SignalsResponse
   mapData: MarketMapResponse | undefined
@@ -499,22 +533,46 @@ export const ModelsTab = React.memo(function ModelsTab({ d, mapData, dp, accent 
   const call = d.call
   return (
     <div className="space-y-5">
-      {call.signalFactors.length > 0 && (
+      {(call.blocks || call.signalFactors.length > 0) && (
         <div id="sec-confluence">
           <SectionTitle
             right={
-              <Tip content="Each row is one factor group. The bar is the factor's read (left = bearish, right = bullish, length = strength); the number is its weight in the score.">
-                <span className="text-[11px] text-white/50 underline decoration-dotted underline-offset-2">read · weight</span>
-              </Tip>
+              call.blocks ? (
+                <Tip content="Three blocks, -100 to 100: TREND (regime and structure), TIMING (momentum and levels), FLOW (positioning and order flow). Left = bearish, right = bullish, length = strength.">
+                  <span className="text-[11px] text-white/50 underline decoration-dotted underline-offset-2">trend · timing · flow</span>
+                </Tip>
+              ) : (
+                <Tip content="Each row is one factor group. The bar is the factor's read (left = bearish, right = bullish, length = strength); the number is its weight in the score.">
+                  <span className="text-[11px] text-white/50 underline decoration-dotted underline-offset-2">read · weight</span>
+                </Tip>
+              )
             }
           >
             Signal Confluence
           </SectionTitle>
-          <div className={cn(SURFACE, "px-4 py-2")}>
-            {call.signalFactors.map((f, i) => (
-              <FactorRow key={i} category={f.category} assessment={f.assessment} weight={f.weight} />
-            ))}
-          </div>
+          {call.blocks ? (
+            <>
+              <BlockBars blocks={call.blocks} />
+              {call.signalFactors.length > 0 && (
+                <details className="group mt-2">
+                  <summary className={cn("cursor-pointer list-none rounded-sm text-[11px] text-white/50 hover:text-white/80 transition-colors", FOCUS_RING)}>
+                    <ChevronRight className="inline size-3 transition-transform group-open:rotate-90" /> Factor rows behind the blocks ({call.signalFactors.length})
+                  </summary>
+                  <div className={cn(SURFACE, "mt-2 px-4 py-2")}>
+                    {call.signalFactors.map((f, i) => (
+                      <FactorRow key={i} category={f.category} assessment={f.assessment} weight={f.weight} />
+                    ))}
+                  </div>
+                </details>
+              )}
+            </>
+          ) : (
+            <div className={cn(SURFACE, "px-4 py-2")}>
+              {call.signalFactors.map((f, i) => (
+                <FactorRow key={i} category={f.category} assessment={f.assessment} weight={f.weight} />
+              ))}
+            </div>
+          )}
         </div>
       )}
       {mapData && <MarketMap map={mapData} accent={accent} />}

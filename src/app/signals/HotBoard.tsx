@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
 import { ArrowUpRight, Radar } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { FOCUS_RING } from "./shared"
 
 // Shared "On the board right now" cards. Used on the home page and at the top of every signals page.
 // Data comes from /api/signals/hot which scans every engine ticker and keeps the published non-WAIT calls.
@@ -30,7 +31,6 @@ export type HotResp = { timestamp: number; hot: HotPlay[]; all: HotPlay[] }
 
 const GREEN = "#00FF88"
 const RED = "#FF3B5C"
-const AMBER = "#F59E0B"
 const GRAY = "#9CA3AF"
 
 // Cloud / 200MA / ADX micro-chips for the card footer. Direction = colour, strength = opacity.
@@ -42,7 +42,7 @@ function RegimeGlyphs({ p }: { p: HotPlay }) {
   return (
     <span className="inline-flex items-center gap-1" title={title}>
       {p.cloud1d != null && (
-        <span className={cn(chip, weak && "opacity-50")} style={{ color: p.cloud1d === "above" ? GREEN : p.cloud1d === "below" ? RED : AMBER, backgroundColor: "rgba(255,255,255,0.05)" }}>
+        <span className={cn(chip, weak && "opacity-50")} style={{ color: p.cloud1d === "above" ? GREEN : p.cloud1d === "below" ? RED : GRAY, backgroundColor: "rgba(255,255,255,0.05)" }}>
           ☁ {p.cloud1d === "above" ? "↑" : p.cloud1d === "below" ? "↓" : "–"}
         </span>
       )}
@@ -79,7 +79,7 @@ export const fmtHotPrice = (n: number) =>
 
 export function HotStamp({ ts }: { ts?: number }) {
   if (!ts) return null
-  return <span className="font-mono text-xs text-white/35">refreshed {new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
+  return <span className="font-mono text-xs text-white/50">refreshed {new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
 }
 
 // One card. Pass `href` to navigate (home page) or `onSelect` to switch the ticker in place (signals pages).
@@ -88,6 +88,7 @@ export function HotPlayCard({ p, href, onSelect, compact = false }: { p: HotPlay
   const c = long ? GREEN : RED
   const cls = cn(
     "group relative block w-full overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.025] text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-white/[0.18] hover:bg-white/[0.045]",
+    FOCUS_RING,
     compact ? "p-4" : "p-5"
   )
   const body = (
@@ -98,29 +99,29 @@ export function HotPlayCard({ p, href, onSelect, compact = false }: { p: HotPlay
           <span className={cn("flex items-center justify-center rounded-xl font-mono font-black text-[#06080F]", compact ? "size-8 text-xs" : "size-10 text-sm")} style={{ backgroundColor: p.color || "#fff" }}>{p.symbol.slice(0, 3)}</span>
           <div>
             <p className={cn("font-mono font-bold text-white", compact ? "text-sm" : "text-base")}>{p.symbol}</p>
-            <p className="text-xs text-white/40">{p.label}</p>
+            <p className="text-xs text-white/50">{p.label}</p>
           </div>
         </div>
         <span className="rounded-md px-2 py-1 text-[11px] font-black tracking-wider" style={{ color: c, backgroundColor: `${c}1a` }}>{p.bias}</span>
       </div>
       <div className={cn("grid grid-cols-3 gap-3 text-xs", compact ? "mt-3" : "mt-5")}>
         <div>
-          <p className="text-white/35">Price</p>
+          <p className="text-white/50">Price</p>
           <p className="mt-0.5 font-mono font-semibold text-white/90">${fmtHotPrice(p.price)}</p>
         </div>
         <div>
-          <p className="text-white/35">24h</p>
+          <p className="text-white/50">24h</p>
           <p className="mt-0.5 font-mono font-semibold" style={{ color: p.change24h >= 0 ? GREEN : RED }}>{p.change24h >= 0 ? "+" : ""}{p.change24h.toFixed(1)}%</p>
         </div>
         <div>
-          <p className="text-white/35">Conviction</p>
-          <p className="mt-0.5 font-mono font-semibold text-white/90">{p.confidence} <span className="text-white/45">{p.grade}</span></p>
+          <p className="text-white/50">Conviction</p>
+          <p className="mt-0.5 font-mono font-semibold text-white/90">{p.confidence} <span className="text-white/50">{p.grade}</span></p>
         </div>
       </div>
-      <div className={cn("flex items-center justify-between text-[11px] text-white/35", compact ? "mt-3" : "mt-4")}>
+      <div className={cn("flex items-center justify-between text-[11px] text-white/50", compact ? "mt-3" : "mt-4")}>
         <span className="flex min-w-0 items-center gap-1.5">
           <RegimeGlyphs p={p} />
-          <span className="truncate">R:R {p.riskReward.toFixed(1)} · {p.regime}</span>
+          <span className="truncate"><span className="font-mono tabular-nums">R:R {p.riskReward.toFixed(1)}</span> · {p.regime}</span>
         </span>
         <span className="flex items-center gap-1 transition-colors group-hover:text-white/70">breakdown <ArrowUpRight className="size-3" /></span>
       </div>
@@ -131,7 +132,7 @@ export function HotPlayCard({ p, href, onSelect, compact = false }: { p: HotPlay
 }
 
 // Loading / error / empty states. Loading shows skeletons; the other two say so in words instead of spinning forever.
-export function HotBoardState({ status, compact = false, count = 6 }: { status: "loading" | "error" | "empty"; compact?: boolean; count?: number }) {
+export function HotBoardState({ status, compact = false, count = 6 }: { status: "loading" | "slow" | "error" | "empty"; compact?: boolean; count?: number }) {
   if (status === "loading") {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -142,13 +143,14 @@ export function HotBoardState({ status, compact = false, count = 6 }: { status: 
     )
   }
   const error = status === "error"
+  const slow = status === "slow"
   return (
-    <div className={cn("flex items-center gap-3 rounded-2xl border border-dashed border-white/[0.1] bg-white/[0.02] text-sm text-white/55", compact ? "px-4 py-4" : "px-5 py-6")}>
-      <Radar className={cn("size-4 shrink-0", error ? "text-[#F59E0B]" : "text-white/35")} />
+    <div role="status" className={cn("flex items-center gap-3 rounded-2xl border border-dashed border-white/[0.1] bg-white/[0.02] text-sm text-white/60", compact ? "px-4 py-4" : "px-5 py-6")}>
+      <Radar className={cn("size-4 shrink-0", error ? "text-[#F59E0B]" : "text-white/50")} />
       <div>
-        <p className="font-semibold text-white/80">{error ? "Board unavailable" : "No active setups right now"}</p>
-        <p className="text-xs text-white/40">
-          {error ? "The scanner did not answer. It retries every minute." : "Nothing on the board clears the publish bar at the moment. The scanner re-checks every minute."}
+        <p className="font-semibold text-white/80">{error ? "Board unavailable" : slow ? "Still scanning" : "No active setups right now"}</p>
+        <p className="text-xs text-white/50">
+          {error ? "The scanner did not answer. It retries every minute." : slow ? "The board scan is taking longer than usual. Cards appear as soon as it answers." : "Nothing on the board clears the publish bar at the moment. The scanner re-checks every minute."}
         </p>
       </div>
     </div>

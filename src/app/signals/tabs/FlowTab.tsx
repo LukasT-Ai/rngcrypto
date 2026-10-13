@@ -4,10 +4,10 @@ import React from "react"
 import { Activity, AlertTriangle, ArrowUpRight, BarChart3, Eye, GitBranch, Hash, Layers, Zap } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { SignalsResponse } from "../types"
-import { AMBER, GRAY, GREEN, RED, SectionTitle, StatCard, dirColor, fmt, fmtCompact, priceDp } from "../shared"
+import { AMBER, Chip, GRAY, GREEN, RED, SectionTitle, StatCard, dirColor, fmt, fmtCompact, priceDp } from "../shared"
 import { LiquidationsPanel, OrderBookPanel } from "../OrderFlowPanels"
 
-export function FlowTab({ d }: { d: SignalsResponse }) {
+export const FlowTab = React.memo(function FlowTab({ d }: { d: SignalsResponse }) {
   const vol = d.volume
   const m = d.market
   const pos = d.positioning
@@ -30,9 +30,9 @@ export function FlowTab({ d }: { d: SignalsResponse }) {
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black uppercase tracking-wider text-white/85">{vol.spikeLabel}</span>
                 <span className="font-mono text-sm font-bold text-white">{vol.spikeRatio.toFixed(1)}x</span>
-                <span className="text-[10px] text-white/40">vs 20 EMA</span>
+                <span className="text-[10px] text-white/50">vs 20 EMA</span>
               </div>
-              <p className="text-[11px] text-white/40 mt-0.5">Volume well above its 20-period average: a real move, not a drift.</p>
+              <p className="text-[11px] text-white/50 mt-0.5">Volume well above its 20-period average: a real move, not a drift.</p>
             </div>
           </div>
         )}
@@ -66,9 +66,9 @@ export function FlowTab({ d }: { d: SignalsResponse }) {
             icon={Activity}
             right={
               pos.squeezeRisk && (
-                <span className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase" style={{ backgroundColor: `${AMBER}15`, color: AMBER }} title="Crowded positioning that could unwind violently">
+                <Chip variant="warning" tip="Crowded positioning that could unwind violently">
                   {pos.squeezeRisk.replace(/_/g, " ")}
-                </span>
+                </Chip>
               )
             }
           >
@@ -115,8 +115,8 @@ export function FlowTab({ d }: { d: SignalsResponse }) {
           {m.etfFlow && <StatCard label="ETF net flow" value={`$${fmtCompact(m.etfFlow.net)}`} sub={m.etfFlow.description} color={m.etfFlow.net > 0 ? GREEN : RED} icon={ArrowUpRight} />}
           {m.deribitFunding8h != null && <StatCard label="Deribit funding 8h" value={`${(m.deribitFunding8h * 100).toFixed(4)}%`} color={m.deribitFunding8h < 0 ? GREEN : m.deribitFunding8h > 0.01 ? RED : undefined} icon={Activity} hint="Funding on Deribit perpetuals, 8-hour rate. Cross-venue check on the main funding figure." />}
         </div>
-        <div className={cn("mt-2 text-[10px] text-white/30")}>Values update with every 30s scan.</div>
+        <div className={cn("mt-2 text-[10px] text-white/50")}>Values update with every 30s scan.</div>
       </div>
     </div>
   )
-}
+})

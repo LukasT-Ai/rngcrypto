@@ -5,8 +5,9 @@ import { ArrowUpRight, Clock, Flame, Globe, Newspaper } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { MacroAsset } from "@/lib/macro/types"
 import type { SignalsResponse } from "../types"
-import { EconomicCalendar, MacroAlerts, MacroEventCard, NextEventsStrip, RecentResults, WeeklyOilCard, type MacroApi } from "../MacroEventPanel"
-import { PredictionOddsPanel } from "../PredictionOddsPanel"
+import { MacroAlerts, WeeklyOilCard, type MacroApi } from "../MacroEventPanel"
+import { EconomicCalendar } from "../calendar/EconomicCalendar"
+import { PredictionOddsPanel, usePredictionState } from "../PredictionOddsPanel"
 import { Chip, FOCUS_RING, GRAY, GREEN, RED, SURFACE, SectionTitle, fmtPrice, signed, timeAgo, timeUntil, useNow } from "../shared"
 
 const HEADLINE_CAP = 3
@@ -235,24 +236,22 @@ export interface MacroTabProps {
 export const MacroTab = React.memo(function MacroTab({ d, macro, macroLoading, macroLens, predAsset, symbol }: MacroTabProps) {
   const now = useNow(15_000)
   const geo = d.oilGeopolitical
+  const predQ = usePredictionState()
+  const venueCounts = predQ.data?.venues?.map((v) => `${v.venue === "polymarket" ? "Polymarket" : "Kalshi"} ${v.ok ? v.count : "down"}`).join(" · ") ?? "Kalshi · Polymarket"
   return (
     <div className="space-y-5">
-      {/* Live event card first: it is the one place prediction odds are a decision input */}
-      <MacroEventCard state={macro} isLoading={macroLoading} asset={predAsset} />
+      <MacroAlerts alerts={macro?.alerts} />
       {/* WTI only: latest weekly inventory print + countdown to the next one */}
       {macroLens === "WTI" && <WeeklyOilCard releases={macro?.oilWeekly} />}
-      <NextEventsStrip events={macro?.upcoming} />
-      <RecentResults recent={macro?.recent} active={macro?.active} />
-      <MacroAlerts alerts={macro?.alerts} />
-      {/* Economic calendar: last 7d actuals + next 14d consensus, per lens */}
-      <EconomicCalendar rows={macro?.calendar} isLoading={macroLoading} />
+      {/* Economic calendar v2: the live card sits in its Live group, then upcoming and released rows, per lens */}
+      <EconomicCalendar state={macro} isLoading={macroLoading} lens={macroLens} predAsset={predAsset} />
       {geo && geo.events.length > 0 && <CatalystPanel g={geo} d={d} now={now} />}
       {d.newsSentiment && d.newsSentiment.headlines.length > 0 && <NewsPanel news={d.newsSentiment} />}
       {/* Prediction markets: collapsed; the live card already shows the odds that matter */}
       {predAsset && (
         <details className="group" id="sec-prediction">
           <summary className={cn("cursor-pointer list-none rounded-sm py-2 text-[13px] font-semibold uppercase tracking-[0.06em] text-white/60 hover:text-white/80 transition-colors", FOCUS_RING)}>
-            <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span> Prediction markets (Kalshi · Polymarket)
+            <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span> Prediction markets <span className="normal-case tracking-normal text-white/45">({venueCounts})</span>
           </summary>
           <div className="mt-2">
             <PredictionOddsPanel asset={predAsset} symbol={symbol} />

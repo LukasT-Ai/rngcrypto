@@ -9,7 +9,7 @@ import type { FedMeetingOdds, PredictionState } from "@/lib/prediction/service"
 import type { PMMarket, PMVenue } from "@/lib/prediction/types"
 import { impliedMedian, ladderWindow } from "@/lib/prediction/ladder"
 
-type PredictionApi = PredictionState & { serverTime: string }
+export type PredictionApi = PredictionState & { serverTime: string }
 
 export function usePredictionState() {
   return useQuery<PredictionApi>({
@@ -266,7 +266,8 @@ function AssetLadder({ asset, markets, label }: { asset: MacroAsset; markets: PM
 export function PredictionOddsPanel({ asset, symbol }: { asset: MacroAsset | null; symbol?: string }) {
   const q = usePredictionState()
   const s = q.data
-  if (q.isLoading && !s) return <div id="sec-prediction" className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 animate-pulse h-28" />
+  // The Macro tab wraps this panel in a collapsed <details id="sec-prediction">; the panel itself carries no id.
+  if (q.isLoading && !s) return <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 animate-pulse h-28" />
   if (!s) return null
   const anyOk = s.venues.some((v) => v.ok && v.count > 0)
   const assetOdds = asset ? s.byAsset[asset] : null
@@ -274,7 +275,7 @@ export function PredictionOddsPanel({ asset, symbol }: { asset: MacroAsset | nul
   const recession = [...s.recession].sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))[0] ?? null
   const recYes = recession?.outcomes.find((o) => /^yes$/i.test(o.label)) ?? null
   return (
-    <div id="sec-prediction" className="rounded-2xl border border-white/[0.08] bg-[rgb(var(--surface-rgb,10_14_23)/0.5)] backdrop-blur-md p-4 sm:p-5">
+    <div className="rounded-2xl border border-white/[0.08] bg-[rgb(var(--surface-rgb,10_14_23)/0.5)] p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <Scale className="size-4" style={{ color: "var(--brand, #9CA3AF)" }} />
         <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--brand, #9CA3AF)" }}>Prediction markets</span>

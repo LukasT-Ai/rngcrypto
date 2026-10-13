@@ -38,7 +38,9 @@ function Scroll({ children }: { children: React.ReactNode }) {
 // Why this wallet: grade, copyability, five sub-score bars (single hue, length = value), reasons, mix breakdown.
 // ---------------------------------------------------------------------------
 
-function ScoreBar({ label, value, hint }: { label: string; value: number | null | undefined; hint: string }) {
+// Hatched fill marks a substituted (thin-sample) sub-score; a null value shows an empty track and a dash.
+const HATCH = "repeating-linear-gradient(135deg, #00C466 0 3px, transparent 3px 6px)"
+function ScoreBar({ label, value, hint, thin }: { label: string; value: number | null | undefined; hint: string; thin?: boolean }) {
   const v = value == null ? null : Math.max(0, Math.min(100, value))
   return (
     <div className="grid grid-cols-[88px_1fr_36px] items-center gap-2 text-[11px]">
@@ -46,7 +48,7 @@ function ScoreBar({ label, value, hint }: { label: string; value: number | null 
         <span className="cursor-help text-white/70 underline decoration-dotted decoration-white/25 underline-offset-2">{label}</span>
       </Tip>
       <div className="relative h-1.5 rounded-full bg-white/[0.06]" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={v ?? undefined}>
-        {v != null && <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${v}%`, backgroundColor: "#00C466", opacity: 0.5 + v / 200 }} />}
+        {v != null && <div className="absolute inset-y-0 left-0 rounded-full" style={thin ? { width: `${v}%`, backgroundImage: HATCH, opacity: 0.8 } : { width: `${v}%`, backgroundColor: "#00C466", opacity: 0.5 + v / 200 }} />}
       </div>
       <span className="text-right font-mono tabular-nums text-white/85">{v == null ? "—" : v}</span>
     </div>
@@ -61,11 +63,11 @@ function WhyPanel({ score, mix, stats }: { score: Score | null | undefined; mix:
         <div className="flex items-center gap-2">
           <ScoreChip score={score} />
           <span className="font-mono text-2xl font-bold tabular-nums text-white/90">{score ? score.copyability : "—"}</span>
-          <span className="text-[11px] text-white/50">/ 100 copyability{score ? ` · ${GRADE_WORD[score.grade]}` : ""}</span>
+          <span className="text-[11px] text-white/50">/ 100 copyability{score ? ` · ${GRADE_WORD[score.grade]}` : ""}{score?.thin ? " · thin sample" : ""}</span>
         </div>
         <div className="mt-3 space-y-1.5">
           {SUBSCORES.map((s) => (
-            <ScoreBar key={s.k} label={s.l} value={score?.[s.k]} hint={s.hint} />
+            <ScoreBar key={s.k} label={s.l} value={score?.[s.k]} hint={s.hint} thin={score?.thin} />
           ))}
         </div>
         {score?.reasons?.length ? (
@@ -165,7 +167,8 @@ function WhyPanel({ score, mix, stats }: { score: Score | null | undefined; mix:
 }
 
 function AssetTile({ a, coin }: { a: AssetStats | null | undefined; coin: AssetGroup }) {
-  if (!a) {
+  // The API returns zeroed stats for untraded groups; treat them like a missing tile.
+  if (!a || a.trades === 0) {
     return (
       <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-2.5 opacity-70">
         <div className="flex items-center gap-1.5">

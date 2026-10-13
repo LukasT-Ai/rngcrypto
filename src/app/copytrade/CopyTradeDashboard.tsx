@@ -193,7 +193,9 @@ export default function CopyTradeDashboard() {
                 <span className="w-full text-right sm:w-auto">as of {utc(data.asOf)}</span>
               </div>
               {rows.length === 0 ? (
-                <div className={cn(CARD, "px-4 py-10 text-center text-sm text-[#9CA3AF]")}>No traders match. Lower the minimum focus or volume, switch to all wallets, widen the window or clear the search.</div>
+                <div className={cn(CARD, "px-4 py-10 text-center text-sm text-[#9CA3AF]")}>
+                  {data.traders.length === 0 && data.scan.stale ? "The scanner is warming up after a restart. Wallets appear progressively over the next 15 to 40 minutes; this page refreshes every minute." : "No traders match. Lower the minimum focus or volume, switch to all wallets, widen the window or clear the search."}
+                </div>
               ) : (
                 <TraderTable rows={rows} asset={filters.asset} window={filters.window} sortKey={sortKey} sortDir={sortDir} onSort={onSort} onView={onView} />
               )}

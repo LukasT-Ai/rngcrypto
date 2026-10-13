@@ -146,6 +146,30 @@ export async function register() {
     qhSchedule();
   }
 
+  // Copy-trade scanner (Hyperliquid top traders): a full cycle over the ranked candidate set every 15 min (first
+  // one 20s after boot; the previous scan is served from <dataDir>/copytrade/ meanwhile) and a 2-min refresh of
+  // open positions for the top 60 per asset. The leaderboard is re-downloaded at most hourly inside the cycle.
+  // COPYTRADE=0 disables it.
+  if (process.env.COPYTRADE !== "0") {
+    const { runScanCycle, refreshHotPositions, setNextScanAt, SCAN_INTERVAL_MS, HOT_INTERVAL_MS } = await import("./lib/hyperliquid/scanner");
+    const cycle = async () => {
+      setNextScanAt(Date.now() + SCAN_INTERVAL_MS);
+      try {
+        await runScanCycle();
+      } catch {
+        /* next cycle */
+      }
+    };
+    setNextScanAt(Date.now() + 20_000);
+    setTimeout(() => {
+      void cycle();
+      setInterval(() => void cycle(), SCAN_INTERVAL_MS);
+    }, 20_000);
+    setInterval(() => {
+      refreshHotPositions().catch(() => undefined);
+    }, HOT_INTERVAL_MS);
+  }
+
   // Macro event loop: 15s baseline; the service itself tightens market polling inside release windows.
   let macroBusy = false;
   const macro = async () => {

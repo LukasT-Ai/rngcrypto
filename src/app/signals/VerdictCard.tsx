@@ -224,7 +224,8 @@ export function VerdictCard({
   const rr2 = risk > 0 ? Math.abs(call.tp2 - call.entry) / risk : null
   const rrOk = rr2 != null && rr2 >= MIN_RR
   const hold = call.expectedHold ?? null
-  const holdFallback = reco.plan?.horizon ?? d.activeSetups?.[0]?.expectedDuration ?? "24h"
+  // Fallback order: engine horizon (horizonMin, PR 15) > plan horizon > setup duration > 24h.
+  const holdFallback = call.horizonMin != null && call.horizonMin > 0 ? fmtMinutes(call.horizonMin) : reco.plan?.horizon ?? d.activeSetups?.[0]?.expectedDuration ?? "24h"
   const sizing = call.sizing ?? null
   const sizeFinal = sizing ? sizing.total : call.sizeMultiplier ?? 1
   // Parts do not multiply to the total (headline and counter-trend combine by min, the event window multiplies on top):
@@ -252,7 +253,7 @@ export function VerdictCard({
     },
     hold
       ? { label: "Hold", value: `~${fmtMinutes(hold.medianMin)}`, sub: `p25 ${fmtMinutes(hold.p25Min)}`, sub2: `p75 ${fmtMinutes(hold.p75Min)}`, tip: `Median time to TP1 for this symbol, direction and regime bucket on ${hold.tf} candles; n=${hold.n}.` }
-      : { label: "Hold", value: `~${holdFallback}`, sub: "estimate", color: "rgba(255,255,255,0.5)", tip: "Horizon estimate from the setup type. Measured hold times appear once the bucket has enough decided calls." },
+      : { label: "Hold", value: `~${holdFallback}`, sub: "estimate", color: "rgba(255,255,255,0.5)", tip: call.horizonMin != null ? `Engine horizon${call.dominantTf ? ` for the dominant ${call.dominantTf} timeframe` : ""}; measured hold times appear once the symbol, direction and regime bucket has 10 decided calls.` : "Horizon estimate from the setup type. Measured hold times appear once the bucket has enough decided calls." },
     { label: "Size", value: `x${sizeFinal}`, sub: sizeSub, color: sizeFinal < 1 ? AMBER : "rgba(255,255,255,0.9)", tip: sizeTip },
   ]
 
@@ -296,7 +297,7 @@ export function VerdictCard({
           )}
         </Chip>
         {call.mode && (
-          <Chip variant="vol" value={call.mode} tip={`Strategy family chosen by regime and ADX: ${call.mode === "trend" ? "trend continuation" : call.mode === "reversion" ? "mean reversion" : "standby, no family qualifies"}.`}>
+          <Chip variant="vol" value={call.mode} tip={`Strategy family chosen by regime and ADX: ${call.modeReason ?? (call.mode === "trend" ? "trend continuation" : call.mode === "reversion" ? "mean reversion" : "standby, no family qualifies")}.`}>
             {call.mode}
           </Chip>
         )}

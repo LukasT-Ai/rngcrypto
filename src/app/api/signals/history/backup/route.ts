@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
-import { getHistory, replaceHistory, computeStats, type SignalLog } from "../logger";
+import { getHistory, replaceHistory, type SignalLog } from "../logger";
+import { computeStats } from "../performance";
 
 export const dynamic = "force-dynamic";
 

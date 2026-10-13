@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
-import { getAllHistory, getHistory, computeStats } from "./logger";
-import { computePerformance } from "./performance";
+import { getAllHistory, getHistory } from "./logger";
+import { computePerformance, computeStats } from "./performance";
 import { fetchMarks } from "./check/core";
+import { ENGINE_VERSION } from "@/lib/signals/engine";
+import { readCalibration } from "@/lib/signals/calibration";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +26,7 @@ export async function GET(req: NextRequest) {
     const dedupe = sp.get("dedupe") !== "0";
     const limit = Math.min(1000, parseInt(sp.get("limit") ?? "500", 10) || 500);
 
-    const perf = computePerformance(signals, { rangeDays, assets, grades, bias, dedupe, limit });
+    const perf = computePerformance(signals, { rangeDays, assets, grades, bias, dedupe, limit, engineVersion: ENGINE_VERSION, calibration: readCalibration() });
 
     // Live distance-to-TP1 / distance-to-SL for open signals, in R.
     const marks = await fetchMarks([...new Set(perf.open.map((s) => s.symbol))]);

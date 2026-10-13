@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_TUNING, ENGINE_VERSION, getTuning, scoreFromCandles, setTuning, type Candle, type Tuning } from "../src/lib/signals/engine";
 import { COST_MODEL, costInR, type CostVenue } from "../src/app/api/signals/history/check/core";
+import { calibration, type CalRow } from "../src/app/api/signals/history/performance";
 
 const BINANCE: Record<string, string> = { BTC: "BTCUSDT", ETH: "ETHUSDT", BNB: "BNBUSDT", ADA: "ADAUSDT", XRP: "XRPUSDT", SOL: "SOLUSDT", NEAR: "NEARUSDT", ZEC: "ZECUSDT" };
 const M5 = 300e3, M15 = 900e3, H1 = 3600e3, H4 = 14400e3, D1 = 86400e3;
@@ -128,6 +129,7 @@ interface Trade {
   netR: number | null;
   regimeLabel: string | null;
   alignment: "aligned" | "counter" | "n/a";
+  weightedScore: number | null;
 }
 
 function simulate(tr: Trade, c5: Candle[], from: number): void {
@@ -278,6 +280,7 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
       grossR: null,
       netR: null,
       regimeLabel: r.regimeLabel ?? null,
+      weightedScore: typeof r.weightedScore === "number" ? r.weightedScore : null,
       alignment:
         r.regimeLabel === "Bull regime" || r.regimeLabel === "Bear regime"
           ? (r.bias === "LONG") === (r.regimeLabel === "Bull regime")
@@ -296,6 +299,20 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
 
 function pct(n: number, d: number) {
   return d ? Math.round((n / d) * 1000) / 10 : null;
+}
+function toCalRow(t: Trade): CalRow {
+  const risk = Math.abs((t.fillPrice ?? t.entry) - t.stop);
+  return {
+    confidence: t.confidence,
+    grade: t.grade,
+    rr1: risk > 0 ? Math.round((Math.abs(t.tp[0] - (t.fillPrice ?? t.entry)) / risk) * 100) / 100 : null,
+    pTp1: null,
+    decided: t.highestTp >= 1 || t.reason === "stop_before_tp",
+    tp1: t.highestTp >= 1,
+    grossR: t.grossR,
+    netR: t.netR,
+    signedScore: t.weightedScore == null ? null : t.bias === "LONG" ? t.weightedScore : -t.weightedScore,
+  };
 }
 function mean(xs: number[]) {
   return xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 1000) / 1000 : null;
@@ -353,6 +370,9 @@ async function main() {
     byEntryType: by((t) => t.entryType),
     byRegime: by((t) => t.regimeLabel ?? "none"),
     byAlignment: by((t) => t.alignment),
+    // Same calibration table as the live performance page (stated confidence vs realised TP1, Wilson, Brier/BSS),
+    // so live and backtest calibration can be overlaid. No Platt mapping in the harness (yet).
+    calibration: calibration(all.filter((t) => t.grossR != null).map(toCalRow), null),
     trades: all,
   };
   mkdirSync(OUT, { recursive: true });
@@ -372,6 +392,10 @@ async function main() {
   for (const [k, v] of Object.entries(report.byRegime)) console.log(k.padEnd(13), `n=${v.closed}`.padEnd(7), `TP1 ${v.tp1Rate}%`.padEnd(10), `netR ${v.expectancyNetR}`.padEnd(14), `PF ${v.profitFactorNet}`.padEnd(10), `sum ${v.sumNetR}`);
   console.log("\n=== BY ALIGNMENT (call vs regime) ===");
   for (const [k, v] of Object.entries(report.byAlignment)) console.log(k.padEnd(9), `n=${v.closed}`.padEnd(7), `TP1 ${v.tp1Rate}%`.padEnd(10), `netR ${v.expectancyNetR}`.padEnd(14), `PF ${v.profitFactorNet}`.padEnd(10), `sum ${v.sumNetR}`);
+  console.log("\n=== CALIBRATION (stated confidence vs realised TP1) ===");
+  for (const b of report.calibration.byConfidence) console.log(b.key.padEnd(7), `n=${b.n}`.padEnd(7), `TP1 ${b.tp1Rate}% [${b.wilsonLo}-${b.wilsonHi}]`.padEnd(26), `P(R>0) ${b.pPos}%`.padEnd(14), `netR ${b.meanNetR}`.padEnd(13), `Brier ${b.brierNaive}`);
+  const br = report.calibration.brier;
+  console.log(`Brier naive ${br.naive} . base ${br.base} . BSS ${br.bss} . rel ${br.reliability} . res ${br.resolution} . unc ${br.uncertainty} . n ${br.n}`);
   console.log(`\nwritten ${file}`);
   const t = getTuning();
   console.log(`SUMMARY ${LABEL || "run"} | conf>=${t.minPublishConfidence} shortGate=${t.shortNeedsHtfBear ? 1 : 0} stopBuf=${t.stopBufferAtr} minStopAtr=${t.minStopAtr} floorX=${t.stopFloorScale} regimeW=${t.regimeWeight} regimeGate=${t.regimeGate} cooldown=${COOLDOWN_MS / 60e3}m | signals=${o.signals} unfilled=${o.unfilled} closed=${o.closed} TP1=${o.tp1Rate}% gross=${o.expectancyGrossR} net=${o.expectancyNetR} PF=${o.profitFactorNet} sum=${o.sumNetR} long=${o.longShare}%`);

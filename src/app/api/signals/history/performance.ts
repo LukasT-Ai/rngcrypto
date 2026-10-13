@@ -1,5 +1,6 @@
-import type { SignalLog } from "./logger";
+import type { CalibrationBucket, SignalLog, SignalStats } from "./logger";
 import { activeCostVenue, costInR } from "./check/core";
+import { bandOf, brierSet, sigmoid, wilson as wilsonFrac, type CalibrationFile } from "@/lib/signals/calibration";
 
 export interface PerformanceOptions {
   rangeDays?: number | null;
@@ -8,6 +9,20 @@ export interface PerformanceOptions {
   bias?: "LONG" | "SHORT" | null;
   dedupe?: boolean;
   limit?: number;
+  /** Current engine version (for meta and the provisional banner); the route passes ENGINE_VERSION. */
+  engineVersion?: string | null;
+  /** Current calibration file (PR 17); null = no mapping, calibrated columns stay null. */
+  calibration?: CalibrationFile | null;
+  /** Ledger hash record and changelog (PR 13); passed through untouched. */
+  ledger?: PerformanceStats["ledger"] | null;
+  changelog?: PerformanceStats["changelog"] | null;
+}
+
+/** Wilson 95% interval as percentages with one decimal; [null, null] for n = 0. */
+export function wilson(k: number, n: number): [number | null, number | null] {
+  if (!(n > 0)) return [null, null];
+  const [lo, hi] = wilsonFrac(k, n);
+  return [Math.round(lo * 1000) / 10, Math.round(hi * 1000) / 10];
 }
 
 export interface Bucket {
@@ -66,6 +81,50 @@ export interface NormalizedSignal {
   shadow: boolean;
   shadowClass: string | null;
   coverageGap: boolean;
+  // Inputs at call time (PR 03); null on records logged before 2026-10-13.
+  weightedScore: number | null;
+  confidenceRaw: number | null;
+  rr1: number | null;
+  atrPct: number | null;
+  pTp1: number | null;
+  calibrationVersion: string | null;
+  components: Record<string, { score: number; weight: number }> | null;
+  minutesToNextEvent: number | null;
+}
+
+export interface CalBucket extends Bucket {
+  meanConf: number | null;
+  wilsonLo: number | null;
+  wilsonHi: number | null;
+  /** Share of closed rows in the band with gross R > 0 (expired horizon exits included). */
+  pPos: number | null;
+  meanNetR: number | null;
+  brierNaive: number | null;
+  brierCal: number | null;
+}
+
+// Minimal row the calibration table needs, so the backtest can feed its trades through the same function.
+export interface CalRow {
+  confidence: number;
+  grade: string;
+  rr1: number | null;
+  pTp1: number | null;
+  /** TP1 or the stop was reached (a verdict exists). */
+  decided: boolean;
+  tp1: boolean;
+  grossR: number | null;
+  netR: number | null;
+  /** weightedScore signed toward the call (positive = agrees with the lean); null when not logged. */
+  signedScore: number | null;
+}
+
+export interface CalibrationStats {
+  byConfidence: CalBucket[];
+  byGrade: CalBucket[];
+  byRr1: CalBucket[];
+  byPTp1: CalBucket[];
+  brier: { naive: number | null; calibrated: number | null; base: number | null; bss: number | null; bssCalibrated: number | null; reliability: number | null; resolution: number | null; uncertainty: number | null; n: number };
+  platt: { a: number; b: number; n: number; holdoutBrier: number | null; fitAt: string; version: string } | null;
 }
 
 export interface PerformanceStats {
@@ -95,10 +154,27 @@ export interface PerformanceStats {
     // Gross profit / gross loss in R over every closed row (no sample threshold); the legacy stats derive PF from them.
     grossProfitR: number;
     grossLossR: number;
+    // Track-record metrics (F4.1, perf audit 2.2). Null when the sample cannot support them.
+    maxDrawdownR: number | null;
+    maxDrawdownNetR: number | null;
+    longestUnderwaterDays: number | null;
+    /** SD(R) / sqrt(n) over closed rows; null below 2. */
+    seExpectancyR: number | null;
+    /** Verified fills over (fills + unfilled) per entry type, in percent. */
+    fillRate: { market: number | null; limit: number | null; nMarket: number; nLimit: number };
+    /** Filled closes that hit the horizon with no verdict, as a percent of closed. */
+    expiryRate: number | null;
+    /** Fill-to-close minutes: winners = TP1 or better, losers = stopped before TP1. */
+    medianHoldMin: { winners: number | null; losers: number | null };
+    holdMin: { all: HoldStats; winners: HoldStats; losers: HoldStats };
+    /** Share of closed rows with gross R >= 2, in percent. */
+    shareAbove2R: number | null;
   };
   equity: { i: number; t: number; cumR: number; cumNetR: number | null; symbol: string }[];
   daily: { day: string; r: number; cumR: number; netR: number | null; cumNetR: number | null; n: number }[];
-  calibration: { byConfidence: Bucket[]; byGrade: Bucket[] };
+  /** Gross (n) and net (netN) R counts per 0.5R bin from -3 to +5; the end bins absorb the overflow. */
+  rHistogram: { bin: string; n: number; netN: number }[];
+  calibration: CalibrationStats;
   breakdowns: {
     bySymbol: Bucket[];
     byClass: Bucket[];
@@ -110,7 +186,15 @@ export interface PerformanceStats {
     byRegime: Bucket[];
     byRegimeAlignment: Bucket[];
     byEngineVersion: Bucket[];
+    byEntryType: Bucket[];
+    byRr1: Bucket[];
+    byAtrPct: Bucket[];
   };
+  /** Engine versions seen in the closed sample, newest last-signal first. */
+  versions: { version: string; firstAt: number; lastAt: number; n: number; netR: number | null }[];
+  /** Ledger download card (PR 13); null until the daily hash has run. */
+  ledger: { url: string; csvUrl: string; sha256: string; hashedAt: string; bytes: number; count: number } | null;
+  changelog: { at: string; commit: string; title: string; effect: string }[];
   excursion: { medianMfeR: number | null; medianMaeR: number | null; winnersOvershootR: number | null; losersNearMissR: number | null; n: number };
   streaks: { current: { type: "win" | "loss" | null; length: number }; maxWin: number; maxLoss: number };
   meta: {
@@ -129,7 +213,19 @@ export interface PerformanceStats {
     // True until 100 filled closed signals exist; every rate above is a preview until then.
     provisional: boolean;
     provisionalTarget: number;
+    /** Current engine version and how many decided, non-shadow records it has (the calibration gate counter). */
+    engineVersion: string | null;
+    decidedNCurrentVersion: number;
+    /** Shadow records seen in the range (never in any number above). */
+    shadowN: number;
   };
+}
+
+export interface HoldStats {
+  n: number;
+  p25: number | null;
+  median: number | null;
+  p75: number | null;
 }
 
 export const PROVISIONAL_TARGET = 100;
@@ -173,6 +269,7 @@ export function conservativeR(s: { bias: "LONG" | "SHORT"; entry: number; stopLo
 export function normalize(s: SignalLog): NormalizedSignal {
   const open = isOpenSig(s);
   const risk = Math.abs(s.entry - s.stopLoss);
+  const inputs = s.context?.inputs ?? null;
   const excluded = s.closedReason === "unfilled" || s.closedReason === "unverifiable";
   const fillStatus: NormalizedSignal["fillStatus"] = s.fillStatus ?? (s.closedReason === "unfilled" ? "unfilled" : "filled");
   let tpLevels: NormalizedSignal["tpLevels"] = [];
@@ -257,6 +354,14 @@ export function normalize(s: SignalLog): NormalizedSignal {
     shadow: s.shadow === true,
     shadowClass: s.shadow === true ? (s.shadowClass ?? null) : null,
     coverageGap: s.coverageGap != null,
+    weightedScore: inputs?.weightedScore ?? null,
+    confidenceRaw: inputs?.confidenceRaw ?? null,
+    rr1: inputs?.rr1 ?? (risk > 0 ? Math.round((Math.abs(s.tp1 - s.entry) / risk) * 100) / 100 : null),
+    atrPct: inputs?.atrPct ?? (s.context?.atr != null && s.priceAtSignal > 0 && s.context.atr > 0 ? Math.round((s.context.atr / s.priceAtSignal) * 10000) / 100 : null),
+    pTp1: inputs?.pTp1 ?? null,
+    calibrationVersion: inputs?.calibrationVersion ?? null,
+    components: inputs?.components ?? null,
+    minutesToNextEvent: inputs?.minutesToNextEvent ?? null,
   };
 }
 
@@ -311,10 +416,158 @@ function bucketize(rows: NormalizedSignal[], keyOf: (s: NormalizedSignal) => str
   return out;
 }
 
+const quantile = (sorted: number[], q: number): number | null => {
+  if (!sorted.length) return null;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+};
+function holdStats(mins: number[]): HoldStats {
+  const a = [...mins].sort((x, y) => x - y);
+  const r = (v: number | null) => (v == null ? null : Math.round(v));
+  return { n: a.length, p25: r(quantile(a, 0.25)), median: r(quantile(a, 0.5)), p75: r(quantile(a, 0.75)) };
+}
+
+// Max drawdown in R on a cumulative series and the longest stretch below a previous peak, in days.
+function drawdown(points: { t: number; cum: number }[]): { maxDd: number | null; longestDays: number | null } {
+  if (!points.length) return { maxDd: null, longestDays: null };
+  let peak = 0;
+  let peakT = points[0].t;
+  let maxDd = 0;
+  let longest = 0;
+  for (const p of points) {
+    if (p.cum >= peak) {
+      longest = Math.max(longest, p.t - peakT);
+      peak = p.cum;
+      peakT = p.t;
+    } else {
+      maxDd = Math.max(maxDd, peak - p.cum);
+    }
+  }
+  const last = points[points.length - 1];
+  if (last.cum < peak) longest = Math.max(longest, last.t - peakT);
+  return { maxDd: -Math.round(maxDd * 100) / 100, longestDays: Math.round((longest / 86400e3) * 10) / 10 };
+}
+
+const HIST_MIN = -3;
+const HIST_MAX = 5;
+const HIST_STEP = 0.5;
+export function rHistogram(gross: number[], net: number[]): PerformanceStats["rHistogram"] {
+  const bins: { bin: string; lo: number; n: number; netN: number }[] = [];
+  for (let lo = HIST_MIN; lo < HIST_MAX; lo += HIST_STEP) bins.push({ bin: lo.toFixed(1), lo, n: 0, netN: 0 });
+  bins.unshift({ bin: `<${HIST_MIN}`, lo: -Infinity, n: 0, netN: 0 });
+  bins.push({ bin: `${HIST_MAX}+`, lo: HIST_MAX, n: 0, netN: 0 });
+  const idx = (r: number) => {
+    if (r < HIST_MIN) return 0;
+    if (r >= HIST_MAX) return bins.length - 1;
+    return 1 + Math.floor((r - HIST_MIN) / HIST_STEP);
+  };
+  for (const r of gross) bins[idx(r)].n++;
+  for (const r of net) bins[idx(r)].netN++;
+  return bins.map(({ bin, n, netN }) => ({ bin, n, netN }));
+}
+
+export const rr1BucketOf = (rr: number | null): string | null => (rr == null ? null : rr < 1 ? "<1" : rr < 1.5 ? "1-1.5" : rr < 2 ? "1.5-2" : ">2");
+export const RR1_ORDER = ["<1", "1-1.5", "1.5-2", ">2"];
+const atrBucketOf = (a: number | null): string | null => (a == null ? null : a < 0.5 ? "<0.5%" : a < 1 ? "0.5-1%" : a < 2 ? "1-2%" : ">2%");
+const ATR_ORDER = ["<0.5%", "0.5-1%", "1-2%", ">2%"];
+const pTp1BucketOf = (p: number | null): string | null => {
+  if (p == null) return null;
+  const lo = Math.min(90, Math.floor(p * 10) * 10);
+  return `${lo}-${lo + 10}%`;
+};
+const CONF_ORDER = ["<55", "55-59", "60-64", "65-69", "70-74", "75-79", "80-84", "85-89", "90-94", "95-99", "100"];
+
+/**
+ * Calibration table (perf audit 2.3): one row per stated-confidence band, grade, rr1 bucket and (once a
+ * calibrated probability exists) pTp1 band. n counts DECIDED rows; expectancy and pPos use every closed row in
+ * the band. Brier uses p = confidence / 100 (naive) and, when a Platt mapping is supplied, sigmoid(a s + b).
+ */
+export function calibration(rows: CalRow[], mapping: { a: number; b: number } | null, platt: CalibrationStats["platt"] = null): CalibrationStats {
+  const pCal = (r: CalRow): number | null => (mapping && r.signedScore != null ? sigmoid(mapping.a * r.signedScore + mapping.b) : null);
+  const bucketOf = (key: string, list: CalRow[]): CalBucket => {
+    const decided = list.filter((r) => r.decided);
+    const wins = decided.filter((r) => r.tp1).length;
+    const losses = decided.length - wins;
+    const [lo, hi] = wilson(wins, decided.length);
+    const gross = list.map((r) => r.grossR).filter((x): x is number => x != null);
+    const nets = list.map((r) => r.netR).filter((x): x is number => x != null);
+    const cal = decided.map((r) => ({ p: pCal(r), y: r.tp1 ? 1 : 0 })).filter((q): q is { p: number; y: number } => q.p != null);
+    return {
+      key,
+      n: decided.length,
+      tp1Rate: decided.length ? pct(wins, decided.length) : null,
+      expectancyR: r2(mean(gross)),
+      wins,
+      losses,
+      meanConf: list.length ? Math.round((list.reduce((a, r) => a + r.confidence, 0) / list.length) * 10) / 10 : null,
+      wilsonLo: lo,
+      wilsonHi: hi,
+      pPos: gross.length ? pct(gross.filter((x) => x > 0).length, gross.length) : null,
+      meanNetR: r2(mean(nets)),
+      brierNaive: decided.length ? Math.round((decided.reduce((a, r) => a + (r.confidence / 100 - (r.tp1 ? 1 : 0)) ** 2, 0) / decided.length) * 1e4) / 1e4 : null,
+      brierCal: cal.length ? Math.round((cal.reduce((a, q) => a + (q.p - q.y) ** 2, 0) / cal.length) * 1e4) / 1e4 : null,
+    };
+  };
+  const group = (keyOf: (r: CalRow) => string | null, order?: string[]): CalBucket[] => {
+    const map = new Map<string, CalRow[]>();
+    for (const r of rows) {
+      const k = keyOf(r);
+      if (k == null) continue;
+      map.set(k, [...(map.get(k) ?? []), r]);
+    }
+    const out = [...map.entries()].map(([k, list]) => bucketOf(k, list));
+    if (order) out.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+    else out.sort((a, b) => a.key.localeCompare(b.key));
+    return out;
+  };
+  const decided = rows.filter((r) => r.decided);
+  const naive = brierSet(decided.map((r) => ({ p: Math.min(1, Math.max(0, r.confidence / 100)), y: (r.tp1 ? 1 : 0) as 0 | 1, bin: bandOf(r.confidence) })));
+  const calPairs = decided.map((r) => ({ p: pCal(r), y: (r.tp1 ? 1 : 0) as 0 | 1, bin: bandOf(r.confidence) })).filter((q): q is { p: number; y: 0 | 1; bin: string } => q.p != null);
+  const cal = calPairs.length ? brierSet(calPairs) : null;
+  return {
+    byConfidence: group((r) => bandOf(r.confidence), CONF_ORDER),
+    byGrade: group((r) => r.grade, ["A+", "A", "B", "C"]),
+    byRr1: group((r) => rr1BucketOf(r.rr1), RR1_ORDER),
+    byPTp1: group((r) => pTp1BucketOf(r.pTp1)),
+    brier: {
+      naive: naive.brier,
+      calibrated: cal?.brier ?? null,
+      base: naive.base,
+      bss: naive.bss,
+      bssCalibrated: cal?.bss ?? null,
+      reliability: naive.reliability,
+      resolution: naive.resolution,
+      uncertainty: naive.uncertainty,
+      n: naive.n,
+    },
+    platt,
+  };
+}
+
+export function toCalRow(s: NormalizedSignal): CalRow {
+  const decided = !s.open && !s.excluded && (s.highestTp >= 1 || s.stoppedAfterTp === 0);
+  return {
+    confidence: s.confidence,
+    grade: s.grade,
+    rr1: s.rr1,
+    pTp1: s.pTp1,
+    decided,
+    tp1: s.highestTp >= 1,
+    grossR: s.realizedR,
+    netR: s.realizedNetR,
+    signedScore: s.weightedScore == null ? null : s.bias === "LONG" ? s.weightedScore : -s.weightedScore,
+  };
+}
+
 export function computePerformance(all: SignalLog[], opts: PerformanceOptions = {}): { signals: NormalizedSignal[]; open: NormalizedSignal[]; stats: PerformanceStats } {
   const now = Date.now();
   let rows = all.map(normalize);
   const totalRaw = rows.length;
+  // Shadow records (declined calls, PR 12) never enter a public number; they get their own block below.
+  const shadowRows = rows.filter((s) => s.shadow);
+  rows = rows.filter((s) => !s.shadow);
   if (opts.rangeDays) rows = rows.filter((s) => now - s.timestamp <= opts.rangeDays! * 86400e3);
   if (opts.assets && opts.assets.length) rows = rows.filter((s) => opts.assets!.includes(s.symbol));
   if (opts.grades && opts.grades.length) rows = rows.filter((s) => opts.grades!.includes(s.grade));
@@ -399,6 +652,42 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
   });
   const venue = activeCostVenue();
 
+  // Track-record metrics (perf audit 2.2).
+  const ddGross = drawdown(equity.map((e) => ({ t: e.t, cum: e.cumR })));
+  const ddNet = drawdown(equity.filter((e) => e.cumNetR != null).map((e) => ({ t: e.t, cum: e.cumNetR as number })));
+  const sd = rs.length >= 2 ? Math.sqrt(rs.reduce((a, r) => a + (r - (mean(rs) as number)) ** 2, 0) / (rs.length - 1)) : null;
+  const holdOf = (s: NormalizedSignal): number | null => (s.closedAt != null && s.filledAt != null ? Math.max(0, Math.round((s.closedAt - s.filledAt) / 60e3)) : null);
+  const holdAll = closed.map(holdOf).filter((x): x is number => x != null);
+  const holdWin = tp1.map(holdOf).filter((x): x is number => x != null);
+  const holdLoss = stopBefore.map(holdOf).filter((x): x is number => x != null);
+  // Fill rate per entry type: verified fills (closed or still running) over fills + unfilled; pending and
+  // unverifiable rows are undecided and left out.
+  const fillRows = rows.filter((s) => s.entryType && (s.fillStatus === "filled" || s.fillStatus === "unfilled") && s.closedReason !== "unverifiable");
+  const fillRate = (type: "market" | "limit") => {
+    const list = fillRows.filter((s) => s.entryType === type);
+    return { rate: list.length ? pct(list.filter((s) => s.fillStatus === "filled").length, list.length) : null, n: list.length };
+  };
+  const fm = fillRate("market");
+  const fl = fillRate("limit");
+  const versionMap = new Map<string, { firstAt: number; lastAt: number; n: number; net: number; anyNet: boolean }>();
+  for (const s of closed) {
+    const v = versionMap.get(s.engineVersion) ?? { firstAt: s.timestamp, lastAt: s.timestamp, n: 0, net: 0, anyNet: false };
+    v.firstAt = Math.min(v.firstAt, s.timestamp);
+    v.lastAt = Math.max(v.lastAt, s.timestamp);
+    v.n++;
+    if (s.realizedNetR != null) {
+      v.net += s.realizedNetR;
+      v.anyNet = true;
+    }
+    versionMap.set(s.engineVersion, v);
+  }
+  const versions = [...versionMap.entries()].map(([version, v]) => ({ version, firstAt: v.firstAt, lastAt: v.lastAt, n: v.n, netR: v.anyNet ? Math.round(v.net * 100) / 100 : null })).sort((a, b) => b.lastAt - a.lastAt);
+  const currentVersion = opts.engineVersion ?? null;
+  const decidedNCurrentVersion = currentVersion ? all.filter((s) => !s.shadow && s.engineVersion === currentVersion).map(normalize).filter((s) => !s.open && !s.excluded && (s.highestTp >= 1 || s.stoppedAfterTp === 0)).length : 0;
+  const calFile = opts.calibration ?? null;
+  const mapping = calFile?.platt && calFile.active ? { a: calFile.platt.a, b: calFile.platt.b } : null;
+  const plattMeta: CalibrationStats["platt"] = calFile?.platt ? { a: calFile.platt.a, b: calFile.platt.b, n: calFile.platt.n, holdoutBrier: calFile.platt.holdoutBrier, fitAt: calFile.fitAt, version: calFile.version } : null;
+
   // Streaks by close order (win = TP1 or better, loss = stop before TP; horizon-without-TP is neither).
   let cur: { type: "win" | "loss" | null; length: number } = { type: null, length: 0 };
   let maxWin = 0;
@@ -414,7 +703,6 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
     cur = { ...run };
   }
 
-  const confBucket = (c: number) => (c >= 85 ? "85+" : c >= 75 ? "75–84" : c >= 65 ? "65–74" : c >= 55 ? "55–64" : "<55");
   const hourKey = (s: NormalizedSignal) => `${String(new Date(s.timestamp).getUTCHours()).padStart(2, "0")}:00`;
   const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -454,14 +742,27 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
       costModel: { venue: venue.venue, takerBps: venue.takerBps, makerBps: venue.makerBps, slipBps: venue.slipBps, fundingApplied: venue.fundingApplied },
       grossProfitR: Math.round(pos * 10000) / 10000,
       grossLossR: Math.round(neg * 10000) / 10000,
+      maxDrawdownR: ddGross.maxDd,
+      maxDrawdownNetR: ddNet.maxDd,
+      longestUnderwaterDays: ddGross.longestDays,
+      seExpectancyR: sd != null ? Math.round((sd / Math.sqrt(rs.length)) * 1000) / 1000 : null,
+      fillRate: { market: fm.rate, limit: fl.rate, nMarket: fm.n, nLimit: fl.n },
+      expiryRate: closedN ? pct(expiredN, closedN) : null,
+      medianHoldMin: { winners: holdWin.length ? Math.round(median(holdWin) as number) : null, losers: holdLoss.length ? Math.round(median(holdLoss) as number) : null },
+      holdMin: { all: holdStats(holdAll), winners: holdStats(holdWin), losers: holdStats(holdLoss) },
+      shareAbove2R: rs.length ? pct(rs.filter((r) => r >= 2).length, rs.length) : null,
     },
     equity,
     daily,
-    calibration: {
-      byConfidence: bucketize(closed, (s) => confBucket(s.confidence), ["<55", "55–64", "65–74", "75–84", "85+"]),
-      byGrade: bucketize(closed, (s) => s.grade, ["A+", "A", "B", "C"]),
-    },
+    rHistogram: rHistogram(rs, nets),
+    calibration: calibration(closed.map(toCalRow), mapping, plattMeta),
+    versions,
+    ledger: opts.ledger ?? null,
+    changelog: opts.changelog ?? [],
     breakdowns: {
+      byEntryType: bucketize(closed, (s) => s.entryType, ["market", "limit"]),
+      byRr1: bucketize(closed, (s) => rr1BucketOf(s.rr1), RR1_ORDER),
+      byAtrPct: bucketize(closed, (s) => atrBucketOf(s.atrPct), ATR_ORDER),
       bySymbol: bucketize(closed, (s) => s.symbol),
       byClass: bucketize(closed, (s) => s.assetClass, ["Crypto", "Commodities", "Stocks", "Indices"]),
       byBias: bucketize(closed, (s) => s.bias, ["LONG", "SHORT"]),
@@ -488,9 +789,81 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
       expiredN,
       provisional: closedN < PROVISIONAL_TARGET,
       provisionalTarget: PROVISIONAL_TARGET,
+      engineVersion: currentVersion,
+      decidedNCurrentVersion,
+      shadowN: shadowRows.length,
     },
   };
 
   const limit = opts.limit ?? 500;
   return { signals: rows.slice(0, limit), open, stats };
+}
+
+// ── Legacy stats object ──────────────────────────────────────────────────────
+// `computeStats` used to live in logger.ts with its own rules (first-touch wins, raw-price R:R, horizon exits
+// in the profit factor). It now derives everything from computePerformance so the two views can never publish
+// two different profit factors from the same file (perf audit 2.1). Shape kept for the default history view.
+export function computeStats(input: SignalLog[]): SignalStats {
+  const perf = computePerformance(input, { rangeDays: null, dedupe: false, limit: Number.MAX_SAFE_INTEGER });
+  const rows = perf.signals.filter((s) => !s.excluded);
+  const closed = rows.filter((s) => !s.open);
+  const isWin = (s: NormalizedSignal) => s.highestTp >= 1;
+  const isLoss = (s: NormalizedSignal) => s.stoppedAfterTp === 0;
+  const wins = closed.filter(isWin);
+  const losses = closed.filter(isLoss);
+  const pending = rows.filter((s) => s.open);
+  const expired = closed.filter((s) => !isWin(s) && !isLoss(s));
+  const decided = wins.length + losses.length;
+  const k = perf.stats.kpis;
+  const winRs = wins.map((s) => s.realizedR).filter((x): x is number => x != null);
+  const bucketOf = (list: NormalizedSignal[]): CalibrationBucket => {
+    const w = list.filter(isWin).length;
+    const l = list.filter(isLoss).length;
+    const rsL = list.map((s) => s.realizedR).filter((x): x is number => x != null);
+    return {
+      n: list.length,
+      wins: w,
+      losses: l,
+      tp1Rate: list.length ? Math.round((w / list.length) * 1000) / 10 : 0,
+      winRate: w + l ? Math.round((w / (w + l)) * 1000) / 10 : 0,
+      avgR: rsL.length ? Math.round((rsL.reduce((a, b) => a + b, 0) / rsL.length) * 100) / 100 : null,
+    };
+  };
+  const bySymbol: SignalStats["bySymbol"] = {};
+  const byGradeSymbol: SignalStats["byGradeSymbol"] = {};
+  for (const s of rows) {
+    const b = (bySymbol[s.symbol] ??= { total: 0, wins: 0, losses: 0, winRate: 0 });
+    b.total++;
+    if (!s.open && isWin(s)) b.wins++;
+    else if (!s.open && isLoss(s)) b.losses++;
+  }
+  for (const sym of Object.keys(bySymbol)) {
+    const d = bySymbol[sym].wins + bySymbol[sym].losses;
+    bySymbol[sym].winRate = d ? Math.round((bySymbol[sym].wins / d) * 1000) / 10 : 0;
+  }
+  for (const s of closed) {
+    (byGradeSymbol[s.symbol] ??= {})[s.grade] = bucketOf(closed.filter((x) => x.symbol === s.symbol && x.grade === s.grade));
+  }
+  const oilByRegime: SignalStats["oilByRegime"] = {};
+  for (const s of closed.filter((x) => x.symbol === "OIL")) {
+    const key = s.oilRegime ?? "unknown";
+    oilByRegime[key] = bucketOf(closed.filter((x) => x.symbol === "OIL" && (x.oilRegime ?? "unknown") === key));
+  }
+  const sideOf = (b: "LONG" | "SHORT") => ({ ...bucketOf(closed.filter((s) => s.bias === b)), total: rows.filter((s) => s.bias === b).length, pending: pending.filter((s) => s.bias === b).length });
+  return {
+    total: rows.length,
+    wins: wins.length,
+    losses: losses.length,
+    pending: pending.length,
+    expired: expired.length,
+    winRate: decided ? Math.round((wins.length / decided) * 1000) / 10 : 0,
+    avgConfidence: rows.length ? Math.round((rows.reduce((a, s) => a + s.confidence, 0) / rows.length) * 10) / 10 : 0,
+    // Mean realized R of winners (was reward-over-risk from the outcome price; same number for TP exits).
+    avgRR: winRs.length ? Math.round((winRs.reduce((a, b) => a + b, 0) / winRs.length) * 100) / 100 : 0,
+    profitFactor: k.grossLossR > 0 ? Math.round((k.grossProfitR / k.grossLossR) * 100) / 100 : k.grossProfitR > 0 ? 999 : 0,
+    bySymbol,
+    byGradeSymbol,
+    oilByRegime,
+    byBias: { LONG: sideOf("LONG"), SHORT: sideOf("SHORT") },
+  };
 }

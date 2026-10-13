@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { computeStats, shouldAppend, type SignalLog } from "../logger";
-import { computePerformance, conservativeR } from "../performance";
+import { shouldAppend, type SignalLog } from "../logger";
+import { computePerformance, computeStats, conservativeR } from "../performance";
 
 const NOW = Date.now();
 
@@ -128,6 +128,82 @@ describe("performance exclusions", () => {
     expect(legacy.costEstimated).toBe(true);
     expect(legacy.costR).toBeGreaterThan(0);
     expect(legacy.realizedNetR).toBeLessThan(3);
+  });
+
+  it("builds the calibration table with Wilson intervals, Brier and the track-record KPIs", () => {
+    const mk = (i: number, conf: number, tp1: boolean, r: number, extra: Partial<SignalLog> = {}) =>
+      sig({
+        id: `s${i}`,
+        timestamp: NOW - (50 - i) * 3600e3,
+        confidence: conf,
+        grade: conf >= 75 ? "A" : "B",
+        status: "closed",
+        outcome: tp1 ? "tp1" : "stopped",
+        closedReason: tp1 ? "stop_after_tp" : "stop_before_tp",
+        stoppedAfterTp: tp1 ? 1 : 0,
+        tpHits: tp1 ? [{ level: 1, at: NOW, price: 101 }] : [],
+        realizedR: r,
+        realizedNetR: r - 0.1,
+        costR: 0.1,
+        fillPrice: 100,
+        outcomeTimestamp: NOW - (50 - i) * 3600e3 + 90e5,
+        filledAt: NOW - (50 - i) * 3600e3 + 300e3,
+        fillStatus: "filled",
+        engineVersion: i < 10 ? "v1" : "v2",
+        ...extra,
+      });
+    const rows: SignalLog[] = [];
+    // 62-band: 12 rows, 6 wins. 77-band: 8 rows, 6 wins. 15 of 20 TP1s go to +1R, stops to -1R.
+    for (let i = 0; i < 12; i++) rows.push(mk(i, 62, i % 2 === 0, i % 2 === 0 ? 1 : -1));
+    for (let i = 12; i < 20; i++) rows.push(mk(i, 77, i % 4 !== 3, i % 4 !== 3 ? 1 : -1));
+    // One expired no-verdict row with a positive horizon exit and one unfilled limit.
+    rows.push(mk(20, 62, false, 0.3, { outcome: "expired", closedReason: "horizon", stoppedAfterTp: null }));
+    rows.push(mk(21, 62, false, 0, { outcome: "expired", closedReason: "unfilled", fillStatus: "unfilled", realizedR: null, realizedNetR: null, costR: null, entry: 95, priceAtSignal: 100 }));
+    const { stats } = computePerformance(rows, { dedupe: false, rangeDays: null, engineVersion: "v2" });
+    const c = stats.calibration;
+    const b62 = c.byConfidence.find((b) => b.key === "60-64")!;
+    expect(b62.n).toBe(12);
+    expect(b62.tp1Rate).toBe(50);
+    expect(b62.wilsonLo).toBeCloseTo(25.4, 0);
+    expect(b62.wilsonHi).toBeCloseTo(74.6, 0);
+    // Expectancy and pPos use the expired row too (13 closed rows in the band).
+    expect(b62.pPos).toBe(Math.round((7 / 13) * 1000) / 10);
+    expect(b62.meanNetR).toBeCloseTo((6 * 0.9 + 6 * -1.1 + 0.2) / 13, 2);
+    expect(b62.brierNaive).toBeCloseTo(((0.62 - 1) ** 2 * 6 + 0.62 ** 2 * 6) / 12, 3);
+    expect(b62.brierCal).toBeNull();
+    const b77 = c.byConfidence.find((b) => b.key === "75-79")!;
+    expect(b77.n).toBe(8);
+    expect(b77.tp1Rate).toBe(75);
+    expect(c.byGrade.map((b) => b.key)).toEqual(["A", "B"]);
+    expect(c.byRr1.find((b) => b.key === "1-1.5")?.n).toBe(20);
+    expect(c.byPTp1).toEqual([]);
+    expect(c.brier.n).toBe(20);
+    expect(c.brier.uncertainty).toBeCloseTo(0.6 * 0.4, 6);
+    expect(c.brier.base).toBe(c.brier.uncertainty);
+    expect(c.brier.calibrated).toBeNull();
+    expect(c.platt).toBeNull();
+    // KPIs
+    expect(stats.kpis.expiryRate).toBe(Math.round((1 / 21) * 1000) / 10);
+    expect(stats.kpis.fillRate).toEqual({ market: 100, limit: 0, nMarket: 21, nLimit: 1 });
+    expect(stats.kpis.medianHoldMin.winners).toBe(145);
+    expect(stats.kpis.holdMin.losers.n).toBe(8);
+    expect(stats.kpis.seExpectancyR).toBeGreaterThan(0);
+    expect(stats.kpis.maxDrawdownR).toBeLessThan(0);
+    expect(stats.kpis.maxDrawdownNetR).toBeLessThan(stats.kpis.maxDrawdownR as number);
+    expect(stats.kpis.longestUnderwaterDays).toBeGreaterThan(0);
+    expect(stats.kpis.shareAbove2R).toBe(0);
+    // Histogram: 12 rows at +1R land in the "1.0" bin gross and the "0.5" bin net (0.9R).
+    expect(stats.rHistogram.find((b) => b.bin === "1.0")?.n).toBe(12);
+    expect(stats.rHistogram.find((b) => b.bin === "0.5")?.netN).toBe(12);
+    expect(stats.rHistogram[0].bin).toBe("<-3");
+    expect(stats.rHistogram[stats.rHistogram.length - 1].bin).toBe("5+");
+    // Versions, newest last signal first, with date ranges.
+    expect(stats.versions.map((v) => v.version)).toEqual(["v2", "v1"]);
+    expect(stats.versions[1].n).toBe(10);
+    expect(stats.versions[0].firstAt).toBeLessThan(stats.versions[0].lastAt);
+    expect(stats.meta.engineVersion).toBe("v2");
+    expect(stats.meta.decidedNCurrentVersion).toBe(10);
+    expect(stats.breakdowns.byEntryType.find((b) => b.key === "market")?.n).toBe(21);
   });
 
   it("keeps the legacy stats object in R and skips excluded records", () => {

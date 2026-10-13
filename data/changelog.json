@@ -3,7 +3,7 @@
     "at": "2026-10-13T04:49:43Z",
     "commit": "12ed7e2",
     "title": "Cost model and next-open fills; net R beside gross",
-    "effect": "Market orders now fill at the next 5-minute open instead of the decision price, with risk and R measured from that fill. Every closed signal carries a round-trip cost (taker/maker fee, slippage per market leg, funding over the hold; Strike defaults) and a net R. Expectancy, profit factor, equity and the histogram show net with gross alongside. Records closed before this carry an estimated cost without funding."
+    "effect": "Market orders now fill at the next 5-minute open instead of the decision price, with risk and R measured from that fill. Every closed signal carries a round-trip cost and a net R. Fees verified against the venue docs on Oct 13: Strike taker 5 bp at tier 0 with a 0.5 bp maker rebate and hourly funding at one eighth of the 8h rate (10 bp round trip for market in and out); Hyperliquid base tier 4.5 bp taker, 1.5 bp maker. Slippage of 3 bp per market leg is an assumption. Expectancy, profit factor, equity and the histogram show net with gross alongside. Records closed before this carry an estimated cost without funding."
   },
   {
     "at": "2026-10-13T04:45:37Z",

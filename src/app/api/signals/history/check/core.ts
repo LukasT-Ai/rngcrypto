@@ -84,9 +84,11 @@ const r4 = (n: number) => Math.round(n * 10000) / 10000;
 
 // ── Cost model (perf audit 1.3) ──────────────────────────────────────────────
 // Fees and slippage in basis points of notional per leg; funding charged over the hold. Fee figures verified
-// 2026-10-13 against the venue docs: Strike tier 0 taker 0.050% with a -0.005% maker rebate, funding hourly at
-// one eighth of the 8h rate (docs.strikefinance.org/perpetuals/trading-fees, funding-rates); Hyperliquid base
-// taker 0.045%, maker 0.015%. Slippage per market leg is an assumption, not a venue figure.
+// 2026-10-13 against the venue docs: Strike (docs.strikefinance.org/perpetuals/trading-fees) taker 5 bp at
+// tier 0 (2.8 bp at $200M+ 30d volume), maker rebate -0.5 bp, fees on filled notional, funding hourly at one
+// eighth of the 8h rate (capped +/-4% per 8h); Hyperliquid base tier taker 4.5 bp, maker 1.5 bp. Slippage is
+// an assumption (3 bp per market leg), not a venue figure. A market-in, market-out Strike signal therefore
+// pays 10 bp before slippage and funding.
 export interface CostVenue {
   venue: string;
   takerBps: number;
@@ -111,7 +113,8 @@ export interface CostBreakdown {
   fundingR: number;
 }
 
-// Round-trip cost in R. Entry leg: market = taker + slippage, limit = maker (resting, no slippage). Exit leg:
+// Round-trip cost in R. Entry leg: market = taker + slippage, limit = maker (resting, no slippage; a negative
+// maker figure is a rebate and reduces the cost). Exit leg:
 // always taker + slippage (stops and horizon exits are market orders; a TP exit is charged the same so the
 // model never flatters a touch). Funding: `fundingRate8h` is a fraction per 8h (the engine's unit); longs pay
 // when it is positive, shorts collect. Everything is expressed per unit of notional and divided by the risk.

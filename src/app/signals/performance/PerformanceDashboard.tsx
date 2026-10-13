@@ -467,7 +467,13 @@ export default function PerformanceDashboard() {
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <div className={cn(CARD, "p-4")}>
-                  <div className="flex flex-wrap gap-1 mb-2" role="tablist" aria-label="Breakdown">
+                  <label className="md:hidden mb-2 flex items-center gap-2 text-[11px] text-white/50">
+                    Breakdown
+                    <select aria-label="Breakdown" value={tab} onChange={(e) => setTab(e.target.value as (typeof TABS)[number]["k"])} className="flex-1 rounded-md border border-white/10 bg-transparent px-2 py-1 text-white/85 focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]">
+                      {TABS.map((t) => <option key={t.k} value={t.k} className="bg-[#111827]">{t.l}</option>)}
+                    </select>
+                  </label>
+                  <div className="hidden md:flex flex-wrap gap-1 mb-2" role="tablist" aria-label="Breakdown">
                     {TABS.map((t) => (
                       <button key={t.k} type="button" role="tab" aria-selected={tab === t.k} onClick={() => setTab(t.k)} className={cn("rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]", tab === t.k ? "border-transparent text-[#06080F]" : "border-white/10 text-[#9CA3AF] hover:text-white")} style={tab === t.k ? { backgroundColor: "var(--brand)" } : undefined}>
                         {t.l}

@@ -11,7 +11,7 @@ export const EVENT_DEFS: MacroEventDef[] = [
   },
   {
     id: "core_cpi_mom", title: "Core CPI m/m", aliases: /^core cpi m\/m$/i, kind: "inflation", importance: "critical", unit: "pct", decimals: 1,
-    typicalSurpriseSD: 0.1, relevance: { BTC: 1.0, GOLD: 1.0, WTI: 0.3 },
+    typicalSurpriseSD: 0.09, relevance: { BTC: 1.0, GOLD: 1.0, WTI: 0.3 },
     source: { provider: "BLS", series: "CUSR0000SA0L1E", transform: "mom_pct" },
     logic: "Core inflation is what the Fed reacts to; a cooler core print eases policy expectations and helps BTC and Gold.",
   },
@@ -23,7 +23,7 @@ export const EVENT_DEFS: MacroEventDef[] = [
   },
   {
     id: "ppi_mom", title: "PPI m/m", aliases: /^ppi m\/m$/i, kind: "inflation", importance: "high", unit: "pct", decimals: 1,
-    typicalSurpriseSD: 0.3, relevance: { BTC: 0.6, GOLD: 0.7, WTI: 0.4 },
+    typicalSurpriseSD: 0.25, relevance: { BTC: 0.6, GOLD: 0.7, WTI: 0.4 },
     source: { provider: "BLS", series: "WPSFD4", transform: "mom_pct" },
     logic: "Producer prices lead consumer inflation and feed PCE; a softer print eases the Fed outlook.",
   },
@@ -35,7 +35,7 @@ export const EVENT_DEFS: MacroEventDef[] = [
   },
   {
     id: "core_pce_mom", title: "Core PCE Price Index m/m", aliases: /^core pce price index m\/m$/i, kind: "inflation", importance: "critical", unit: "pct", decimals: 1,
-    typicalSurpriseSD: 0.1, relevance: { BTC: 0.9, GOLD: 1.0, WTI: 0.3 },
+    typicalSurpriseSD: 0.07, relevance: { BTC: 0.9, GOLD: 1.0, WTI: 0.3 },
     source: { provider: "FRED", series: "PCEPILFE", transform: "mom_pct" },
     logic: "Core PCE is the Fed's preferred gauge; a cooler print directly lowers the policy path and supports BTC and Gold.",
   },
@@ -47,7 +47,7 @@ export const EVENT_DEFS: MacroEventDef[] = [
   },
   {
     id: "nfp", title: "Non-Farm Employment Change", aliases: /^non-?farm employment change$/i, kind: "labor_strength", importance: "critical", unit: "k", decimals: 0,
-    typicalSurpriseSD: 75, relevance: { BTC: 0.9, GOLD: 0.9, WTI: 0.5 },
+    typicalSurpriseSD: 90, relevance: { BTC: 0.9, GOLD: 0.9, WTI: 0.5 },
     source: { provider: "BLS", series: "CES0000000001", transform: "diff_k" },
     logic: "Strong payrolls mean a Fed less pressed to ease (yields and dollar up) unless growth fears dominate, in which case risk assets can rally on relief.",
   },
@@ -161,7 +161,7 @@ export const EVENT_DEFS: MacroEventDef[] = [
   },
   {
     id: "eia_crude", title: "EIA Crude Oil Inventories", aliases: /^crude oil inventories$|^eia weekly petroleum status report$/i, kind: "oil_inventory", importance: "high", unit: "mb", decimals: 1,
-    typicalSurpriseSD: 2.5, relevance: { BTC: 0.1, GOLD: 0.2, WTI: 1.0 },
+    typicalSurpriseSD: 3.0, relevance: { BTC: 0.1, GOLD: 0.2, WTI: 1.0 },
     source: {
       provider: "EIA", series: "WCESTUS1", transform: "weekly_change_mb",
       components: [

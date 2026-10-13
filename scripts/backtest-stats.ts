@@ -101,15 +101,16 @@ export interface DeflationReport {
 
 /**
  * Deflated Sharpe check for one configuration against the sweep it was picked from. `trialSharpes` are the
- * per-trade Sharpes of every configuration tried (this one included); `trials` the count to deflate for.
+ * per-trade Sharpes of every configuration tried (this one included); `trials` the count to deflate for;
+ * `fixedTrialSd` pins the spread of the trials' Sharpes so runs made at different times deflate against the same SR0.
  */
-export function deflatedSharpe(netR: number[], trialSharpes: number[], trials: number): DeflationReport {
+export function deflatedSharpe(netR: number[], trialSharpes: number[], trials: number, fixedTrialSd: number | null = null): DeflationReport {
   const st = sharpeStats(netR);
   const empty: DeflationReport = { n: st.n, sharpe: st.sharpe, skew: st.skew, kurtosis: st.kurtosis, trialSd: null, sr0: null, psr0: null, psrDeflated: null, minTrl0: null, minTrlDeflated: null, verdict: "not enough closed trades for a Sharpe" };
   if (st.sharpe == null || st.skew == null || st.kurtosis == null) return empty;
   const ts = trialSharpes.filter((v) => Number.isFinite(v));
   // With fewer than two trial Sharpes the spread is unknown; assume the paper's worked value for this engine (0.08).
-  const trialSd = ts.length >= 2 ? sharpeStats(ts).sd ?? 0.08 : 0.08;
+  const trialSd = fixedTrialSd != null && Number.isFinite(fixedTrialSd) && fixedTrialSd > 0 ? fixedTrialSd : ts.length >= 2 ? (sharpeStats(ts).sd ?? 0.08) : 0.08;
   const sr0 = expectedMaxSharpe(trialSd * trialSd, trials);
   const p0 = psr(st.sharpe, 0, st.n, st.skew, st.kurtosis);
   const pd = psr(st.sharpe, sr0, st.n, st.skew, st.kurtosis);

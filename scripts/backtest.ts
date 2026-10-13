@@ -83,6 +83,9 @@ const REPORT_BUCKETS = flag("report-buckets");
 // N defaults to the number of backtest reports already in --out (every report is one trial of the sweep).
 const SWEEP_DEFLATE = flag("sweep-deflate");
 const TRIALS_ARG = parseInt(arg("trials", "0"), 10);
+// Spread of the trials' per-trade Sharpes. Default 0.08 (the observed spread of the 2026-10-07 36-config sweep,
+// research section 5.1) so every run is deflated against the same benchmark; "scan" measures it from the reports in --out.
+const TRIAL_SD_ARG = arg("trial-sd", "0.08");
 // --asof <ms|ISO>: pin the window end (rounded down to the hour) so a run reuses the candle cache of an earlier run.
 const ASOF_RAW = arg("asof", "");
 const ASOF = ASOF_RAW ? (Number.isFinite(Number(ASOF_RAW)) ? Number(ASOF_RAW) : Date.parse(ASOF_RAW)) : NaN;
@@ -431,7 +434,8 @@ function sweepDeflation(all: Trade[]) {
   let trials = TRIALS_ARG > 0 ? TRIALS_ARG : trialSharpes.length;
   if (!(TRIALS_ARG > 0)) trialsSource = `${trialSharpes.length} reports in ${OUT} incl. this run`;
   if (trials < 2) trials = 2;
-  return { trials, trialsSource, ...deflatedSharpe(net, trialSharpes, trials) };
+  const fixedSd = TRIAL_SD_ARG === "scan" ? null : parseFloat(TRIAL_SD_ARG);
+  return { trials, trialsSource, trialSdSource: fixedSd != null ? `--trial-sd ${fixedSd}` : "scan of reports", ...deflatedSharpe(net, trialSharpes, trials, fixedSd) };
 }
 
 async function main() {

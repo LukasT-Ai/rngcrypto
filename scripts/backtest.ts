@@ -14,11 +14,13 @@
  * Candles come from Binance.US (public, no key): 5m bars for the window plus a warm-up, aggregated locally to
  * 15m / 1h / 4h; daily bars fetched separately. Only symbols with a Binance.US market are testable.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_TUNING, ENGINE_VERSION, getTuning, getWeights, scoreFromCandles, setTuning, setWeights, type Candle, type FactorWeights, type Tuning } from "../src/lib/signals/engine";
 import { COST_MODEL, costInR, type CostVenue } from "../src/app/api/signals/history/check/core";
 import { calibration, type CalRow } from "../src/app/api/signals/history/performance";
+import { buildHoldBuckets, type HoldBucketFile } from "../src/lib/signals/setup-tracker";
+import { deflatedSharpe, sharpeStats } from "./backtest-stats";
 
 const BINANCE: Record<string, string> = { BTC: "BTCUSDT", ETH: "ETHUSDT", BNB: "BNBUSDT", ADA: "ADAUSDT", XRP: "XRPUSDT", SOL: "SOLUSDT", NEAR: "NEARUSDT", ZEC: "ZECUSDT" };
 const M5 = 300e3, M15 = 900e3, H1 = 3600e3, H4 = 14400e3, D1 = 86400e3;
@@ -31,6 +33,13 @@ const MARKET_TOL = 0.001;
 function arg(name: string, def: string): string {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def;
+}
+// Boolean flag: present without a value or with anything other than "0" means on.
+function flag(name: string, def = false): boolean {
+  const i = process.argv.indexOf(`--${name}`);
+  if (i < 0) return def;
+  const v = process.argv[i + 1];
+  return !(v === "0" || v === "false");
 }
 const DAYS = parseInt(arg("days", "30"), 10);
 const SYMBOLS = arg("symbols", Object.keys(BINANCE).join(",")).split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
@@ -54,7 +63,31 @@ setTuning({
   stopFloorScale: parseFloat(arg("stop-floor-scale", String(DEFAULT_TUNING.stopFloorScale))),
   regimeWeight: parseFloat(arg("regime-weight", String(DEFAULT_TUNING.regimeWeight))),
   regimeGate: arg("regime-gate", DEFAULT_TUNING.regimeGate) as Tuning["regimeGate"],
+  // Wave 2 (PR 15) structural knobs, each a flag here first (research/backtest-wave2.md records the runs):
+  //   --mr-with-regime 1 --breakeven-after-tp1 1 --horizon-by-tf 1 --htf-gate-both 1 --htf-vote 0 --short-regime 1
+  //   --min-rr 1.5 --session-rules 1
+  mrWithRegime: flag("mr-with-regime", DEFAULT_TUNING.mrWithRegime),
+  breakevenAfterTp1: flag("breakeven-after-tp1", DEFAULT_TUNING.breakevenAfterTp1),
+  horizonByTf: flag("horizon-by-tf", DEFAULT_TUNING.horizonByTf),
+  htfGateBoth: flag("htf-gate-both", DEFAULT_TUNING.htfGateBoth),
+  htfVote: flag("htf-vote", DEFAULT_TUNING.htfVote),
+  shortNeedsBearRegime: flag("short-regime", DEFAULT_TUNING.shortNeedsBearRegime),
+  minRr: parseFloat(arg("min-rr", String(DEFAULT_TUNING.minRr))),
+  sessionRules: flag("session-rules", DEFAULT_TUNING.sessionRules),
 });
+// Flat horizon override in hours (R4.2); ignored per trade when --horizon-by-tf is on (the engine's call.horizonMin wins).
+const HORIZON_HOURS = parseFloat(arg("horizon-hours", String(HORIZON_MS / H1)));
+// --report-buckets: month / hour / weekday / setup / mode / dominant-TF summaries with per-bucket t-stats (R5.1).
+const REPORT_BUCKETS = flag("report-buckets");
+// --sweep-deflate 1 [--trials N]: deflated Sharpe / PSR / MinTRL against the number of configurations tried (R5.2).
+// N defaults to the number of backtest reports already in --out (every report is one trial of the sweep).
+const SWEEP_DEFLATE = flag("sweep-deflate");
+const TRIALS_ARG = parseInt(arg("trials", "0"), 10);
+// --asof <ms|ISO>: pin the window end (rounded down to the hour) so a run reuses the candle cache of an earlier run.
+const ASOF_RAW = arg("asof", "");
+const ASOF = ASOF_RAW ? (Number.isFinite(Number(ASOF_RAW)) ? Number(ASOF_RAW) : Date.parse(ASOF_RAW)) : NaN;
+// --write-hold-buckets <file|1>: hold-time buckets (symbol x bias x regime) for call.expectedHold ("1" = data/hold-buckets.json).
+const HOLD_OUT = arg("write-hold-buckets", "");
 const COOLDOWN_MS = parseFloat(arg("cooldown-min", "60")) * 60e3;
 const MIN_CONF = getTuning().minPublishConfidence;
 // --weights-json <file>: override the factor weights (keys of DEFAULT_WEIGHTS) for out-of-sample validation
@@ -140,6 +173,14 @@ interface Trade {
   regimeLabel: string | null;
   alignment: "aligned" | "counter" | "n/a";
   weightedScore: number | null;
+  // Wave 2 per-trade context (report buckets + horizon rule).
+  horizonMs: number;
+  mode: string | null;
+  dominantTf: string | null;
+  setup: string | null;
+  sizeMultiplier: number;
+  /** Stop in force at the close (the fill price after TP1 when breakeven is on). */
+  activeStop: number | null;
 }
 
 function simulate(tr: Trade, c5: Candle[], from: number): void {
@@ -171,7 +212,8 @@ function simulate(tr: Trade, c5: Candle[], from: number): void {
   const fillPrice = COST_MODEL_ON && tr.entryType === "market" && c5[fillIdx].open > 0 ? c5[fillIdx].open : tr.entry;
   tr.fillPrice = fillPrice;
   const fillRisk = Math.abs(fillPrice - tr.stop) > 0 ? Math.abs(fillPrice - tr.stop) : risk;
-  const horizonEnd = tr.t + HORIZON_MS;
+  const horizonEnd = tr.t + tr.horizonMs;
+  const breakeven = getTuning().breakevenAfterTp1;
   let hit: 0 | 1 | 2 | 3 = 0;
   const rOf = (p: number) => (long ? p - fillPrice : fillPrice - p) / fillRisk;
   const legacyCost = ((SLIP + FEE) * 2 * tr.entry) / risk; // old flat round trip, in R
@@ -192,10 +234,14 @@ function simulate(tr: Trade, c5: Candle[], from: number): void {
       finish("horizon", c5[j - 1]?.close ?? c.open, c.time);
       return;
     }
-    const stopHit = long ? c.low <= tr.stop : c.high >= tr.stop;
+    // Breakeven after TP1 (R4.1): the stop moves to the fill price once TP1 printed; a touch exits at breakeven
+    // (0R gross) instead of crediting the last TP. Off: original stop, exit at the last TP (the live convention).
+    const activeStop = breakeven && hit > 0 ? fillPrice : tr.stop;
+    tr.activeStop = activeStop;
+    const stopHit = long ? c.low <= activeStop : c.high >= activeStop;
     if (stopHit) {
       if (hit === 0) finish("stop_before_tp", tr.stop, c.time);
-      else finish("stop_after_tp", tr.tp[hit - 1], c.time);
+      else finish("stop_after_tp", breakeven ? fillPrice : tr.tp[hit - 1], c.time);
       return;
     }
     // Limit fill candle came from the far side of the entry: targets count from the next candle.
@@ -220,7 +266,7 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
     console.log(`${symbol}: no Binance.US market, skipped`);
     return [];
   }
-  const end = Math.floor(Date.now() / 3600e3) * 3600e3;
+  const end = Math.floor((Number.isFinite(ASOF) ? ASOF : Date.now()) / 3600e3) * 3600e3;
   const start = end - DAYS * D1 - WARMUP_15M * M15 - WINDOW_4H * H4 - 2 * D1;
   console.log(`${symbol}: fetching ${DAYS}d of 5m candles…`);
   const c5 = await klines(b, "5m", start, end);
@@ -291,6 +337,12 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
       netR: null,
       regimeLabel: r.regimeLabel ?? null,
       weightedScore: typeof r.weightedScore === "number" ? r.weightedScore : null,
+      horizonMs: getTuning().horizonByTf && r.horizonMin > 0 ? r.horizonMin * 60e3 : HORIZON_HOURS * H1,
+      mode: r.mode ?? null,
+      dominantTf: r.dominantTf ?? null,
+      setup: r.setup ?? null,
+      sizeMultiplier: r.sizeMultiplier ?? 1,
+      activeStop: null,
       alignment:
         r.regimeLabel === "Bull regime" || r.regimeLabel === "Bear regime"
           ? (r.bias === "LONG") === (r.regimeLabel === "Bull regime")
@@ -333,7 +385,12 @@ function summarize(list: Trade[]) {
   const n = closed.map((t) => t.netR!);
   const pos = n.filter((x) => x > 0).reduce((a, b) => a + b, 0);
   const neg = -n.filter((x) => x < 0).reduce((a, b) => a + b, 0);
+  const st = sharpeStats(n);
   return {
+    // Per-trade Sharpe (mean / sd of net R) and its t-stat: the inputs the deflated-Sharpe check needs (R5.2).
+    sharpePerTrade: st.sharpe,
+    tStat: st.tStat,
+    sdNetR: st.sd,
     signals: list.length,
     unfilled: list.filter((t) => t.reason === "unfilled").length,
     open: list.filter((t) => t.reason === "open").length,
@@ -347,6 +404,34 @@ function summarize(list: Trade[]) {
     profitFactorNet: neg > 0 ? Math.round((pos / neg) * 100) / 100 : pos > 0 ? null : 0,
     longShare: pct(list.filter((t) => t.bias === "LONG").length, list.length),
   };
+}
+
+// R5.2: deflated Sharpe against the sweep. Every backtest report in --out is one trial; their per-trade Sharpes
+// give the variance of the trials. Reports older than this field recompute the Sharpe from their trades[].
+function sweepDeflation(all: Trade[]) {
+  const net = all.filter((t) => t.netR != null).map((t) => t.netR!);
+  const trialSharpes: number[] = [];
+  let trialsSource = "--trials";
+  try {
+    for (const f of readdirSync(OUT)) {
+      if (!f.startsWith("backtest-") || !f.endsWith(".json")) continue;
+      try {
+        const j = JSON.parse(readFileSync(join(OUT, f), "utf-8")) as { overall?: { sharpePerTrade?: number | null }; trades?: { netR: number | null }[] };
+        const sr = j.overall?.sharpePerTrade ?? sharpeStats((j.trades ?? []).filter((t) => t.netR != null).map((t) => t.netR!)).sharpe;
+        if (sr != null && Number.isFinite(sr)) trialSharpes.push(sr);
+      } catch {
+        /* skip unreadable report */
+      }
+    }
+  } catch {
+    /* no reports dir yet */
+  }
+  const own = sharpeStats(net);
+  if (own.sharpe != null) trialSharpes.push(own.sharpe);
+  let trials = TRIALS_ARG > 0 ? TRIALS_ARG : trialSharpes.length;
+  if (!(TRIALS_ARG > 0)) trialsSource = `${trialSharpes.length} reports in ${OUT} incl. this run`;
+  if (trials < 2) trials = 2;
+  return { trials, trialsSource, ...deflatedSharpe(net, trialSharpes, trials) };
 }
 
 async function main() {
@@ -366,7 +451,7 @@ async function main() {
   const report = {
     engineVersion: ENGINE_VERSION,
     generatedAt: new Date().toISOString(),
-    params: { days: DAYS, symbols: SYMBOLS, slippage: SLIP, fee: FEE, horizonHours: HORIZON_MS / H1, fillWindowCandles: FILL_WINDOW, cooldownMin: COOLDOWN_MS / 60e3, tuning: getTuning(), weights: getWeights(), weightsOverride: weightsApplied, costModel: COST_MODEL_ON ? { ...VENUE, nextOpenFill: true, fundingApplied: false } : { legacy: true, roundTrip: (SLIP + FEE) * 2 } },
+    params: { days: DAYS, symbols: SYMBOLS, slippage: SLIP, fee: FEE, horizonHours: HORIZON_HOURS, asOf: Number.isFinite(ASOF) ? new Date(Math.floor(ASOF / 3600e3) * 3600e3).toISOString() : null, label: LABEL || null, fillWindowCandles: FILL_WINDOW, cooldownMin: COOLDOWN_MS / 60e3, tuning: getTuning(), weights: getWeights(), weightsOverride: weightsApplied, costModel: COST_MODEL_ON ? { ...VENUE, nextOpenFill: true, fundingApplied: false } : { legacy: true, roundTrip: (SLIP + FEE) * 2 } },
     caveats: [
       "Candles only: funding, open interest, sentiment, news, catalysts, ETF flows, liquidations and the macro regime are null, exactly as the live engine treats a feed that is down.",
       "Binance.US spot candles stand in for Strike's perp feed; wicks differ slightly.",
@@ -380,6 +465,23 @@ async function main() {
     byEntryType: by((t) => t.entryType),
     byRegime: by((t) => t.regimeLabel ?? "none"),
     byAlignment: by((t) => t.alignment),
+    // R5.1 report buckets (always written; printed with --report-buckets). Any bucket under 40 trades is descriptive only.
+    byMonth: by((t) => new Date(t.t).toISOString().slice(0, 7)),
+    byHour: by((t) => `h${String(new Date(t.t).getUTCHours()).padStart(2, "0")}`),
+    byHourBlock: by((t) => {
+      const h = new Date(t.t).getUTCHours();
+      return h < 8 ? "00-08" : h < 13 ? "08-13" : h < 17 ? "13-17" : h < 21 ? "17-21" : "21-24";
+    }),
+    byWeekday: by((t) => ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][new Date(t.t).getUTCDay()]),
+    byWeekend: by((t) => {
+      const d = new Date(t.t).getUTCDay();
+      return d === 0 || d === 6 ? "weekend" : "weekday";
+    }),
+    bySetup: by((t) => t.setup ?? "none"),
+    byMode: by((t) => t.mode ?? "none"),
+    byDominantTf: by((t) => t.dominantTf ?? "none"),
+    byReason: by((t) => t.reason),
+    sweep: SWEEP_DEFLATE ? sweepDeflation(all) : null,
     // Same calibration table as the live performance page (stated confidence vs realised TP1, Wilson, Brier/BSS),
     // so live and backtest calibration can be overlaid. No Platt mapping in the harness (yet).
     calibration: calibration(all.filter((t) => t.grossR != null).map(toCalRow), null),
@@ -387,8 +489,17 @@ async function main() {
   };
   mkdirSync(OUT, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  const file = join(OUT, `backtest-${stamp}.json`);
+  const file = join(OUT, `backtest-${stamp}${LABEL ? `-${LABEL.replace(/[^a-z0-9_-]/gi, "_")}` : ""}.json`);
   writeFileSync(file, JSON.stringify(report, null, 2));
+  if (HOLD_OUT) {
+    const holdFile = HOLD_OUT === "1" ? join("data", "hold-buckets.json") : HOLD_OUT;
+    const samples = all
+      .filter((t) => t.filledAt != null && t.closedAt != null && t.grossR != null)
+      .map((t) => ({ symbol: t.symbol, bias: t.bias, regime: t.regimeLabel, holdMin: Math.max(0, Math.round((t.closedAt! - t.filledAt!) / 60e3)) }));
+    const out: HoldBucketFile = { generatedAt: new Date().toISOString(), source: `${file} (${DAYS}d, ${ENGINE_VERSION})`, buckets: buildHoldBuckets(samples) };
+    writeFileSync(holdFile, JSON.stringify(out, null, 2));
+    console.log(`hold buckets (${samples.length} samples, ${Object.keys(out.buckets).length} keys) written ${holdFile}`);
+  }
   const o = report.overall;
   console.log("\n=== OVERALL ===");
   console.log(JSON.stringify(o, null, 2));
@@ -402,13 +513,39 @@ async function main() {
   for (const [k, v] of Object.entries(report.byRegime)) console.log(k.padEnd(13), `n=${v.closed}`.padEnd(7), `TP1 ${v.tp1Rate}%`.padEnd(10), `netR ${v.expectancyNetR}`.padEnd(14), `PF ${v.profitFactorNet}`.padEnd(10), `sum ${v.sumNetR}`);
   console.log("\n=== BY ALIGNMENT (call vs regime) ===");
   for (const [k, v] of Object.entries(report.byAlignment)) console.log(k.padEnd(9), `n=${v.closed}`.padEnd(7), `TP1 ${v.tp1Rate}%`.padEnd(10), `netR ${v.expectancyNetR}`.padEnd(14), `PF ${v.profitFactorNet}`.padEnd(10), `sum ${v.sumNetR}`);
+  const bucketLine = (k: string, v: ReturnType<typeof summarize>) =>
+    console.log(k.padEnd(14), `n=${v.closed}`.padEnd(7), `TP1 ${v.tp1Rate}%`.padEnd(10), `netR ${v.expectancyNetR}`.padEnd(14), `PF ${v.profitFactorNet}`.padEnd(10), `sum ${v.sumNetR}`.padEnd(12), `t ${v.tStat}`);
+  if (REPORT_BUCKETS) {
+    const groups: [string, Record<string, ReturnType<typeof summarize>>][] = [
+      ["BY MONTH", report.byMonth],
+      ["BY HOUR BLOCK (UTC)", report.byHourBlock],
+      ["BY HOUR (UTC)", report.byHour],
+      ["BY WEEKDAY", report.byWeekday],
+      ["BY WEEKEND", report.byWeekend],
+      ["BY BIAS", report.byBias],
+      ["BY SETUP", report.bySetup],
+      ["BY MODE", report.byMode],
+      ["BY DOMINANT TF", report.byDominantTf],
+      ["BY EXIT REASON", report.byReason],
+    ];
+    for (const [title, group] of groups) {
+      console.log(`\n=== ${title} ===`);
+      for (const [k, v] of Object.entries(group)) bucketLine(k, v);
+    }
+  }
+  if (report.sweep) {
+    const d = report.sweep;
+    console.log("\n=== SWEEP DEFLATION (Bailey & Lopez de Prado) ===");
+    console.log(`trials N=${d.trials} (${d.trialsSource}) . per-trade SR ${d.sharpe} (T=${d.n}, skew ${d.skew}, kurt ${d.kurtosis}) . sd of trial SRs ${d.trialSd} . SR0 (expected max of N) ${d.sr0} . PSR(0) ${d.psr0} . PSR(SR0) ${d.psrDeflated} . MinTRL vs 0 at 95% ${d.minTrl0} trades . MinTRL vs SR0 ${d.minTrlDeflated} trades`);
+    console.log(d.verdict);
+  }
   console.log("\n=== CALIBRATION (stated confidence vs realised TP1) ===");
   for (const b of report.calibration.byConfidence) console.log(b.key.padEnd(7), `n=${b.n}`.padEnd(7), `TP1 ${b.tp1Rate}% [${b.wilsonLo}-${b.wilsonHi}]`.padEnd(26), `P(R>0) ${b.pPos}%`.padEnd(14), `netR ${b.meanNetR}`.padEnd(13), `Brier ${b.brierNaive}`);
   const br = report.calibration.brier;
   console.log(`Brier naive ${br.naive} . base ${br.base} . BSS ${br.bss} . rel ${br.reliability} . res ${br.resolution} . unc ${br.uncertainty} . n ${br.n}`);
   console.log(`\nwritten ${file}`);
   const t = getTuning();
-  console.log(`SUMMARY ${LABEL || "run"} | conf>=${t.minPublishConfidence} shortGate=${t.shortNeedsHtfBear ? 1 : 0} stopBuf=${t.stopBufferAtr} minStopAtr=${t.minStopAtr} floorX=${t.stopFloorScale} regimeW=${t.regimeWeight} regimeGate=${t.regimeGate} cooldown=${COOLDOWN_MS / 60e3}m | signals=${o.signals} unfilled=${o.unfilled} closed=${o.closed} TP1=${o.tp1Rate}% gross=${o.expectancyGrossR} net=${o.expectancyNetR} PF=${o.profitFactorNet} sum=${o.sumNetR} long=${o.longShare}%`);
+  console.log(`SUMMARY ${LABEL || "run"} | days=${DAYS} conf>=${t.minPublishConfidence} shortGate=${t.shortNeedsHtfBear ? 1 : 0} stopBuf=${t.stopBufferAtr} minStopAtr=${t.minStopAtr} floorX=${t.stopFloorScale} regimeW=${t.regimeWeight} regimeGate=${t.regimeGate} cooldown=${COOLDOWN_MS / 60e3}m | mr=${t.mrWithRegime ? 1 : 0} be=${t.breakevenAfterTp1 ? 1 : 0} hTf=${t.horizonByTf ? 1 : 0} hH=${HORIZON_HOURS} htfBoth=${t.htfGateBoth ? 1 : 0} htfVote=${t.htfVote ? 1 : 0} shortRegime=${t.shortNeedsBearRegime ? 1 : 0} minRr=${t.minRr} session=${t.sessionRules ? 1 : 0} | signals=${o.signals} unfilled=${o.unfilled} closed=${o.closed} TP1=${o.tp1Rate}% gross=${o.expectancyGrossR} net=${o.expectancyNetR} PF=${o.profitFactorNet} sum=${o.sumNetR} SR=${o.sharpePerTrade} t=${o.tStat} long=${o.longShare}%`);
 }
 
 main().catch((e) => {

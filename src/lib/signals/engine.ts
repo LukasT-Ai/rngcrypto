@@ -9,14 +9,15 @@
  */
 import { appendSignal, type ShadowClass, type SignalContext, type SignalInputs } from "../../app/api/signals/history/logger";
 import { FACTOR } from "./factors";
-import { stampActiveSetups } from "./setup-tracker";
+import { expectedHoldFor, setHoldLedgerLoader, stampActiveSetups, type HoldTF } from "./setup-tracker";
+import { getHistory, isExcluded } from "../../app/api/signals/history/logger";
 import { pTp1For } from "./calibration";
 import { fetchOrderFlowRaw, summarizeOrderFlow, type LiquidationSummary, type OrderBookSummary, type OrderFlowRaw } from "./orderflow";
 
 // Bump whenever scoring behaviour changes; every logged signal carries it so history can be bucketed.
 // ENGINE_VERSION (below DEFAULT_TUNING) appends a short hash of the tuning defaults so a tuning change that
 // forgets to bump this string still opens a new version bucket (perf audit 5.7).
-export const ENGINE_VERSION_BASE = "2026.10.13-feeds";
+export const ENGINE_VERSION_BASE = "2026.10.13-wave2";
 
 // FNV-1a 32-bit, 6 hex chars. Pure and dependency-free so the hash is identical in the backtest and the server.
 export function shortHash(input: string): string {
@@ -55,8 +56,48 @@ export interface Tuning {
   regimeWeight: number;
   /** Counter-regime gate: off = never, soft = allow confirmed reversals / high conviction at reduced size, hard = always WAIT. */
   regimeGate: "off" | "soft" | "hard";
+  // ── Wave 2 (PR 15) structural knobs. Each one is a backtest flag first; defaults follow research/backtest-wave2.md. ──
+  /** Mean-reversion votes (RSI, Stoch, Bollinger band, divergences) count only toward the regime direction in a
+   *  trending regime (Bull/Bear with blended ADX >= 20); counter-regime fades are muted unless a reversal is confirmed. */
+  mrWithRegime: boolean;
+  /** After TP1 the stop moves to the fill price: a later stop touch exits at breakeven instead of at TP1 (simulate() and the live checker). */
+  breakevenAfterTp1: boolean;
+  /** Horizon by dominant setup timeframe (12h / 36h / 96h for 15m / 1h / 4h+1d) instead of the flat 24h. */
+  horizonByTf: boolean;
+  /** Symmetric HTF gate: LONG requires the 4h trend "bull" (1h "bull" also accepted when 4h is "mixed"), mirroring shortNeedsHtfBear. */
+  htfGateBoth: boolean;
+  /** Keep the HTF factor as a vote in the weighted score. false zeroes weights.htf (the gate carries the information). */
+  htfVote: boolean;
+  /** SHORT only in a Bear regime or with a confirmed bearish reversal structure (engine audit #4). */
+  shortNeedsBearRegime: boolean;
+  /** Minimum reward-to-risk at TP2; a directional call below it is published as WAIT. 0 disables. */
+  minRr: number;
+  /** Session rules: crypto weekends half size, 21-24 UTC WAIT unless trend and flow blocks agree, non-crypto weekends WAIT. */
+  sessionRules: boolean;
+  /** Scale on the daily macro-regime confidence bonus (crypto only). 0 freezes it until the calibration table can score it. */
+  macroBonusScale: number;
 }
-export const DEFAULT_TUNING: Tuning = { minPublishConfidence: 60, shortNeedsHtfBear: true, stopBufferAtr: 0.5, minStopAtr: 0.8, stopFloorScale: 1.0, regimeWeight: 0.05, regimeGate: "soft" };
+export const DEFAULT_TUNING: Tuning = {
+  minPublishConfidence: 60,
+  shortNeedsHtfBear: true,
+  stopBufferAtr: 0.5,
+  minStopAtr: 0.8,
+  stopFloorScale: 1.0,
+  regimeWeight: 0.05,
+  regimeGate: "soft",
+  mrWithRegime: false,
+  breakevenAfterTp1: false,
+  horizonByTf: false,
+  htfGateBoth: false,
+  htfVote: true,
+  shortNeedsBearRegime: false,
+  minRr: 0,
+  sessionRules: false,
+  macroBonusScale: 0,
+};
+/** Horizon in minutes by dominant setup timeframe when horizonByTf is on; the flat default otherwise. */
+export const HORIZON_MIN_BY_TF: Record<"15m" | "1h" | "4h" | "1d", number> = { "15m": 12 * 60, "1h": 36 * 60, "4h": 96 * 60, "1d": 96 * 60 };
+export const DEFAULT_HORIZON_MIN = 24 * 60;
 export const ENGINE_VERSION = `${ENGINE_VERSION_BASE}-${shortHash(JSON.stringify(DEFAULT_TUNING))}`;
 let TUNING: Tuning = { ...DEFAULT_TUNING };
 export function setTuning(partial: Partial<Tuning>): Tuning {
@@ -66,6 +107,13 @@ export function setTuning(partial: Partial<Tuning>): Tuning {
 export function getTuning(): Tuning {
   return TUNING;
 }
+
+// Live ledger hold samples for call.expectedHold (setup-tracker owns the buckets; this keeps it free of the logger).
+setHoldLedgerLoader(() =>
+  getHistory()
+    .filter((s) => s.status === "closed" && !isExcluded(s) && !s.shadow && s.filledAt != null && s.outcomeTimestamp != null)
+    .map((s) => ({ symbol: s.symbol, bias: s.bias, regime: s.context?.inputs?.regime ?? null, holdMin: Math.max(0, Math.round(((s.outcomeTimestamp as number) - (s.filledAt as number)) / 60e3)) }))
+);
 
 /**
  * Factor weights of the multi-factor call (the literal that used to sit inside computeMultiFactorCall).
@@ -1408,7 +1456,10 @@ async function fetchMacroSignals(): Promise<MacroState | null> {
 // Symmetric: a regime aligned with the call adds up to +20; a regime opposed by 15+ points costs 10.
 function getMacroBonus(macroState: MacroState | null, bias: "LONG" | "SHORT" | "WAIT", isCrypto: boolean): number {
   if (!macroState || !isCrypto) return 0;
-  return regimeBonus(macroState.macroScore, bias);
+  // Frozen at 0 by default (TUNING.macroBonusScale) until the calibration table can score it: it inflated grades
+  // on the unvalidated path (engine audit section 6).
+  if (!(TUNING.macroBonusScale > 0)) return 0;
+  return Math.round(regimeBonus(macroState.macroScore, bias) * TUNING.macroBonusScale);
 }
 
 const ASSESSMENT_DIR: Record<string, number> = {
@@ -1522,13 +1573,26 @@ function scoreMomentum(
   rsi5m: number | null,
   prevRsi: number | null,
   macroBias: string | null,
-  trendDir: string | null
+  trendDir: string | null,
+  // Wave 2 (mrWithRegime): +1 / -1 when the Cloud/200MA/ADX regime is trending Bull / Bear, 0 otherwise. Mean-reversion
+  // votes against that direction are muted; the macroBias momentum branch is mirrored with the regime standing in.
+  regimeDir: 1 | -1 | 0 = 0
 ): { score: number; notes: string[] } {
   let score = 0;
   const notes: string[] = [];
+  let muted = 0;
+  // A mean-reversion vote: dropped when it fades a trending regime (sign opposite to regimeDir).
+  const mr = (v: number, note: string) => {
+    if (regimeDir !== 0 && Math.sign(v) === -regimeDir) {
+      muted++;
+      return;
+    }
+    score += v;
+    notes.push(note);
+  };
 
-  const isTrendingBull = trendDir === "bull" && (macroBias === "strong_bull" || macroBias === "bull");
-  const isTrendingBear = trendDir === "bear" && (macroBias === "strong_bear" || macroBias === "bear");
+  const isTrendingBull = trendDir === "bull" && (macroBias === "strong_bull" || macroBias === "bull" || regimeDir === 1);
+  const isTrendingBear = trendDir === "bear" && (macroBias === "strong_bear" || macroBias === "bear" || regimeDir === -1);
 
   if (isTrendingBull && rsi > 70) {
     score += 5;
@@ -1546,17 +1610,13 @@ function scoreMomentum(
       notes.push("RSI momentum cross below 30 — bearish entry signal");
     }
   } else if (rsi < 30) {
-    score += 35;
-    notes.push(`RSI oversold (${rsi.toFixed(0)})`);
+    mr(35, `RSI oversold (${rsi.toFixed(0)})`);
   } else if (rsi < 40) {
-    score += 15;
-    notes.push(`RSI leaning oversold (${rsi.toFixed(0)})`);
+    mr(15, `RSI leaning oversold (${rsi.toFixed(0)})`);
   } else if (rsi > 70) {
-    score -= 35;
-    notes.push(`RSI overbought (${rsi.toFixed(0)})`);
+    mr(-35, `RSI overbought (${rsi.toFixed(0)})`);
   } else if (rsi > 60) {
-    score -= 15;
-    notes.push(`RSI leaning overbought (${rsi.toFixed(0)})`);
+    mr(-15, `RSI leaning overbought (${rsi.toFixed(0)})`);
   }
 
   if (macdHist > 0) {
@@ -1568,11 +1628,9 @@ function scoreMomentum(
   }
 
   if (stochK < 20) {
-    score += 20;
-    notes.push(`Stoch RSI oversold (K=${stochK.toFixed(0)})`);
+    mr(20, `Stoch RSI oversold (K=${stochK.toFixed(0)})`);
   } else if (stochK > 80) {
-    score -= 20;
-    notes.push(`Stoch RSI overbought (K=${stochK.toFixed(0)})`);
+    mr(-20, `Stoch RSI overbought (K=${stochK.toFixed(0)})`);
   }
 
   if (stochK > stochD) score += 10;
@@ -1580,13 +1638,12 @@ function scoreMomentum(
 
   if (rsi5m != null) {
     if (rsi5m < 25) {
-      score += 8;
-      notes.push(`5m RSI oversold (${rsi5m.toFixed(0)})`);
+      mr(8, `5m RSI oversold (${rsi5m.toFixed(0)})`);
     } else if (rsi5m > 75) {
-      score -= 8;
-      notes.push(`5m RSI overbought (${rsi5m.toFixed(0)})`);
+      mr(-8, `5m RSI overbought (${rsi5m.toFixed(0)})`);
     }
   }
+  if (muted > 0) notes.push(`${muted} counter-regime fade vote${muted > 1 ? "s" : ""} muted (${regimeDir > 0 ? "bull" : "bear"} regime)`);
 
   return { score: clamp(score, -100, 100), notes };
 }
@@ -1751,23 +1808,32 @@ function scoreBollinger(
   bbMiddle: number,
   bbWidth: number,
   squeeze: string | null,
-  rsi: number
+  rsi: number,
+  regimeDir: 1 | -1 | 0 = 0
 ): { score: number; notes: string[] } {
   let score = 0;
   const notes: string[] = [];
   void bbMiddle;
 
+  // Band touches are mean-reversion votes: muted when they fade a trending regime (mrWithRegime).
+  const fades = (v: number) => regimeDir !== 0 && Math.sign(v) === -regimeDir;
   if (price <= bbLower) {
-    score += 35;
-    notes.push("Price at lower Bollinger Band");
+    if (fades(35)) notes.push("Price at lower Bollinger Band (fade muted: bear regime)");
+    else {
+      score += 35;
+      notes.push("Price at lower Bollinger Band");
+    }
   } else if (price >= bbUpper) {
-    score -= 35;
-    notes.push("Price at upper Bollinger Band");
+    if (fades(-35)) notes.push("Price at upper Bollinger Band (fade muted: bull regime)");
+    else {
+      score -= 35;
+      notes.push("Price at upper Bollinger Band");
+    }
   } else if (rsi < 40) {
     // Inside the bands is not a signal on its own; only lean when momentum agrees with a mean-reversion read
-    score += 10;
+    if (!fades(10)) score += 10;
   } else if (rsi > 60) {
-    score -= 10;
+    if (!fades(-10)) score -= 10;
   }
 
   if (squeeze === "long_squeeze_risk") {
@@ -1787,7 +1853,8 @@ function scoreDivergences(
   rsiDiv15m: string | null,
   rsiDiv1h: string | null,
   macdDiv: string | null,
-  volDiv: string | null
+  volDiv: string | null,
+  regimeDir: 1 | -1 | 0 = 0
 ): { score: number; notes: string[] } {
   let score = 0;
   const notes: string[] = [];
@@ -1798,12 +1865,20 @@ function scoreDivergences(
     weight: number
   ): void => {
     if (!d) return;
+    // Regular divergences are reversal (mean-reversion) votes: muted against a trending regime (mrWithRegime).
+    // Hidden divergences are continuation reads and always count.
     if (d === "bullish") {
-      score += weight;
-      notes.push(`${label}: bullish divergence`);
+      if (regimeDir === -1) notes.push(`${label}: bullish divergence (fade muted: bear regime)`);
+      else {
+        score += weight;
+        notes.push(`${label}: bullish divergence`);
+      }
     } else if (d === "bearish") {
-      score -= weight;
-      notes.push(`${label}: bearish divergence`);
+      if (regimeDir === 1) notes.push(`${label}: bearish divergence (fade muted: bull regime)`);
+      else {
+        score -= weight;
+        notes.push(`${label}: bearish divergence`);
+      }
     } else if (d === "hidden_bullish") {
       score += weight * 0.7;
       notes.push(`${label}: hidden bullish divergence`);
@@ -3317,10 +3392,13 @@ function computeMultiFactorCall(
     regime: RegimeInfo | null;
     // Phase 3.2 universal event gate (null/absent = no event near: behaviour identical to before).
     eventWindow?: EventWindow | null;
+    /** Decision time in ms (session rules). Defaults to Date.now(); the backtest passes the bar close. */
+    now?: number;
   },
   dec: number
 ) {
   const eventWindow = params.eventWindow ?? null;
+  const nowMs = params.now ?? Date.now();
   const {
     price,
     rsi,
@@ -3391,6 +3469,11 @@ function computeMultiFactorCall(
   // Factor weights: DEFAULT_WEIGHTS plus any setWeights() override (backtest --weights-json); the regime
   // weight always follows TUNING so the existing tuning knob keeps working. Same literal as before by default.
   const weights: FactorWeights = { ...DEFAULT_WEIGHTS, ...WEIGHT_OVERRIDES, regime: TUNING.regimeWeight };
+  // Wave 2: the regime direction the mean-reversion votes may fade against. Only a trending regime (Bull/Bear
+  // label, blended ADX >= 20) counts; a confirmed reversal structure re-enables the fades (R1.2).
+  const regimeTrending = !!regimeInfo && (regimeInfo.label === "Bull regime" || regimeInfo.label === "Bear regime") && regimeInfo.trendStrength !== "none" && regimeInfo.trendStrength !== "weak";
+  const regimeDir: 1 | -1 | 0 =
+    TUNING.mrWithRegime && regimeTrending && taSystem?.setup !== "reversal_confirmed" ? (regimeInfo!.label === "Bull regime" ? 1 : -1) : 0;
   if (!isCrypto) {
     const hasOilGeo = oilGeoScore != null;
     weights.marketData = 0;
@@ -3439,6 +3522,8 @@ function computeMultiFactorCall(
     weights.event = macroScores.weights.event;
     weights.confirmation = macroScores.weights.confirmation;
   }
+  // R2.2: with the HTF gate carrying the higher-timeframe information, the HTF vote is redundant with it.
+  if (!TUNING.htfVote) weights.htf = 0;
 
   const ms = scoreMarketStructure(
     ema9,
@@ -3450,7 +3535,7 @@ function computeMultiFactorCall(
     resistances,
     atr
   );
-  const mom = scoreMomentum(rsi, macdHist, stochRsi.k, stochRsi.d, rsi5m, prevRsi, macroBias, trendDir15m);
+  const mom = scoreMomentum(rsi, macdHist, stochRsi.k, stochRsi.d, rsi5m, prevRsi, macroBias, trendDir15m, regimeDir);
   const vol = scoreVolume(volData.ratio, volData.trend, volData.cvd, volData.available, volData.spikeRatio, volData.spikeLabel, volData.absorption);
   const deriv = scoreDerivatives(fundingRate, putCallRatio);
   const htf = scoreHTF(trend1h, rsi1h, trend4h, rsi4h, trendDaily, rsiDaily);
@@ -3461,9 +3546,10 @@ function computeMultiFactorCall(
     bbMiddle,
     bbWidth,
     squeeze,
-    rsi
+    rsi,
+    regimeDir
   );
-  const divs = scoreDivergences(rsiDiv15m, rsiDiv1h, macdDiv, volDiv);
+  const divs = scoreDivergences(rsiDiv15m, rsiDiv1h, macdDiv, volDiv, regimeDir);
   const sent = scoreSentiment(fearGreed, newsSentimentScore, isCrypto, oilGeoScore);
   const mktData = scoreMarketData(btcDominance, isCrypto, symbol);
   const pats = scorePatterns(pattern);
@@ -3535,6 +3621,43 @@ function computeMultiFactorCall(
       (macroScores?.event ?? 0) * weights.event +
       (macroScores?.confirmation ?? 0) * weights.confirmation) /
     weightSum;
+
+  // ── TREND / TIMING / FLOW blocks (first cut, PR 15) ────────────────────────────────────────────────────────
+  // Weighted mean of the existing factors grouped by what they measure, each -100..100. Reporting only: the
+  // weighted score above still decides the call; the full collapse to three blocks is PR 26. The HTF vote keeps
+  // its default weight inside the trend block even when htfVote is off, so the block reads the same either way.
+  const wmean = (parts: [number, number][]): number => {
+    let num = 0;
+    let den = 0;
+    for (const [v, w] of parts) {
+      if (!(w > 0)) continue;
+      num += v * w;
+      den += w;
+    }
+    return den > 0 ? clamp(Math.round(num / den), -100, 100) : 0;
+  };
+  const blocksEarly = {
+    trend: wmean([
+      [ms.score, weights.marketStructure],
+      [htf.score, TUNING.htfVote ? weights.htf : DEFAULT_WEIGHTS.htf],
+      [regimeScore, weights.regime],
+      [taSystem?.trendScore ?? 0, weights.taSystem],
+    ]),
+    timing: wmean([
+      [mom.score, weights.momentum],
+      [boll.score, weights.bollinger],
+      [divs.score, weights.divergences],
+      [pats.score, weights.patterns],
+      [ewScore, weights.elliott],
+      [taSystem?.exhaustionScore ?? 0, weights.taSystem],
+    ]),
+    flow: wmean([
+      [vol.score, weights.volume],
+      [deriv.score, weights.derivatives],
+      [liq.score, weights.liquidation],
+      [etfScore.score, weights.etf],
+    ]),
+  };
 
   const whipsawPenalty = oilGeoRegime === "whipsaw" ? -8 : 0;
   // Conviction is the MAGNITUDE of the evidence. A strongly bearish board is a high-confidence SHORT, not a
@@ -3740,11 +3863,27 @@ function computeMultiFactorCall(
       gateNotes.push(`${weightedScore > 0 ? "Long" : "Short"} lean at ${confidence} confidence is below the ${TUNING.minPublishConfidence} publish threshold: watch, do not trade`);
     }
   } else if (weightedScore > 0) {
-    bias = "LONG";
+    if (TUNING.htfGateBoth && !(trend4h === "bull" || (trend4h === "mixed" && trend1h === "bull"))) {
+      // R2.1 symmetric HTF gate: a long against higher timeframes that are not trending up is a WAIT, like the short rule.
+      bias = "WAIT";
+      gateNotes.push(`Long lean at ${confidence} confidence, but the higher timeframes are not trending up (4h ${trend4h}, 1h ${trend1h}): standing aside`);
+    } else {
+      bias = "LONG";
+    }
   } else if (TUNING.shortNeedsHtfBear && !(trend4h === "bear" || (trend4h === "mixed" && trend1h === "bear"))) {
     // Shorts against a higher-timeframe uptrend lost money in testing; publish them as WAIT.
     bias = "WAIT";
     gateNotes.push(`Short lean at ${confidence} confidence, but the higher timeframes are not trending down (4h ${trend4h}, 1h ${trend1h}): standing aside`);
+  } else if (
+    TUNING.shortNeedsBearRegime &&
+    regimeInfo &&
+    !(regimeInfo.label === "Bear regime" || (taSystem?.setup === "reversal_confirmed" && taSystem.direction === "bearish"))
+  ) {
+    // Engine audit #4: shorts outside a Bear regime (Transition -0.41R, Mixed -0.09R over 60d) need a confirmed
+    // bearish reversal structure. Tagged as a regime block so the shadow log classes it as regime_blocked.
+    bias = "WAIT";
+    regimeInfo.gate = "blocked_short";
+    gateNotes.push(`Short lean at ${confidence} confidence in a ${regimeInfo.label.toLowerCase()} with no confirmed bearish reversal: shorts need a bear regime, standing aside`);
   } else {
     bias = "SHORT";
   }
@@ -3833,6 +3972,31 @@ function computeMultiFactorCall(
     }
     if (eventWindow.stopMult > 1) stopMult = Math.max(stopMult, eventWindow.stopMult);
   }
+  // ── Session rules (engine audit #9, research #12), behind TUNING.sessionRules ────────────────────────────
+  // Weekend (UTC) crypto: half size (60d backtest: +0.02R n=128 vs +0.20R on weekdays). Non-crypto weekend: the
+  // underlying market is closed, so WAIT. 21-24 UTC: WAIT unless the trend and flow blocks both agree with the call
+  // (-0.10R n=61 in that window).
+  const dUtc = new Date(nowMs);
+  const weekendUtc = dUtc.getUTCDay() === 0 || dUtc.getUTCDay() === 6;
+  const hourUtc = dUtc.getUTCHours();
+  if (TUNING.sessionRules) {
+    if (weekendUtc && !isCrypto) {
+      if (bias !== "WAIT") gateNotes.unshift("Market closed (weekend): no new positions until the cash session reopens");
+      bias = "WAIT";
+    } else if (weekendUtc && bias !== "WAIT") {
+      sizeMultiplier = Math.round(sizeMultiplier * 0.5 * 1000) / 1000;
+      sizingParts.push({ label: "weekend", mult: 0.5 });
+    }
+    if (bias !== "WAIT" && hourUtc >= 21) {
+      const side = bias === "LONG" ? 1 : -1;
+      const trendAgrees = Math.sign(blocksEarly.trend) === side && Math.abs(blocksEarly.trend) >= 20;
+      const flowAgrees = Math.sign(blocksEarly.flow) === side && Math.abs(blocksEarly.flow) >= 20;
+      if (!(trendAgrees && flowAgrees)) {
+        gateNotes.unshift(`Late session (${hourUtc}:00 UTC): trend and flow do not both back the ${bias.toLowerCase()}, standing aside until the Asia open`);
+        bias = "WAIT";
+      }
+    }
+  }
   const sizing = { base: 1, parts: sizingParts, total: sizeMultiplier };
 
   // Macro regime bonus (crypto only): applied BEFORE levels are built so a lean that drops below tradeable
@@ -3878,6 +4042,10 @@ function computeMultiFactorCall(
   let tp2: number;
   let tp3: number;
   let extendedTarget: number | null;
+  // What the stop hides behind (STOP tile sub-line and call.invalidation.kind).
+  let stopAnchor: string | null = null;
+  let stopFromLevel = false;
+  const floorLabel = () => (ta * TUNING.minStopAtr >= price * (STOP_FLOOR_PCT[assetClass] ?? 0.005) * TUNING.stopFloorScale ? `ATR floor (${TUNING.minStopAtr} ATR)` : `price floor (${(((STOP_FLOOR_PCT[assetClass] ?? 0.005) * TUNING.stopFloorScale) * 100).toFixed(2)}%)`);
 
   if (bias === "LONG") {
     entry =
@@ -3887,7 +4055,13 @@ function computeMultiFactorCall(
     secondaryEntry =
       secondSupport !== entry ? round(secondSupport, dec) : null;
     stopLoss = nearestSupport - buf;
-    if (Math.abs(entry - stopLoss) < minDist) stopLoss = entry - Math.max(minStop, minDist);
+    stopFromLevel = supports[0] != null;
+    stopAnchor = stopFromLevel ? `swing low ${round(nearestSupport, dec).toLocaleString()} + ${TUNING.stopBufferAtr} ATR` : `${1.5} ATR below price + ${TUNING.stopBufferAtr} ATR`;
+    if (Math.abs(entry - stopLoss) < minDist) {
+      stopLoss = entry - Math.max(minStop, minDist);
+      stopFromLevel = false;
+      stopAnchor = floorLabel();
+    }
 
     if (secondaryEntry != null) {
       const thirdSupport = supports[2] ?? secondaryEntry - 1.5 * ta;
@@ -3914,7 +4088,13 @@ function computeMultiFactorCall(
     secondaryEntry =
       secondResistance !== entry ? round(secondResistance, dec) : null;
     stopLoss = nearestResistance + buf;
-    if (Math.abs(stopLoss - entry) < minDist) stopLoss = entry + Math.max(minStop, minDist);
+    stopFromLevel = resistances[0] != null;
+    stopAnchor = stopFromLevel ? `swing high ${round(nearestResistance, dec).toLocaleString()} + ${TUNING.stopBufferAtr} ATR` : `${1.5} ATR above price + ${TUNING.stopBufferAtr} ATR`;
+    if (Math.abs(stopLoss - entry) < minDist) {
+      stopLoss = entry + Math.max(minStop, minDist);
+      stopFromLevel = false;
+      stopAnchor = floorLabel();
+    }
 
     if (secondaryEntry != null) {
       const thirdResistance = resistances[2] ?? secondaryEntry + 1.5 * ta;
@@ -3947,7 +4127,11 @@ function computeMultiFactorCall(
   }
 
   if (bias === "LONG") {
-    if (stopLoss >= entry) stopLoss = entry - ta;
+    if (stopLoss >= entry) {
+      stopLoss = entry - ta;
+      stopFromLevel = false;
+      stopAnchor = "1 ATR below entry";
+    }
     if (secondaryStopLoss != null && secondaryEntry != null && secondaryStopLoss >= secondaryEntry)
       secondaryStopLoss = secondaryEntry - ta;
     if (tp1 <= entry) tp1 = entry + 1.5 * ta;
@@ -3956,7 +4140,11 @@ function computeMultiFactorCall(
     if (extendedTarget != null && extendedTarget <= tp3)
       extendedTarget = round(tp3 + 1.5 * ta, dec);
   } else if (bias === "SHORT") {
-    if (stopLoss <= entry) stopLoss = entry + ta;
+    if (stopLoss <= entry) {
+      stopLoss = entry + ta;
+      stopFromLevel = false;
+      stopAnchor = "1 ATR above entry";
+    }
     if (secondaryStopLoss != null && secondaryEntry != null && secondaryStopLoss <= secondaryEntry)
       secondaryStopLoss = secondaryEntry + ta;
     if (tp1 >= entry) tp1 = entry - 1.5 * ta;
@@ -3977,6 +4165,11 @@ function computeMultiFactorCall(
   const risk = Math.abs(entry - stopLoss);
   const reward = Math.abs(tp2 - entry);
   const riskReward = risk > 0 ? Math.round((reward / risk) * 100) / 100 : 0;
+  // R4.5 minimum reward-to-risk at TP2: the ladder sometimes builds TP2 under 1R when levels cluster.
+  if (bias !== "WAIT" && TUNING.minRr > 0 && riskReward < TUNING.minRr) {
+    gateNotes.unshift(`Reward-to-risk ${riskReward.toFixed(2)} at TP2 is below the ${TUNING.minRr} minimum: plan shown, no trade`);
+    bias = "WAIT";
+  }
 
   const ewNotes = elliott && elliott.consensus.direction && Math.abs(ewScore) >= 10 ? elliott.consensus.notes.slice(0, 2).map((n) => `Elliott ${n}`) : [];
   const taNotes = taSystem ? taSystem.notes.slice(0, 1) : [];
@@ -4106,6 +4299,94 @@ function computeMultiFactorCall(
     else invalidates.push("Fear & Greed drops below 25 (capitulation)");
   }
 
+  // ── Wave 2 call fields (design F1.1): mode, dominant TF / horizon, expected hold, invalidation, flips ────
+  // Strategy family by regime and ADX: trend continuation in a trending Bull/Bear regime, reversion toward the
+  // regime otherwise; standby when the call is WAIT.
+  const mode: "trend" | "reversion" | "standby" = bias === "WAIT" ? "standby" : regimeTrending ? "trend" : "reversion";
+  const modeReason = !regimeInfo
+    ? "regime unavailable"
+    : regimeTrending
+      ? `${regimeInfo.label} with ${regimeInfo.trendStrength} trend strength (ADX >= 20): continuation setups only`
+      : `${regimeInfo.label}, trend strength ${regimeInfo.trendStrength}: mean reversion toward the regime at levels`;
+  // Dominant setup timeframe: the trend-system component with the largest |score| (R4.2). 1h is not part of the
+  // trend system, so it is reached only when 15m and 4h disagree in sign and the 1h EMA trend sides with the 4h.
+  let dominantTf: HoldTF = "15m";
+  if (taSystem) {
+    let best = -1;
+    for (const tf of ["15m", "4h", "1d"] as const) {
+      const v = Math.abs(taSystem.perTF[tf]?.score ?? 0);
+      if (v > best) {
+        best = v;
+        dominantTf = tf;
+      }
+    }
+    const s15 = taSystem.perTF["15m"]?.score ?? 0;
+    const s4 = taSystem.perTF["4h"]?.score ?? 0;
+    if (dominantTf === "15m" && s4 !== 0 && Math.sign(s15) !== Math.sign(s4) && trend1h !== "mixed" && (trend1h === "bull") === s4 > 0) dominantTf = "1h";
+  }
+  const horizonMin = TUNING.horizonByTf ? HORIZON_MIN_BY_TF[dominantTf] : DEFAULT_HORIZON_MIN;
+  const expectedHold = bias === "WAIT" ? null : expectedHoldFor(symbol, bias, regimeInfo?.label ?? null, dominantTf, nowMs);
+
+  const invalidation: { level: number; kind: "stop" | "regime" | "structure"; reason: string } | null =
+    bias === "WAIT"
+      ? null
+      : counterTrend && regimeInfo
+        ? { level: stopLoss, kind: "regime", reason: `Stop ${stopLoss.toLocaleString()} (${stopAnchor ?? "stop"}); counter-trend against the ${regimeInfo.label.toLowerCase()}, a 4h close back ${bias === "LONG" ? "below" : "above"} the cloud ends the reversal case` }
+        : stopFromLevel
+          ? { level: stopLoss, kind: "structure", reason: `${bias === "LONG" ? "Loss" : "Reclaim"} of ${stopLoss.toLocaleString()}: ${stopAnchor ?? "swing level"} breaks the structure the entry leans on` }
+          : { level: stopLoss, kind: "stop", reason: `Stop ${stopLoss.toLocaleString()} (${stopAnchor ?? "floor"}): no closer swing level, so this is a volatility stop` };
+
+  // Flip distances (engine audit 5.2): per weighted factor, the score change that moves the call across the publish
+  // threshold (to WAIT) or, for a WAIT lean, up to it. Distance in factor score points; the two smallest are reported.
+  const publishStrength = Math.max(0, 2 * (TUNING.minPublishConfidence - 50 - whipsawPenalty - catalystHaircut));
+  const FLIP_HINT: Record<string, string> = {
+    marketStructure: "EMA stack or Supertrend flips",
+    momentum: "RSI / MACD histogram turn",
+    volume: "CVD sign changes",
+    htf: "1h/4h trend flips",
+    bollinger: "band touch",
+    divergences: "divergence prints",
+    taSystem: "trend system turns",
+    regime: "cloud / 200MA / ADX",
+    elliott: "wave count changes",
+    patterns: "candle pattern",
+    liquidation: "positioning shifts",
+    derivatives: "funding flips",
+    sentiment: "headline flow turns",
+    marketData: "BTC dominance",
+    etf: "ETF flows",
+    macro: "macro regime",
+    event: "release surprise",
+    confirmation: "cross-asset confirmation",
+  };
+  const FLIP_LABEL: Record<string, string> = { marketStructure: "Market structure", momentum: "Momentum", volume: "Volume", htf: "Higher timeframes", bollinger: "Bollinger", divergences: "Divergences", taSystem: "Trend system", regime: "Regime", elliott: "Elliott", patterns: "Patterns", liquidation: "Positioning", derivatives: "Derivatives", sentiment: "Sentiment", marketData: "Market data", etf: "ETF flows", macro: "Macro", event: "Event", confirmation: "Confirmation" };
+  const flipRows: { text: string; factor: string; distance: number; direction: "to_long" | "to_short" | "to_wait" }[] = [];
+  const factorScores: Record<string, number> = { marketStructure: ms.score, momentum: mom.score, volume: vol.score, derivatives: deriv.score, htf: htf.score, bollinger: boll.score, divergences: divs.score, sentiment: sent.score, marketData: mktData.score, patterns: pats.score, etf: etfScore.score, liquidation: liq.score, elliott: ewScore, taSystem: taScore, regime: regimeScore, macro: macroScores?.macro ?? 0, event: macroScores?.event ?? 0, confirmation: macroScores?.confirmation ?? 0 };
+  const leanSign = weightedScore >= 0 ? 1 : -1;
+  const gatedWait = bias === "WAIT" && Math.abs(weightedScore) >= publishStrength && gateNotes.length > 0;
+  if (gatedWait) {
+    flipRows.push({ text: gateNotes[0].replace(/[:,] standing aside.*$/, "").replace(/: plan shown, no trade$/, ""), factor: "gate", distance: 0, direction: leanSign > 0 ? "to_long" : "to_short" });
+  } else {
+    const needed = bias === "WAIT" ? publishStrength - Math.abs(weightedScore) : Math.abs(weightedScore) - publishStrength;
+    // Direction the factor has to move: toward the lean for a WAIT, against the call for a trade.
+    const moveSign = bias === "WAIT" ? leanSign : -leanSign;
+    for (const [name, w] of Object.entries(weights) as [string, number][]) {
+      if (!(w > 0) || name === "catalyst") continue;
+      const sc = factorScores[name] ?? 0;
+      const movable = moveSign > 0 ? 100 - sc : 100 + sc;
+      const pts = Math.ceil((Math.max(0, needed) * weightSum) / w);
+      if (pts <= 0 || pts > movable) continue;
+      flipRows.push({
+        text: `${FLIP_LABEL[name] ?? name} ${moveSign > 0 ? "rises" : "falls"} ${pts} pts (${FLIP_HINT[name] ?? "score moves"})`,
+        factor: name,
+        distance: pts,
+        direction: bias === "WAIT" ? (leanSign > 0 ? "to_long" : "to_short") : "to_wait",
+      });
+    }
+    flipRows.sort((a, b) => a.distance - b.distance);
+  }
+  const flips = flipRows.slice(0, 2);
+
   return {
     bias,
     confidence,
@@ -4120,6 +4401,17 @@ function computeMultiFactorCall(
     tp3,
     extendedTarget,
     riskReward,
+    // Wave 2 (PR 15) call fields; see CONTRACT.md "call.* from be-strategy".
+    mode,
+    modeReason,
+    dominantTf,
+    horizonMin,
+    expectedHold: expectedHold ? { medianMin: expectedHold.medianMin, p25Min: expectedHold.p25Min, p75Min: expectedHold.p75Min, n: expectedHold.n, tf: expectedHold.tf, source: expectedHold.source, bucket: expectedHold.bucket } : null,
+    invalidation,
+    flips,
+    stopAnchor: bias === "WAIT" ? null : stopAnchor,
+    blocks: blocksEarly,
+    setup: taSystem?.setup ?? "none",
     reasoning,
     bullCase: bullCase.slice(0, 3),
     bearCase: bearCase.slice(0, 3),
@@ -4774,6 +5066,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       taSystem,
       regime,
       eventWindow,
+      now: Date.now(),
     },
     dec
   );
@@ -4924,6 +5217,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
     atrPct: currentPrice > 0 && tradeATR > 0 ? Math.round((tradeATR / currentPrice) * 10000) / 100 : null,
     fundingRate: strikeFunding,
     minutesToNextEvent: nextEventMin,
+    horizonMin: call.horizonMin ?? null,
     tuning: { ...getTuning() },
     gateNotes: call.gateNotes,
     engineVersion: ENGINE_VERSION,
@@ -5370,6 +5664,7 @@ export function scoreFromCandles(input: ScoreInput) {
       elliott: elliottMTF,
       taSystem,
       regime,
+      now,
     },
     dec
   );
@@ -5392,5 +5687,18 @@ export function scoreFromCandles(input: ScoreInput) {
     regimeGate: call.regimeGate,
     price: currentPrice,
     atr: A.tradeATR,
+    // Wave 2 (PR 15): per-decision fields the backtest buckets and the horizon rule need.
+    mode: call.mode,
+    dominantTf: call.dominantTf,
+    horizonMin: call.horizonMin,
+    setup: call.setup,
+    blocks: call.blocks,
+    components: call.components,
+    gateNotes: call.gateNotes,
+    sizeMultiplier: call.sizeMultiplier,
+    invalidation: call.invalidation,
+    flips: call.flips,
+    stopAnchor: call.stopAnchor,
+    expectedHold: call.expectedHold,
   };
 }

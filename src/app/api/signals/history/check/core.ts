@@ -39,8 +39,18 @@ export function isOpen(sig: SignalLog): boolean {
 }
 
 export function horizonFor(sig: SignalLog): number {
+  // PR 15: the engine's own horizon (12/36/96h by dominant timeframe when the knob is on, 24h otherwise) wins when
+  // the record carries it; older records keep the tradeType mapping.
+  const hm = sig.context?.inputs?.horizonMin;
+  if (typeof hm === "number" && Number.isFinite(hm) && hm > 0) return hm * 60e3;
   const t = sig.context?.tradeType?.toUpperCase() ?? "";
   return HORIZON_MS[t] ?? DEFAULT_HORIZON;
+}
+
+/** PR 15 breakeven rule: read from the tuning logged with the record so each record follows the rules it was issued under. */
+export function breakevenAfterTp1For(sig: SignalLog): boolean {
+  const t = sig.context?.inputs?.tuning as Record<string, unknown> | undefined;
+  return t?.breakevenAfterTp1 === true;
 }
 
 export function fillWindowCandles(sig: SignalLog): number {
@@ -282,19 +292,24 @@ export function evaluate(sig: SignalLog, candles: Candle[], now: number): Partia
     coverageGap = { from: resumeFrom, to: Math.min(earliestFetched, horizonEnd), detectedAt: now };
   }
 
+  const breakeven = breakevenAfterTp1For(sig);
   for (const c of window) {
     const fav = long ? c.high - fillPrice : fillPrice - c.low;
     const adv = long ? fillPrice - c.low : c.high - fillPrice;
     if (fav > maxFav) maxFav = fav;
     if (adv > maxAdv) maxAdv = adv;
 
-    const hitSL = long ? c.low <= sig.stopLoss : c.high >= sig.stopLoss;
+    // Breakeven after TP1 (PR 15): once TP1 has printed the stop sits at the fill price, and a touch exits there
+    // (0R gross) instead of crediting the last TP. Off: the original stop and the last-TP convention.
+    const activeStop = breakeven && tpHits.length > 0 ? fillPrice : sig.stopLoss;
+    const hitSL = long ? c.low <= activeStop : c.high >= activeStop;
     if (hitSL) {
       if (tpHits.length === 0) {
         closed = { outcome: "stopped", outcomePrice: sig.stopLoss, outcomeTimestamp: c.time, stoppedAt: c.time, stoppedAfterTp: 0, closedReason: "stop_before_tp", realizedR: grossR(sig.stopLoss) };
       } else {
         const last = tpHits[tpHits.length - 1];
-        closed = { outcome: `tp${last.level}` as SignalLog["outcome"], outcomePrice: last.price, outcomeTimestamp: c.time, stoppedAt: c.time, stoppedAfterTp: last.level, closedReason: "stop_after_tp", realizedR: grossR(last.price) };
+        const exitPrice = breakeven ? fillPrice : last.price;
+        closed = { outcome: `tp${last.level}` as SignalLog["outcome"], outcomePrice: exitPrice, outcomeTimestamp: c.time, stoppedAt: c.time, stoppedAfterTp: last.level, closedReason: "stop_after_tp", realizedR: grossR(exitPrice) };
       }
       break;
     }

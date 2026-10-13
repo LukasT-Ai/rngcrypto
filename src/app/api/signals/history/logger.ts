@@ -49,6 +49,8 @@ export interface SignalInputs {
   fundingRate: number | null;
   /** Minutes until the next high or critical scheduled release; null when none is known. */
   minutesToNextEvent: number | null;
+  /** Engine horizon for this call in minutes (PR 15 horizon-by-timeframe); the checker falls back to tradeType when absent. */
+  horizonMin?: number | null;
   tuning: Record<string, unknown>;
   gateNotes: string[];
   engineVersion: string;

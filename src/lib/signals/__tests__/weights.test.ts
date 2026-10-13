@@ -49,6 +49,6 @@ describe("factor weights", () => {
 
   it("stamps the engine version with the tuning hash", () => {
     expect(ENGINE_VERSION).toBe(`${ENGINE_VERSION_BASE}-${shortHash(JSON.stringify(DEFAULT_TUNING))}`);
-    expect(ENGINE_VERSION).toMatch(/^2026\.10\.13-feeds-[0-9a-f]{6}$/);
+    expect(ENGINE_VERSION).toMatch(/^2026\.10\.13-wave2-[0-9a-f]{6}$/);
   });
 });

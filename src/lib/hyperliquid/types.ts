@@ -138,7 +138,8 @@ export interface Mix {
   copyableSharePct: number;
   copyableTradeSharePct: number;
   byAsset: Record<AssetGroup | "OTHER", MixSlice>;
-  topCoins: { coin: string; sharePct: number }[];
+  /** `label` is set for markets whose coin is not self-describing (outcome markets "#<id><side>"). */
+  topCoins: { coin: string; sharePct: number; label?: string }[];
 }
 
 export interface Stats30d {
@@ -218,6 +219,10 @@ export interface ScanStatus {
   lastFullScanAt: number | null;
   nextScanAt: number | null;
   stale: boolean;
+  /** Scanned wallets with fills or an open position in each group. */
+  perAsset: Record<AssetGroup, number>;
+  /** Discovery pool: total addresses, probed so far (within the probe TTL), still to probe. */
+  pool: { size: number; probed: number; remaining: number; discovered: number };
 }
 
 export interface CopyTradeResponse {
@@ -281,10 +286,10 @@ export const ASSETS = ["BTC", "ADA", "GOLD", "WTI"] as const;
 export type AssetGroup = (typeof ASSETS)[number];
 /** Hyperliquid markets behind each Ascend-copyable group. HIP-3 builder markets carry their dex prefix. */
 export const ASSET_GROUPS: Record<AssetGroup, string[]> = {
-  BTC: ["BTC"],
-  ADA: ["ADA"],
-  GOLD: ["xyz:GOLD", "km:GOLD", "PAXG"],
-  WTI: ["xyz:CL", "km:USOIL", "xyz:BRENTOIL"],
+  BTC: ["BTC", "flx:BTC", "hyna:BTC", "cash:BTC"],
+  ADA: ["ADA", "hyna:ADA"],
+  GOLD: ["xyz:GOLD", "km:GOLD", "PAXG", "flx:GOLD", "hyna:GOLD", "cash:GOLD", "mkts:GOLD"],
+  WTI: ["xyz:CL", "km:USOIL", "xyz:BRENTOIL", "flx:OIL", "cash:WTI", "mkts:USOIL"],
 };
 export const COIN_TO_GROUP: Record<string, AssetGroup> = Object.fromEntries(
   (Object.entries(ASSET_GROUPS) as [AssetGroup, string[]][]).flatMap(([g, coins]) => coins.map((c) => [c, g]))

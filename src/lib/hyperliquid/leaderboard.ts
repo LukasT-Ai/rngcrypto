@@ -23,6 +23,23 @@ export interface CandidateCriteria {
   take: number;
 }
 
+/** Smaller accounts with a strong month: equity 25k..5M, month roi > 15%, month volume > 300k, ranked by roi. */
+export interface SpecialistCriteria {
+  minEquity: number;
+  maxEquity: number;
+  minMonthRoiPct: number;
+  minMonthVolume: number;
+  take: number;
+}
+
+export const DEFAULT_SPECIALISTS: SpecialistCriteria = {
+  minEquity: 25_000,
+  maxEquity: 5_000_000,
+  minMonthRoiPct: 15,
+  minMonthVolume: 300_000,
+  take: Number(process.env.COPYTRADE_SPECIALISTS ?? 1500),
+};
+
 export const DEFAULT_CRITERIA: CandidateCriteria = {
   minEquity: 25_000,
   maxEquity: 100_000_000,
@@ -79,6 +96,18 @@ export function selectCandidates(rows: LeaderRow[], vaults: Set<string>, c: Cand
       return true;
     })
     .sort((a, b) => b.windows.month.pnl - a.windows.month.pnl)
+    .slice(0, c.take);
+}
+
+export function selectSpecialists(rows: LeaderRow[], vaults: Set<string>, c: SpecialistCriteria = DEFAULT_SPECIALISTS): LeaderRow[] {
+  return rows
+    .filter((r) => {
+      if (vaults.has(r.address)) return false;
+      if (r.equity < c.minEquity || r.equity > c.maxEquity) return false;
+      const m = r.windows.month;
+      return m.volume >= c.minMonthVolume && m.roi > c.minMonthRoiPct;
+    })
+    .sort((a, b) => b.windows.month.roi - a.windows.month.roi)
     .slice(0, c.take);
 }
 
@@ -181,6 +210,14 @@ export async function getCandidates(criteria: CandidateCriteria = DEFAULT_CRITER
   if (!lb) return null;
   const vaults = await getVaults();
   return { fetchedAt: lb.fetchedAt, candidates: selectCandidates(lb.rows, vaults, criteria) };
+}
+
+/** The specialist pool (see DEFAULT_SPECIALISTS). Empty when no leaderboard is available. */
+export async function getSpecialists(criteria: SpecialistCriteria = DEFAULT_SPECIALISTS): Promise<LeaderRow[]> {
+  const lb = await getLeaderboard();
+  if (!lb) return [];
+  const vaults = await getVaults();
+  return selectSpecialists(lb.rows, vaults, criteria);
 }
 
 export async function findLeaderRow(address: string): Promise<LeaderRow | null> {

@@ -52,3 +52,6 @@ data/backtests/
 
 # Quarter-hour imbalance store (PR 23 runtime data)
 data/qh-imbalance.json
+
+# copy-trade scanner cache (leaderboard + per-trader fills)
+/data/copytrade/

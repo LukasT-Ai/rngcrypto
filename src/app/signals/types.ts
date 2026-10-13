@@ -580,3 +580,261 @@ export interface HistoryResponse {
     byBias?: Record<"LONG" | "SHORT", CalibrationBucket & { total: number; pending: number }>
   }
 }
+
+// ---------------------------------------------------------------------------
+// Performance page v2 (design-ux-ui.md F4.1). Every field is optional so the page
+// renders against today's API and lights up as the measurement PRs land.
+// Rates are percent (0-100) like the existing tp1Rate; Brier terms are raw.
+// ---------------------------------------------------------------------------
+
+export interface PerfCostModel {
+  venue: string
+  takerBps: number
+  makerBps: number
+  slipBps: number
+  fundingApplied: boolean
+}
+
+export interface PerfKpisV2 {
+  expectancyNetR?: number | null
+  profitFactorNet?: number | null
+  sumNetR?: number | null
+  costModel?: PerfCostModel | null
+  maxDrawdownR?: number | null
+  maxDrawdownNetR?: number | null
+  longestUnderwaterDays?: number | null
+  /** SD(R) / sqrt(n) */
+  seExpectancyR?: number | null
+  fillRate?: { market: number | null; limit: number | null; nMarket: number; nLimit: number } | null
+  expiryRate?: number | null
+  medianHoldMin?: { winners: number | null; losers: number | null } | null
+  /** Share of closed signals beyond +2R, percent. */
+  shareAbove2R?: number | null
+  holdMin?: Record<"all" | "winners" | "losers", { n: number; p25: number | null; median: number | null; p75: number | null }> | null
+}
+
+export interface PerfRHistogramBin {
+  bin: string
+  n: number
+  netN: number
+}
+
+export interface PerfCalBucket {
+  key: string
+  n: number
+  wins: number
+  losses: number
+  tp1Rate: number | null
+  expectancyR: number | null
+  meanConf?: number | null
+  wilsonLo?: number | null
+  wilsonHi?: number | null
+  pPos?: number | null
+  meanNetR?: number | null
+  brierNaive?: number | null
+  brierCal?: number | null
+}
+
+export interface PerfBrier {
+  naive: number | null
+  calibrated: number | null
+  base: number | null
+  bss: number | null
+  bssCalibrated: number | null
+  reliability: number | null
+  resolution: number | null
+  uncertainty: number | null
+  n: number
+}
+
+export interface PerfPlatt {
+  a: number
+  b: number
+  n: number
+  holdoutBrier: number
+  fitAt: string
+  version: string
+}
+
+export interface PerfCalibrationV2 {
+  byConfidence?: PerfCalBucket[]
+  byGrade?: PerfCalBucket[]
+  byRr1?: PerfCalBucket[]
+  byPTp1?: PerfCalBucket[]
+  brier?: PerfBrier | null
+  platt?: PerfPlatt | null
+}
+
+/** be-measure PR 12. pWin* and lift* are FRACTIONS 0..1 (Newcombe 95% on lift); weight is the mean in-play weight. */
+export interface PerfComponentRow {
+  name: string
+  nAgree: number
+  nDisagree: number
+  pWinAgree: number | null
+  pWinDisagree: number | null
+  lift: number | null
+  liftLo: number | null
+  liftHi: number | null
+  weight: number
+  candidateWeight: number | null
+}
+
+export type PerfShadowClass = "wait_lean" | "htf_blocked_short" | "regime_blocked" | "event_gated"
+export interface PerfShadowRow {
+  key: PerfShadowClass
+  /** decided count */
+  n: number
+  tp1Rate: number | null
+  wilsonLo: number | null
+  wilsonHi: number | null
+  expectancyR: number | null
+  expectancyNetR?: number | null
+  openN?: number
+}
+
+export interface PerfVersionRow {
+  version: string
+  firstAt: number
+  lastAt: number
+  n: number
+  netR: number | null
+}
+
+export interface PerfLedger {
+  /** ?format=raw: the exact bytes the hash covers */
+  url: string
+  csvUrl: string
+  sha256: string
+  hashedAt: string
+  bytes: number
+  count?: number
+}
+
+export interface PerfChangelogEntry {
+  at: string
+  commit: string
+  title: string
+  effect: string
+}
+
+/** Optional additions to PerformanceStats (F4.1). Intersected with the server type in PerformanceDashboard. */
+export interface PerformanceStatsV2 {
+  kpis: PerfKpisV2
+  rHistogram?: PerfRHistogramBin[]
+  calibration: PerfCalibrationV2
+  components?: PerfComponentRow[]
+  shadow?: { byClass: PerfShadowRow[]; note: string } | null
+  versions?: PerfVersionRow[]
+  ledger?: PerfLedger | null
+  changelog?: PerfChangelogEntry[]
+  breakdowns?: { byEntryType?: PerfBucketLike[]; byRr1?: PerfBucketLike[]; byAtrPct?: PerfBucketLike[] }
+  meta: {
+    /** Current engine version and when it started, for the provisional banner. */
+    engineVersion?: string | null
+    engineVersionSince?: number | null
+    /** Decided signals on the current engine version: the calibration-gate counter toward 100. */
+    decidedNCurrentVersion?: number | null
+    /** Shadow (declined) rows logged; never in any public number. */
+    shadowN?: number | null
+  }
+}
+
+export interface PerfBucketLike {
+  key: string
+  n: number
+  tp1Rate: number | null
+  expectancyR: number | null
+  wins: number
+  losses: number
+}
+
+/** Optional per-row additions on NormalizedSignal (be-measure PR 04 names). realizedR stays gross. */
+export interface SignalRowV2 {
+  entryType?: "market" | "limit" | null
+  fillPrice?: number | null
+  costR?: number | null
+  /** true = legacy close, cost estimated without funding */
+  costEstimated?: boolean
+  realizedNetR?: number | null
+  shadow?: boolean
+  shadowClass?: string | null
+  coverageGap?: boolean
+  /** Plain-language resolution sentence (PR 13). */
+  reasonText?: string | null
+  /** Calibrated P(TP1) in percent (PR 17). */
+  pTp1?: number | null
+  // Call-time inputs logged on the row (PR 05); the audit drawer uses them when the audit endpoint is absent.
+  weightedScore?: number | null
+  confidenceRaw?: number | null
+  rr1?: number | null
+  atrPct?: number | null
+  calibrationVersion?: string | null
+  components?: Record<string, { score: number; weight: number }> | null
+  minutesToNextEvent?: number | null
+}
+
+/** Optional additions on open rows. */
+export interface OpenSignalV2 {
+  /** ms epoch when the fill window closes (pending fills). */
+  fillWindowEndsAt?: number | null
+  /** ms epoch of the last candle the checker evaluated. */
+  lastCheckAt?: number | null
+  checkerStalled?: boolean
+}
+
+/** GET /api/signals/history/:id (be-measure PR 13). Times are epoch ms UTC; every scalar nullable. */
+export interface AuditRecord {
+  signal: Record<string, unknown>
+  row?: Record<string, unknown>
+  inputs: {
+    weightedScore?: number | null
+    confidenceRaw?: number | null
+    components?: Record<string, { score: number; weight: number }>
+    rr1?: number | null
+    rr2?: number | null
+    rr3?: number | null
+    entryType?: "market" | "limit" | null
+    atrPct?: number | null
+    fundingRate?: number | null
+    minutesToNextEvent?: number | null
+    tuning?: Record<string, unknown> | null
+    gateNotes?: string[] | null
+    engineVersion?: string | null
+    calibrationVersion?: string | null
+    pTp1?: number | null
+    regime?: string | null
+    regimeGate?: string | null
+    markAtSignal?: number | null
+    lastAtSignal?: number | null
+    candleCloseTime?: number | null
+    factors?: Record<string, string> | null
+    blocks?: Record<string, number> | null
+    mode?: string | null
+    eventWindow?: Record<string, unknown> | null
+  } | null
+  resolution: {
+    firstEligibleCandle?: number | null
+    fillWindowEnd?: number | null
+    fillCandle?: number | null
+    fillPrice?: number | null
+    tpTouches?: { level: 1 | 2 | 3; at: number; price: number }[]
+    stopTouch?: { at: number; price: number; afterTp?: number | null } | null
+    horizonEnd?: number | null
+    closedAt?: number | null
+    closedReason?: string | null
+    grossR?: number | null
+    netR?: number | null
+    costR?: number | null
+    costEstimated?: boolean | null
+    coverageGap?: boolean | { from: number; to: number; detectedAt?: number | null } | null
+    lastCheckedAt?: number | null
+    mfeR?: number | null
+    maeR?: number | null
+    reasonText?: string | null
+  } | null
+}
+
+/** Optional additions on equity points: the net-of-cost cumulative curve. */
+export interface PerfEquityPointV2 {
+  cumNetR?: number | null
+}

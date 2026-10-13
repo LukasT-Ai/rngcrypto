@@ -16,7 +16,7 @@ import { MomentumTab } from "./tabs/MomentumTab"
 import { FlowTab } from "./tabs/FlowTab"
 import { MacroTab } from "./tabs/MacroTab"
 import { ModelsTab } from "./tabs/ModelsTab"
-import type { HistoryResponse, MarketMapResponse, SignalsResponse } from "./types"
+import type { HistoryResponse, MarketMapResponse, SessionFeature, SignalsResponse } from "./types"
 import { useMacroState } from "./MacroEventPanel"
 import { THEMES, themeStyle, type SignalsVariant } from "./themes"
 import { HotBoardState, HotPlayCard, HotStamp, hotStatus, useHotPlays } from "./HotBoard"
@@ -187,14 +187,33 @@ function TickerPalette({ tickers, symbol, onPick }: { tickers: Ticker[]; symbol:
   )
 }
 
-// Session chip (F2.7): clock-derived until the engine emits features.session. Gates are amber; everything else white/60.
-function SessionChip({ crypto }: { crypto: boolean }) {
+// Session chip (F2.7): features.session from the engine when present, else clock-derived. Gates are amber; everything
+// else white/60. Engine copy: `US session · vol x1.3`, `Weekend · x0.7 · size x0.5`, `late UTC · entries gated`.
+function SessionChip({ crypto, session }: { crypto: boolean; session?: SessionFeature | null }) {
   const now = useNow(60_000)
-  if (now === 0) return null
+  if (now === 0 && !session) return null
+  const gateTip = (gate: string | null | undefined) =>
+    gate === "late_utc" ? "21:00 to 24:00 UTC: thin books and wide spreads; new entries are gated." : gate === "nonc_weekend" ? "This market is closed over the weekend; calls wait for the open." : gate ? `Session gate active: ${gate}.` : null
+  if (session) {
+    const gate = session.gate && session.gate !== "none" ? session.gate : null
+    const word = session.weekend ? "Weekend" : session.name === "us" ? "US session" : session.name === "london" ? "London" : session.name === "asia" ? "Asia" : "Late UTC"
+    const label =
+      session.label ??
+      (gate === "late_utc"
+        ? "late UTC · entries gated"
+        : gate === "nonc_weekend"
+          ? "market closed · WAIT"
+          : [word, session.volMult != null ? `vol x${session.volMult}` : null, session.sizeMult != null && session.sizeMult !== 1 ? `size x${session.sizeMult}` : null].filter(Boolean).join(" · "))
+    return (
+      <Chip variant={gate ? "warning" : "vol"} size="label" className="hidden md:inline-flex" tip={gateTip(gate) ?? "Trading session from the engine: volatility and size multipliers by session and weekend."}>
+        {label}
+      </Chip>
+    )
+  }
   const s = sessionFor(now, crypto)
   const gated = s.gate !== "none"
   return (
-    <Chip variant={gated ? "warning" : "vol"} size="label" className="hidden md:inline-flex" tip={gated ? (s.gate === "late_utc" ? "21:00 to 24:00 UTC: thin books and wide spreads; new entries are gated." : "This market is closed over the weekend; calls wait for the open.") : "Trading session by UTC clock. Volatility scaling by session arrives with the engine's session feature."}>
+    <Chip variant={gated ? "warning" : "vol"} size="label" className="hidden md:inline-flex" tip={gateTip(gated ? s.gate : null) ?? "Trading session by UTC clock. Volatility scaling by session arrives with the engine's session feature."}>
       {s.label}
     </Chip>
   )
@@ -358,7 +377,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
           <TickerPills tickers={tickers} symbol={symbol} onPick={setSymbol} />
           <TickerPalette tickers={tickers} symbol={symbol} onPick={setSymbol} />
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
-            <SessionChip crypto={CRYPTO.has(symbol)} />
+            <SessionChip crypto={CRYPTO.has(symbol)} session={d && !staleTicker ? d.features?.session ?? null : null} />
             <Chip variant="vol" size="label" tip={d?.timestamp ? `Last scan ${new Date(d.timestamp).toLocaleTimeString()}. The page re-fetches every 30 seconds.` : "Connecting to the engine."}>
               <RefreshCw className="size-3 text-white/50" />
               <Countdown lastFetch={fetchTs} color="var(--brand)" />

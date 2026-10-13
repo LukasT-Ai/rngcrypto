@@ -5,9 +5,12 @@ import { ArrowUpRight, Clock, Flame, Globe, Newspaper } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { MacroAsset } from "@/lib/macro/types"
 import type { SignalsResponse } from "../types"
-import { EconomicCalendar, MacroAlerts, MacroEventCard, NextEventsStrip, RecentResults, WeeklyOilCard, type MacroApi } from "../MacroEventPanel"
-import { PredictionOddsPanel } from "../PredictionOddsPanel"
-import { Chip, FOCUS_RING, GRAY, GREEN, RED, SURFACE, SectionTitle, fmtPrice, signed, timeAgo, timeUntil, useNow } from "../shared"
+import { MacroAlerts, WeeklyOilCard, type MacroApi } from "../MacroEventPanel"
+import { EconomicCalendar } from "../calendar/EconomicCalendar"
+import { PredictionOddsPanel, usePredictionState } from "../PredictionOddsPanel"
+import { RatesDollarStrip } from "../macro/RatesDollarStrip"
+import { Sparkline, couplingTip } from "../RegimeStrip"
+import { Chip, FOCUS_RING, GRAY, GREEN, RED, SURFACE, SectionTitle, Tip, fmtPrice, signed, timeAgo, timeUntil, useNow } from "../shared"
 
 const HEADLINE_CAP = 3
 
@@ -140,7 +143,10 @@ function CatalystPanel({ g, d, now }: { g: NonNullable<SignalsResponse["oilGeopo
       <div className={cn(SURFACE, "divide-y divide-white/[0.04]")}>
         {shown.map((ev, i) => {
           const dot = ev.sentiment === "bullish" ? GREEN : ev.sentiment === "bearish" ? RED : GRAY
-          const rc = ev.priceReaction?.confirms === true ? GREEN : ev.priceReaction?.confirms === false ? RED : GRAY
+          // F2.9: confirms vote hoisted to the row (falls back to priceReaction), decayed weight, GENERAL marker.
+          const confirms = ev.confirms !== undefined ? ev.confirms : ev.priceReaction?.confirms ?? null
+          const rc = confirms === true ? GREEN : confirms === false ? RED : "rgba(255,255,255,0.4)"
+          const inNet = ev.inNet ?? ev.category.toUpperCase() !== "GENERAL"
           return (
             <a key={`${ev.url}-${i}`} href={ev.url} target="_blank" rel="noopener noreferrer" className={cn("flex items-start gap-3 px-4 py-2.5 hover:bg-white/[0.03] transition-colors group", FOCUS_RING)}>
               <span className="mt-2 size-2 rounded-full shrink-0" style={{ backgroundColor: dot }} />
@@ -153,13 +159,29 @@ function CatalystPanel({ g, d, now }: { g: NonNullable<SignalsResponse["oilGeopo
                   <span>·</span>
                   <span className={cn("font-medium uppercase", ev.impact === "high" ? "text-white/85" : ev.impact === "medium" ? "text-white/65" : "text-white/50")}>{ev.impact}</span>
                   <Chip variant="kind">{ev.category.replace("_", " ")}</Chip>
+                  {!inNet ? (
+                    <Chip variant="kind" tip="Price-reporting headline: describes the move instead of causing it, so it is excluded from the net lean.">
+                      price-report · not scored
+                    </Chip>
+                  ) : ev.w != null ? (
+                    <Tip content={`Decayed weight in the net lean: half-life decay by age${confirms === false ? ", cut to 0.3x because price rejected the narrative" : ""}.`}>
+                      <span className="font-mono text-[10px] tabular-nums text-white/50">w {ev.w.toFixed(2)}</span>
+                    </Tip>
+                  ) : null}
                 </div>
               </div>
-              {ev.priceReaction && (
-                <span className="font-mono text-[11px] font-semibold tabular-nums shrink-0 mt-1" style={{ color: rc }}>
-                  {pct(ev.priceReaction.sinceEventPct)}
-                </span>
-              )}
+              <span className="shrink-0 mt-1 inline-flex items-center gap-1.5">
+                <Tip content={confirms === true ? "Price moved with this headline (confirmed)." : confirms === false ? "Price moved against this headline (rejected): weight cut to 0.3x." : "No price verdict yet."}>
+                  <span aria-label={confirms === true ? "confirmed" : confirms === false ? "rejected" : "unverified"} className="font-mono text-[11px] font-bold" style={{ color: rc }}>
+                    {confirms === true ? "✓" : confirms === false ? "✗" : "–"}
+                  </span>
+                </Tip>
+                {ev.priceReaction && (
+                  <span className="font-mono text-[11px] font-semibold tabular-nums" style={{ color: confirms == null ? GRAY : rc }}>
+                    {pct(ev.priceReaction.sinceEventPct)}
+                  </span>
+                )}
+              </span>
               <ArrowUpRight className="size-3.5 text-white/50 group-hover:text-white/70 transition-colors shrink-0 mt-1" />
             </a>
           )
@@ -235,24 +257,45 @@ export interface MacroTabProps {
 export const MacroTab = React.memo(function MacroTab({ d, macro, macroLoading, macroLens, predAsset, symbol }: MacroTabProps) {
   const now = useNow(15_000)
   const geo = d.oilGeopolitical
+  const predQ = usePredictionState()
+  const venueCounts = predQ.data?.venues?.map((v) => `${v.venue === "polymarket" ? "Polymarket" : "Kalshi"} ${v.ok ? v.count : "down"}`).join(" · ") ?? "Kalshi · Polymarket"
+  // Coupling header (F2.8): crypto lens only; the macro endpoint carries the fuller record, the call carries the series.
+  const coupling = macroLens === "BTC" ? macro?.macroCoupling ?? d.regime?.macroCoupling ?? null : null
+  const couplingSeries = d.regime?.macroCoupling?.series ?? null
   return (
     <div className="space-y-5">
-      {/* Live event card first: it is the one place prediction odds are a decision input */}
-      <MacroEventCard state={macro} isLoading={macroLoading} asset={predAsset} />
+      {macroLens === "BTC" && (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/50">
+          {coupling ? (
+            <>
+              <Chip variant="vol" size="label" tip={couplingTip(coupling)}>
+                coupling {coupling.mult.toFixed(1)} · corr30d {coupling.corr30d.toFixed(2)}
+                <Sparkline series={couplingSeries} />
+              </Chip>
+              {coupling.mult < 0.3 && <span>macro features mostly silenced in this regime</span>}
+              {"n" in coupling && coupling.n != null && <span className="font-mono tabular-nums">n={coupling.n}</span>}
+            </>
+          ) : (
+            <Chip variant="vol" size="label" tip="BTC/SPX 30-day correlation unavailable; macro weights run unscaled.">
+              coupling n/a
+            </Chip>
+          )}
+        </div>
+      )}
+      <MacroAlerts alerts={macro?.alerts} />
+      {/* Rates & dollar strip (F2.5): BTC and GOLD lenses; ui-flow's component, mounted here */}
+      {macroLens !== "WTI" && <RatesDollarStrip macroRates={d.features?.macroRates} asset={macroLens} />}
       {/* WTI only: latest weekly inventory print + countdown to the next one */}
       {macroLens === "WTI" && <WeeklyOilCard releases={macro?.oilWeekly} />}
-      <NextEventsStrip events={macro?.upcoming} />
-      <RecentResults recent={macro?.recent} active={macro?.active} />
-      <MacroAlerts alerts={macro?.alerts} />
-      {/* Economic calendar: last 7d actuals + next 14d consensus, per lens */}
-      <EconomicCalendar rows={macro?.calendar} isLoading={macroLoading} />
+      {/* Economic calendar v2: the live card sits in its Live group, then upcoming and released rows, per lens */}
+      <EconomicCalendar state={macro} isLoading={macroLoading} lens={macroLens} predAsset={predAsset} />
       {geo && geo.events.length > 0 && <CatalystPanel g={geo} d={d} now={now} />}
       {d.newsSentiment && d.newsSentiment.headlines.length > 0 && <NewsPanel news={d.newsSentiment} />}
       {/* Prediction markets: collapsed; the live card already shows the odds that matter */}
       {predAsset && (
         <details className="group" id="sec-prediction">
           <summary className={cn("cursor-pointer list-none rounded-sm py-2 text-[13px] font-semibold uppercase tracking-[0.06em] text-white/60 hover:text-white/80 transition-colors", FOCUS_RING)}>
-            <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span> Prediction markets (Kalshi · Polymarket)
+            <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span> Prediction markets <span className="normal-case tracking-normal text-white/45">({venueCounts})</span>
           </summary>
           <div className="mt-2">
             <PredictionOddsPanel asset={predAsset} symbol={symbol} />

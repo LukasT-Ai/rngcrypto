@@ -114,6 +114,22 @@ describe("performance exclusions", () => {
     expect(long?.tp1Rate).toBe(50);
   });
 
+  it("reports net R beside gross and estimates a cost for records closed before the cost model", () => {
+    const winNet = { ...win, costR: 0.2, realizedNetR: 2.8, fillPrice: 100 };
+    const lossNet = { ...loss, costR: 0.1, realizedNetR: -1.1, fillPrice: 100 };
+    const { stats, signals } = computePerformance([winNet, lossNet], { dedupe: false, rangeDays: null });
+    expect(stats.kpis.sumR).toBe(2);
+    expect(stats.kpis.sumNetR).toBe(1.7);
+    expect(stats.kpis.costModel.venue).toBe("Strike");
+    expect(stats.equity.map((e) => e.cumNetR)).toEqual([2.8, 1.7]);
+    expect(signals.every((s) => s.costEstimated === false)).toBe(true);
+    // A legacy close (no costR) gets a fee + slippage estimate, flagged as estimated.
+    const legacy = computePerformance([win], { dedupe: false, rangeDays: null }).signals[0];
+    expect(legacy.costEstimated).toBe(true);
+    expect(legacy.costR).toBeGreaterThan(0);
+    expect(legacy.realizedNetR).toBeLessThan(3);
+  });
+
   it("keeps the legacy stats object in R and skips excluded records", () => {
     const stats = computeStats([win, loss, unfilled, unverifiable]);
     expect(stats.total).toBe(2);

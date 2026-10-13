@@ -1,4 +1,5 @@
 import type { SignalLog } from "./logger";
+import { activeCostVenue, costInR } from "./check/core";
 
 export interface PerformanceOptions {
   rangeDays?: number | null;
@@ -55,6 +56,16 @@ export interface NormalizedSignal {
   // Half the position out at TP1, stop to breakeven on the rest; see conservativeR().
   conservativeR: number | null;
   engineVersion: string;
+  // Cost model (2026-10-13). `realizedR` is gross; `realizedNetR` = gross - costR. Records closed before the
+  // model carry no costR, so one is estimated from entry type and hold time (no funding) and flagged.
+  entryType: "market" | "limit" | null;
+  fillPrice: number | null;
+  costR: number | null;
+  costEstimated: boolean;
+  realizedNetR: number | null;
+  shadow: boolean;
+  shadowClass: string | null;
+  coverageGap: boolean;
 }
 
 export interface PerformanceStats {
@@ -76,9 +87,17 @@ export interface PerformanceStats {
     profitFactor: number | null;
     medianTimeToTp1Min: number | null;
     sumR: number | null;
+    // Net of the cost model (F4.1). Null below 20 closed like the gross figures; sumNetR null when no closed row has a cost.
+    expectancyNetR: number | null;
+    profitFactorNet: number | null;
+    sumNetR: number | null;
+    costModel: { venue: string; takerBps: number; makerBps: number; slipBps: number; fundingApplied: boolean };
+    // Gross profit / gross loss in R over every closed row (no sample threshold); the legacy stats derive PF from them.
+    grossProfitR: number;
+    grossLossR: number;
   };
-  equity: { i: number; t: number; cumR: number; symbol: string }[];
-  daily: { day: string; r: number; cumR: number; n: number }[];
+  equity: { i: number; t: number; cumR: number; cumNetR: number | null; symbol: string }[];
+  daily: { day: string; r: number; cumR: number; netR: number | null; cumNetR: number | null; n: number }[];
   calibration: { byConfidence: Bucket[]; byGrade: Bucket[] };
   breakdowns: {
     bySymbol: Bucket[];
@@ -169,6 +188,19 @@ export function normalize(s: SignalLog): NormalizedSignal {
   const stoppedAfterTp = s.stoppedAfterTp ?? (s.outcome === "stopped" ? 0 : null);
   const closedReason = s.closedReason ?? (open ? null : s.outcome === "stopped" ? "stop_before_tp" : s.outcome === "expired" ? "horizon" : s.outcome === "tp3" ? "tp3" : "legacy_first_touch");
   const realized = open || excluded ? null : (s.realizedR ?? legacyRealizedR(s));
+  const entryType: NormalizedSignal["entryType"] = s.context?.inputs?.entryType ?? (s.priceAtSignal > 0 ? (Math.abs(s.entry - s.priceAtSignal) / s.priceAtSignal <= 0.001 ? "market" : "limit") : null);
+  let costR: number | null = s.costR ?? null;
+  let costEstimated = false;
+  if (costR == null && realized != null && entryType) {
+    const closedAt = s.outcomeTimestamp ?? null;
+    const filledAt = s.filledAt ?? s.timestamp;
+    const est = costInR({ bias: s.bias, fillPrice: s.fillPrice ?? s.entry, stopLoss: s.stopLoss, entryType, holdHours: closedAt != null ? Math.max(0, (closedAt - filledAt) / 3600e3) : 0, fundingRate8h: null });
+    if (est) {
+      costR = est.costR;
+      costEstimated = true;
+    }
+  }
+  const realizedNet = realized == null ? null : s.realizedNetR ?? (costR != null ? Math.round((realized - costR) * 10000) / 10000 : null);
   const label = open
     ? highest > 0
       ? `TP${highest} hit · open`
@@ -217,6 +249,14 @@ export function normalize(s: SignalLog): NormalizedSignal {
     excluded,
     conservativeR: open || excluded ? null : conservativeR({ bias: s.bias, entry: s.entry, stopLoss: s.stopLoss, tp1: s.tp1, tp2: s.tp2, tp3: s.tp3, highestTp: highest, stoppedAfterTp, realizedR: realized }),
     engineVersion: s.engineVersion ?? "unversioned",
+    entryType,
+    fillPrice: s.fillPrice ?? null,
+    costR,
+    costEstimated,
+    realizedNetR: realizedNet,
+    shadow: s.shadow === true,
+    shadowClass: s.shadow === true ? (s.shadowClass ?? null) : null,
+    coverageGap: s.coverageGap != null,
   };
 }
 
@@ -320,26 +360,44 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
   const rs = closed.map((s) => s.realizedR).filter((x): x is number => x != null);
   const pos = rs.filter((r) => r > 0).reduce((a, b) => a + b, 0);
   const neg = Math.abs(rs.filter((r) => r < 0).reduce((a, b) => a + b, 0));
+  const nets = closed.map((s) => s.realizedNetR).filter((x): x is number => x != null);
+  const posNet = nets.filter((r) => r > 0).reduce((a, b) => a + b, 0);
+  const negNet = Math.abs(nets.filter((r) => r < 0).reduce((a, b) => a + b, 0));
 
   const byClose = [...closed].filter((s) => s.realizedR != null).sort((a, b) => (a.closedAt ?? a.timestamp) - (b.closedAt ?? b.timestamp));
   let cum = 0;
+  let cumNet = 0;
+  let anyNet = false;
   const equity = byClose.map((s, i) => {
     cum += s.realizedR as number;
-    return { i: i + 1, t: s.closedAt ?? s.timestamp, cumR: Math.round(cum * 100) / 100, symbol: s.symbol };
+    if (s.realizedNetR != null) {
+      cumNet += s.realizedNetR;
+      anyNet = true;
+    }
+    return { i: i + 1, t: s.closedAt ?? s.timestamp, cumR: Math.round(cum * 100) / 100, cumNetR: anyNet ? Math.round(cumNet * 100) / 100 : null, symbol: s.symbol };
   });
-  const dayMap = new Map<string, { r: number; n: number }>();
+  const dayMap = new Map<string, { r: number; net: number; anyNet: boolean; n: number }>();
   for (const s of byClose) {
     const day = new Date(s.closedAt ?? s.timestamp).toISOString().slice(0, 10);
-    const d = dayMap.get(day) ?? { r: 0, n: 0 };
+    const d = dayMap.get(day) ?? { r: 0, net: 0, anyNet: false, n: 0 };
     d.r += s.realizedR as number;
+    if (s.realizedNetR != null) {
+      d.net += s.realizedNetR;
+      d.anyNet = true;
+    }
     d.n++;
     dayMap.set(day, d);
   }
   let dcum = 0;
+  let dcumNet = 0;
+  let dAnyNet = false;
   const daily = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, d]) => {
     dcum += d.r;
-    return { day, r: Math.round(d.r * 100) / 100, cumR: Math.round(dcum * 100) / 100, n: d.n };
+    dcumNet += d.net;
+    dAnyNet = dAnyNet || d.anyNet;
+    return { day, r: Math.round(d.r * 100) / 100, cumR: Math.round(dcum * 100) / 100, netR: d.anyNet ? Math.round(d.net * 100) / 100 : null, cumNetR: dAnyNet ? Math.round(dcumNet * 100) / 100 : null, n: d.n };
   });
+  const venue = activeCostVenue();
 
   // Streaks by close order (win = TP1 or better, loss = stop before TP; horizon-without-TP is neither).
   let cur: { type: "win" | "loss" | null; length: number } = { type: null, length: 0 };
@@ -390,6 +448,12 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
       profitFactor: closedN >= 20 ? (neg > 0 ? Math.round((pos / neg) * 100) / 100 : pos > 0 ? null : 0) : null,
       medianTimeToTp1Min: tp1.length >= 5 ? median(tp1.map((s) => s.timeToTp1Min).filter((x): x is number => x != null)) : null,
       sumR: rs.length ? Math.round(rs.reduce((a, b) => a + b, 0) * 100) / 100 : null,
+      expectancyNetR: closedN >= 20 && nets.length ? r2(mean(nets)) : null,
+      profitFactorNet: closedN >= 20 && nets.length ? (negNet > 0 ? Math.round((posNet / negNet) * 100) / 100 : posNet > 0 ? null : 0) : null,
+      sumNetR: nets.length ? Math.round(nets.reduce((a, b) => a + b, 0) * 100) / 100 : null,
+      costModel: { venue: venue.venue, takerBps: venue.takerBps, makerBps: venue.makerBps, slipBps: venue.slipBps, fundingApplied: venue.fundingApplied },
+      grossProfitR: Math.round(pos * 10000) / 10000,
+      grossLossR: Math.round(neg * 10000) / 10000,
     },
     equity,
     daily,
@@ -416,7 +480,7 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
       totalRaw,
       sampleNote,
       generatedAt: new Date(now).toISOString(),
-      assumptions: "A signal counts only after a 5-minute candle opened after the call trades through its entry (entries within 0.1% of the signal price fill at the next open). Realized R assumes fills at the exact TP/SL touch with no slippage or fees; a stop after TP exits at the last TP reached; a horizon exit uses the last close; same-candle SL+TP resolves as the stop. Unfilled, unverifiable and open signals never count toward anything. A filled signal that expires at the horizon without touching TP1 or the stop counts in expectancy and profit factor (its horizon exit is real P&L) but not in hit or stop rates, since it reached no verdict.",
+      assumptions: `A signal counts only after a 5-minute candle opened after the call trades through its entry. Entries within 0.1% of the signal price are market orders filled at the NEXT candle open (risk and R measured from that fill); limit entries fill at the entry on an exact touch. Gross R assumes exits at the exact TP/SL touch; a stop after TP exits at the last TP reached; a horizon exit uses the last close before the horizon; same-candle SL+TP resolves as the stop. Net R subtracts the ${venue.venue} cost model (taker ${venue.takerBps}bp, maker ${venue.makerBps}bp, slippage ${venue.slipBps}bp per market leg, funding over the hold${venue.fundingApplied ? "" : " not"} applied); records closed before the cost model carry an estimated cost without funding. Unfilled, unverifiable, open and shadow signals never count toward anything. A filled signal that expires at the horizon without touching TP1 or the stop counts in expectancy and profit factor (its horizon exit is real P&L) but not in hit or stop rates, since it reached no verdict.`,
       filledN: closedN,
       unfilledN,
       unverifiableN,

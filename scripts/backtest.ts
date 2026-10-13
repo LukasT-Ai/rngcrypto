@@ -17,6 +17,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_TUNING, ENGINE_VERSION, getTuning, scoreFromCandles, setTuning, type Candle, type Tuning } from "../src/lib/signals/engine";
+import { COST_MODEL, costInR, type CostVenue } from "../src/app/api/signals/history/check/core";
 
 const BINANCE: Record<string, string> = { BTC: "BTCUSDT", ETH: "ETHUSDT", BNB: "BNBUSDT", ADA: "ADAUSDT", XRP: "XRPUSDT", SOL: "SOLUSDT", NEAR: "NEARUSDT", ZEC: "ZECUSDT" };
 const M5 = 300e3, M15 = 900e3, H1 = 3600e3, H4 = 14400e3, D1 = 86400e3;
@@ -36,6 +37,12 @@ const SLIP = parseFloat(arg("slippage", "0.0005"));
 const FEE = parseFloat(arg("fee", "0.0005"));
 const OUT = arg("out", "data/backtests");
 const LABEL = arg("label", "");
+// Cost model + next-open fills (perf audit 1.3), on by default so the harness matches the live checker:
+// market orders fill at the next 5m open with risk measured from that fill, and net R subtracts the venue's
+// taker/maker fee, slippage per market leg and (when the harness has a funding series; it does not) funding.
+// `--cost-model 0` restores the old flat `(slippage + fee) * 2` round trip on the decision price.
+const COST_MODEL_ON = arg("cost-model", "1") !== "0";
+const VENUE: CostVenue = (arg("venue", "STRIKE").toUpperCase() === "HYPERLIQUID" ? COST_MODEL.HYPERLIQUID : COST_MODEL.STRIKE);
 // Strategy knobs (defaults = the live engine). Baseline before tuning:
 //   --min-conf 55 --short-gate 0 --stop-buffer 0.5 --min-stop-atr 0.8 --stop-floor-scale 1 --cooldown-min 0
 setTuning({
@@ -112,6 +119,8 @@ interface Trade {
   tp: [number, number, number];
   entryType: "market" | "limit";
   filledAt: number | null;
+  fillPrice: number | null;
+  costR: number | null;
   closedAt: number | null;
   reason: "stop_before_tp" | "stop_after_tp" | "tp3" | "horizon" | "unfilled" | "open";
   highestTp: 0 | 1 | 2 | 3;
@@ -146,14 +155,22 @@ function simulate(tr: Trade, c5: Candle[], from: number): void {
     return;
   }
   tr.filledAt = c5[fillIdx].time;
+  // Next-open fill for market orders (the live checker's convention); limit orders fill at the entry.
+  const fillPrice = COST_MODEL_ON && tr.entryType === "market" && c5[fillIdx].open > 0 ? c5[fillIdx].open : tr.entry;
+  tr.fillPrice = fillPrice;
+  const fillRisk = Math.abs(fillPrice - tr.stop) > 0 ? Math.abs(fillPrice - tr.stop) : risk;
   const horizonEnd = tr.t + HORIZON_MS;
   let hit: 0 | 1 | 2 | 3 = 0;
-  const rOf = (p: number) => (long ? p - tr.entry : tr.entry - p) / risk;
-  const cost = ((SLIP + FEE) * 2 * tr.entry) / risk; // round trip, in R
+  const rOf = (p: number) => (long ? p - fillPrice : fillPrice - p) / fillRisk;
+  const legacyCost = ((SLIP + FEE) * 2 * tr.entry) / risk; // old flat round trip, in R
   const finish = (reason: Trade["reason"], exit: number, at: number) => {
     tr.reason = reason;
     tr.closedAt = at;
     tr.highestTp = hit;
+    const cost = COST_MODEL_ON
+      ? (costInR({ bias: tr.bias, fillPrice, stopLoss: tr.stop, entryType: tr.entryType, holdHours: Math.max(0, (at - (tr.filledAt ?? at)) / H1), fundingRate8h: null, venue: VENUE })?.costR ?? 0)
+      : legacyCost;
+    tr.costR = Math.round(cost * 1e4) / 1e4;
     tr.grossR = Math.round(rOf(exit) * 1e4) / 1e4;
     tr.netR = Math.round((rOf(exit) - cost) * 1e4) / 1e4;
   };
@@ -253,6 +270,8 @@ async function runSymbol(symbol: string): Promise<Trade[]> {
       tp: [r.tp1, r.tp2, r.tp3],
       entryType,
       filledAt: null,
+      fillPrice: null,
+      costR: null,
       closedAt: null,
       reason: "open",
       highestTp: 0,
@@ -320,7 +339,7 @@ async function main() {
   const report = {
     engineVersion: ENGINE_VERSION,
     generatedAt: new Date().toISOString(),
-    params: { days: DAYS, symbols: SYMBOLS, slippage: SLIP, fee: FEE, horizonHours: HORIZON_MS / H1, fillWindowCandles: FILL_WINDOW, cooldownMin: COOLDOWN_MS / 60e3, tuning: getTuning() },
+    params: { days: DAYS, symbols: SYMBOLS, slippage: SLIP, fee: FEE, horizonHours: HORIZON_MS / H1, fillWindowCandles: FILL_WINDOW, cooldownMin: COOLDOWN_MS / 60e3, tuning: getTuning(), costModel: COST_MODEL_ON ? { ...VENUE, nextOpenFill: true, fundingApplied: false } : { legacy: true, roundTrip: (SLIP + FEE) * 2 } },
     caveats: [
       "Candles only: funding, open interest, sentiment, news, catalysts, ETF flows, liquidations and the macro regime are null, exactly as the live engine treats a feed that is down.",
       "Binance.US spot candles stand in for Strike's perp feed; wicks differ slightly.",

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CANDLE_MS, evaluate, firstEligibleCandleTime, legacyResetPatch, needsLegacyReverify, type Candle } from "../check/core";
+import { CANDLE_MS, COST_MODEL, costInR, evaluate, firstEligibleCandleTime, legacyResetPatch, needsLegacyReverify, type Candle } from "../check/core";
 import type { SignalLog } from "../logger";
+
+// Pin the venue so the cost figures below do not depend on the shell environment.
+process.env.COST_VENUE = "STRIKE";
 
 // Signal timestamp sits 2 minutes into the 10:00 candle; the first eligible candle opens at 10:05.
 const T0 = Date.parse("2026-10-06T10:02:00.000Z");
@@ -92,6 +95,43 @@ describe("fill model", () => {
     expect(upd?.fillStatus).toBe("filled");
     expect(upd?.filledAt).toBe(C0 + CANDLE_MS);
     expect(upd?.tpHits?.map((h) => h.level)).toEqual([1]);
+  });
+
+  it("fills a market order at the next candle open, measures R from that fill and charges the cost model", () => {
+    // Decision price 100,000, entry 99,950 (market). The next candle opens at 100,200: that is the fill.
+    const s = sig({ entry: 99_950, stopLoss: 99_200, tp1: 101_200, tp2: 102_000, tp3: 103_000 });
+    const cs = candles([
+      [100_000, 100_100, 99_900, 100_000],
+      [100_200, 101_250, 100_150, 101_000], // fill at 100,200; TP1 touched
+      [101_000, 101_100, 99_100, 99_150], // stop
+    ]);
+    const upd = evaluate(s, cs, C0 + 3 * CANDLE_MS);
+    expect(upd?.fillPrice).toBe(100_200);
+    expect(upd?.closedReason).toBe("stop_after_tp");
+    // Gross: exit at TP1 (101,200) from the fill (100,200) over a 1,000 risk = +1.0R, not (101,200 - 99,950) / 750.
+    expect(upd?.realizedR).toBe(1);
+    // Strike: market entry 5 + 3 bp, exit 5 + 3 bp = 16 bp of notional; notional / risk = 100.2 -> 0.1603R.
+    expect(upd?.costR).toBeCloseTo(0.1603, 4);
+    expect(upd?.realizedNetR).toBeCloseTo(0.8397, 4);
+    // MFE is measured from the fill, not from the entry.
+    expect(upd?.maxFavorable).toBe(1050);
+  });
+
+  it("costInR charges maker on limit entries and signs funding by side", () => {
+    const base = { fillPrice: 100, stopLoss: 99, holdHours: 16, venue: COST_MODEL.STRIKE } as const;
+    // Limit long: maker 5 + taker 5 + slip 3 = 13 bp x 100 = 0.13R, plus 0.0008/8h x 2 intervals x 100 = 0.16R paid.
+    const long = costInR({ ...base, bias: "LONG", entryType: "limit", fundingRate8h: 0.0008 });
+    expect(long?.feeR).toBeCloseTo(0.1, 6);
+    expect(long?.slipR).toBeCloseTo(0.03, 6);
+    expect(long?.fundingR).toBeCloseTo(0.16, 6);
+    expect(long?.costR).toBeCloseTo(0.29, 6);
+    // Same funding collects for a short.
+    const short = costInR({ ...base, bias: "SHORT", stopLoss: 101, entryType: "limit", fundingRate8h: 0.0008 });
+    expect(short?.fundingR).toBeCloseTo(-0.16, 6);
+    expect(short?.costR).toBeCloseTo(-0.03, 6);
+    // No funding feed: only fees and slippage.
+    expect(costInR({ ...base, bias: "LONG", entryType: "market", fundingRate8h: null })?.costR).toBeCloseTo(0.16, 6);
+    expect(costInR({ ...base, stopLoss: 100, bias: "LONG", entryType: "market", fundingRate8h: null })).toBeNull();
   });
 
   it("closes as unfilled after the fill window elapses with no touch", () => {

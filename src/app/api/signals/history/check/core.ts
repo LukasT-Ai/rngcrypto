@@ -82,12 +82,72 @@ async function fetchCandles(strike: string, sinceMs: number): Promise<Candle[]> 
 
 const r4 = (n: number) => Math.round(n * 10000) / 10000;
 
+// ── Cost model (perf audit 1.3) ──────────────────────────────────────────────
+// Fees and slippage in basis points of notional per leg; funding charged over the hold. Figures are the
+// public base tiers as of 2026-10 (Hyperliquid 3.5/1 bp; Strike 5 bp flat, hourly funding) and are meant to
+// be conservative placeholders: verify against the venue fee pages before quoting them.
+export interface CostVenue {
+  venue: string;
+  takerBps: number;
+  makerBps: number;
+  slipBps: number;
+  fundingIntervalHours: number;
+  fundingApplied: boolean;
+}
+export const COST_MODEL: Record<"HYPERLIQUID" | "STRIKE", CostVenue> = {
+  HYPERLIQUID: { venue: "Hyperliquid", takerBps: 3.5, makerBps: 1, slipBps: 3, fundingIntervalHours: 1, fundingApplied: true },
+  STRIKE: { venue: "Strike", takerBps: 5, makerBps: 5, slipBps: 3, fundingIntervalHours: 1, fundingApplied: true },
+};
+export function activeCostVenue(): CostVenue {
+  const key = (process.env.COST_VENUE ?? "STRIKE").toUpperCase();
+  return key === "HYPERLIQUID" ? COST_MODEL.HYPERLIQUID : COST_MODEL.STRIKE;
+}
+
+export interface CostBreakdown {
+  costR: number;
+  feeR: number;
+  slipR: number;
+  fundingR: number;
+}
+
+// Round-trip cost in R. Entry leg: market = taker + slippage, limit = maker (resting, no slippage). Exit leg:
+// always taker + slippage (stops and horizon exits are market orders; a TP exit is charged the same so the
+// model never flatters a touch). Funding: `fundingRate8h` is a fraction per 8h (the engine's unit); longs pay
+// when it is positive, shorts collect. Everything is expressed per unit of notional and divided by the risk.
+export function costInR(p: {
+  bias: "LONG" | "SHORT";
+  fillPrice: number;
+  stopLoss: number;
+  entryType: "market" | "limit";
+  holdHours: number;
+  fundingRate8h: number | null;
+  venue?: CostVenue;
+}): CostBreakdown | null {
+  const v = p.venue ?? activeCostVenue();
+  const risk = Math.abs(p.fillPrice - p.stopLoss);
+  if (!(risk > 0) || !(p.fillPrice > 0)) return null;
+  const perR = p.fillPrice / risk; // 1.0 of notional expressed in R
+  const entryFee = p.entryType === "market" ? v.takerBps : v.makerBps;
+  const entrySlip = p.entryType === "market" ? v.slipBps : 0;
+  const feeR = ((entryFee + v.takerBps) / 1e4) * perR;
+  const slipR = ((entrySlip + v.slipBps) / 1e4) * perR;
+  let fundingR = 0;
+  if (v.fundingApplied && p.fundingRate8h != null && Number.isFinite(p.fundingRate8h) && p.holdHours > 0) {
+    const paid = p.fundingRate8h * (p.holdHours / 8) * (p.bias === "LONG" ? 1 : -1);
+    fundingR = paid * perR;
+  }
+  return { costR: r4(feeR + slipR + fundingR), feeR: r4(feeR), slipR: r4(slipR), fundingR: r4(fundingR) };
+}
+
 // Realized R convention: exit at the last TP reached (stop after TP or TP3), at the stop if no TP was reached,
-// or at the last close when the horizon runs out. Assumes fills at the exact touch on 5m candles; no slippage or fees.
-export function realizedR(sig: SignalLog, exitPrice: number): number | null {
-  const risk = Math.abs(sig.entry - sig.stopLoss);
+// or at the last close when the horizon runs out. Gross: fills at the exact touch (limit) or the next candle
+// open (market); fees, slippage and funding are applied separately by costInR().
+// Risk is measured from the fill price; if a gap opened through the stop (risk <= 0) the signal entry is used.
+export function realizedR(sig: SignalLog, exitPrice: number, fillPrice: number = sig.entry): number | null {
+  const base = Math.abs(fillPrice - sig.stopLoss) > 0 ? fillPrice : sig.entry;
+  const risk = Math.abs(base - sig.stopLoss);
   if (risk <= 0) return null;
-  const move = sig.bias === "LONG" ? exitPrice - sig.entry : sig.entry - exitPrice;
+  const move = sig.bias === "LONG" ? exitPrice - base : base - exitPrice;
   return r4(move / risk);
 }
 
@@ -163,6 +223,9 @@ export function evaluate(sig: SignalLog, candles: Candle[], now: number): Partia
   // Records older than the fill model carry no fillStatus; treat them as pending so the first pass
   // verifies the fill from the signal timestamp.
   let filledAt: number | null = sig.fillStatus === "filled" ? (sig.filledAt ?? null) : null;
+  // Fill price: market orders fill at the next candle OPEN (not the decision price); limit orders at the entry.
+  // Records filled before the cost model carry no fillPrice and keep the entry (their old convention).
+  let fillPrice: number = sig.fillStatus === "filled" ? (sig.fillPrice ?? sig.entry) : sig.entry;
   const tpHits: TpHit[] = filledAt != null ? [...(sig.tpHits ?? [])] : [];
   let maxFav = filledAt != null ? (sig.maxFavorable ?? 0) : 0;
   let maxAdv = filledAt != null ? (sig.maxAdverse ?? 0) : 0;
@@ -182,6 +245,7 @@ export function evaluate(sig: SignalLog, candles: Candle[], now: number): Partia
       const touched = market ? true : long ? c.low <= sig.entry : c.high >= sig.entry;
       if (touched) {
         filledAt = c.time;
+        fillPrice = market && c.open > 0 ? c.open : sig.entry;
         break;
       }
     }
@@ -191,6 +255,10 @@ export function evaluate(sig: SignalLog, candles: Candle[], now: number): Partia
       return stillPending(now);
     }
   }
+
+  // Risk from the fill price (falls back to the entry if a gap opened through the stop).
+  const fillRisk = Math.abs(fillPrice - sig.stopLoss) > 0 ? Math.abs(fillPrice - sig.stopLoss) : risk;
+  const grossR = (exit: number) => realizedR(sig, exit, fillPrice);
 
   // Walk candles from the fill candle (first pass) or from the last check (subsequent passes).
   const fillTime = filledAt;
@@ -211,18 +279,18 @@ export function evaluate(sig: SignalLog, candles: Candle[], now: number): Partia
   }
 
   for (const c of window) {
-    const fav = long ? c.high - sig.entry : sig.entry - c.low;
-    const adv = long ? sig.entry - c.low : c.high - sig.entry;
+    const fav = long ? c.high - fillPrice : fillPrice - c.low;
+    const adv = long ? fillPrice - c.low : c.high - fillPrice;
     if (fav > maxFav) maxFav = fav;
     if (adv > maxAdv) maxAdv = adv;
 
     const hitSL = long ? c.low <= sig.stopLoss : c.high >= sig.stopLoss;
     if (hitSL) {
       if (tpHits.length === 0) {
-        closed = { outcome: "stopped", outcomePrice: sig.stopLoss, outcomeTimestamp: c.time, stoppedAt: c.time, stoppedAfterTp: 0, closedReason: "stop_before_tp", realizedR: realizedR(sig, sig.stopLoss) };
+        closed = { outcome: "stopped", outcomePrice: sig.stopLoss, outcomeTimestamp: c.time, stoppedAt: c.time, stoppedAfterTp: 0, closedReason: "stop_before_tp", realizedR: grossR(sig.stopLoss) };
       } else {
         const last = tpHits[tpHits.length - 1];
-        closed = { outcome: `tp${last.level}` as SignalLog["outcome"], outcomePrice: last.price, outcomeTimestamp: c.time, stoppedAt: c.time, stoppedAfterTp: last.level, closedReason: "stop_after_tp", realizedR: realizedR(sig, last.price) };
+        closed = { outcome: `tp${last.level}` as SignalLog["outcome"], outcomePrice: last.price, outcomeTimestamp: c.time, stoppedAt: c.time, stoppedAfterTp: last.level, closedReason: "stop_after_tp", realizedR: grossR(last.price) };
       }
       break;
     }
@@ -238,7 +306,7 @@ export function evaluate(sig: SignalLog, candles: Candle[], now: number): Partia
       if (!hit) break;
       tpHits.push({ level: next, at: c.time, price: lvl });
       if (next === 3) {
-        closed = { outcome: "tp3", outcomePrice: lvl, outcomeTimestamp: c.time, stoppedAt: null, stoppedAfterTp: null, closedReason: "tp3", realizedR: realizedR(sig, lvl) };
+        closed = { outcome: "tp3", outcomePrice: lvl, outcomeTimestamp: c.time, stoppedAt: null, stoppedAfterTp: null, closedReason: "tp3", realizedR: grossR(lvl) };
         break;
       }
       next = (next + 1) as 1 | 2 | 3;
@@ -250,34 +318,48 @@ export function evaluate(sig: SignalLog, candles: Candle[], now: number): Partia
   const base: Partial<SignalLog> = {
     maxFavorable: maxFav,
     maxAdverse: maxAdv,
-    mfeR: risk > 0 ? r4(maxFav / risk) : null,
-    maeR: risk > 0 ? r4(maxAdv / risk) : null,
+    mfeR: fillRisk > 0 ? r4(maxFav / fillRisk) : null,
+    maeR: fillRisk > 0 ? r4(maxAdv / fillRisk) : null,
     tpHits,
     timeToTp1Min: tp1 ? Math.round((tp1.at - sig.timestamp) / 60e3) : null,
     lastCheckedAt: now,
     status: "open",
     fillStatus: "filled",
     filledAt: fillTime,
+    fillPrice,
     outcome: tpHits.length ? (`tp${tpHits[tpHits.length - 1].level}` as SignalLog["outcome"]) : "pending",
     ...(coverageGap ? { coverageGap } : {}),
   };
 
-  if (closed) return { ...base, ...closed, status: "closed" };
+  // Cost model applied once, at resolution: round-trip fees + slippage + funding over the hold, in R.
+  const withCost = (patch: Partial<SignalLog>, closedAt: number): Partial<SignalLog> => {
+    const gross = patch.realizedR ?? null;
+    const cost = costInR({
+      bias: sig.bias,
+      fillPrice,
+      stopLoss: sig.stopLoss,
+      entryType: market ? "market" : "limit",
+      holdHours: Math.max(0, (closedAt - fillTime) / HOUR),
+      fundingRate8h: sig.context?.inputs?.fundingRate ?? null,
+    });
+    return { ...patch, costR: cost?.costR ?? null, realizedNetR: gross != null && cost ? r4(gross - cost.costR) : null };
+  };
+
+  if (closed) return { ...base, ...withCost(closed, closed.outcomeTimestamp ?? now), status: "closed" };
 
   if (now > horizonEnd) {
     // Horizon exit happens at the last traded close BEFORE the horizon, whether or not a TP was reached
     // earlier. Exiting at the TP price would credit a touch the position never banked.
     const lastClose = window[window.length - 1]?.close ?? candles.filter((c) => c.time < horizonEnd).at(-1)?.close ?? null;
-    const exitR = lastClose != null ? realizedR(sig, lastClose) : null;
+    const exitR = lastClose != null ? grossR(lastClose) : null;
     if (tpHits.length) {
       const last = tpHits[tpHits.length - 1];
-      return { ...base, status: "closed", outcome: `tp${last.level}` as SignalLog["outcome"], outcomePrice: lastClose ?? last.price, outcomeTimestamp: now, closedReason: "horizon", stoppedAfterTp: null, realizedR: exitR ?? realizedR(sig, last.price) };
+      return { ...base, status: "closed", ...withCost({ outcome: `tp${last.level}` as SignalLog["outcome"], outcomePrice: lastClose ?? last.price, outcomeTimestamp: now, closedReason: "horizon", stoppedAfterTp: null, realizedR: exitR ?? grossR(last.price) }, horizonEnd) };
     }
-    return { ...base, status: "closed", outcome: "expired", outcomePrice: lastClose, outcomeTimestamp: now, closedReason: "horizon", stoppedAfterTp: null, realizedR: exitR };
+    return { ...base, status: "closed", ...withCost({ outcome: "expired", outcomePrice: lastClose, outcomeTimestamp: now, closedReason: "horizon", stoppedAfterTp: null, realizedR: exitR }, horizonEnd) };
   }
   return base;
 }
-
 let legacyMigrated = false;
 // One pass per process: legacy first-touch records with a resting limit entry are reset so the fill
 // model re-runs them from the signal timestamp.

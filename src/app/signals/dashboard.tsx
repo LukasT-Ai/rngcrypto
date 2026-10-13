@@ -103,8 +103,9 @@ type Ticker = (typeof TICKERS)[number]
 
 function TickerPills({ tickers, symbol, onPick }: { tickers: Ticker[]; symbol: string; onPick: (s: string) => void }) {
   return (
-    <div className="relative hidden min-w-0 flex-1 sm:block">
-      <div className="flex items-center gap-1 overflow-x-auto snap-x pr-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)]" role="group" aria-label="Ticker">
+    <div className={cn(SURFACE_BLUR, "hidden rounded-xl px-3 py-1.5 sm:block")}>
+      {/* Every ticker stays visible: the row wraps instead of scrolling (a 27-pair strip never fit in 44px). */}
+      <div className="flex flex-wrap items-center gap-1 gap-y-1.5" role="group" aria-label="Ticker">
         {TICKER_GROUPS.map((g) => {
           const items = tickers.filter((t) => g.symbols.has(t.symbol))
           if (items.length === 0) return null
@@ -121,7 +122,7 @@ function TickerPills({ tickers, symbol, onPick }: { tickers: Ticker[]; symbol: s
                     onClick={() => onPick(t.symbol)}
                     title={t.label}
                     className={cn(
-                      "h-7 shrink-0 snap-start rounded-full border px-2.5 text-[11px] font-bold uppercase tracking-wide transition-colors",
+                      "h-7 shrink-0 rounded-full border px-2.5 text-[11px] font-bold uppercase tracking-wide transition-colors",
                       active ? "border-transparent text-[#06080F]" : "border-white/10 text-white/60 hover:border-white/25 hover:text-white",
                       FOCUS_RING
                     )}
@@ -373,7 +374,6 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
             {theme.name}
           </h1>
           <span className="mx-1 hidden h-5 w-px bg-white/10 sm:block" aria-hidden />
-          <TickerPills tickers={tickers} symbol={symbol} onPick={setSymbol} />
           <TickerPalette tickers={tickers} symbol={symbol} onPick={setSymbol} />
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             <SessionChip crypto={CRYPTO.has(symbol)} session={d && !staleTicker ? d.features?.session ?? null : null} />
@@ -392,6 +392,7 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
             </button>
           </span>
         </div>
+        <TickerPills tickers={tickers} symbol={symbol} onPick={setSymbol} />
 
         {isLoading ? (
           <SkeletonContent />

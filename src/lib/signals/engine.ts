@@ -98,8 +98,9 @@ export function assetClassFor(symbol: string, isCrypto: boolean): AssetClass {
 import { computeCatalystScore, getNextOilEvent, getUpcomingEvents } from "@/lib/economic-calendar";
 import { getNewsSentiment, type NewsSentimentResult } from "@/lib/news-sentiment";
 import { getCatalystNews, isCatalystAsset, type OilGeoResult } from "@/lib/oil-geopolitical-news";
-import { getMacroScores, getMacroState, macroAssetFor } from "@/lib/macro/service";
-import type { MacroScores, MacroState as MacroEventIntel } from "@/lib/macro/types";
+import { getEventGateInputs, getMacroScores, getMacroState, macroAssetFor, macroLensFor } from "@/lib/macro/service";
+import type { MacroCoupling, MacroScores, MacroState as MacroEventIntel } from "@/lib/macro/types";
+import { computeEventWindow, firstFiveMinuteMove, NO_WINDOW, type EventWindow } from "@/lib/macro/event-gate";
 import { computeMacroRegime, macroBonus as regimeBonus, type MacroRegimeResult } from "@/lib/ta/macro-regime";
 import { analyzeElliottMTF, type ElliottMTFResult } from "@/lib/ta/elliott";
 import { scoreShortSideComposite, ichimoku, deathGoldenCross, atrSeries, type CompositeResult, type CompositeOpts } from "@/lib/ta/indicators";
@@ -1178,65 +1179,15 @@ function computeGoldenCross(dailyCandles: DailyCandle[]): MacroState["goldenCros
   return { active: true, crossPrice, daysSinceCross, currentPrice, returnFromCross, isShallowStart, sma50: current50, sma200: current200, projections: null };
 }
 
-const MACRO_EVENTS_2026 = [
-  { date: "2026-01-28", time: "19:00", name: "FOMC" },
-  { date: "2026-03-18", time: "18:00", name: "FOMC" },
-  { date: "2026-05-06", time: "18:00", name: "FOMC" },
-  { date: "2026-06-17", time: "18:00", name: "FOMC" },
-  { date: "2026-07-29", time: "18:00", name: "FOMC" },
-  { date: "2026-09-16", time: "18:00", name: "FOMC" },
-  { date: "2026-11-04", time: "18:00", name: "FOMC" },
-  { date: "2026-12-16", time: "19:00", name: "FOMC" },
-  { date: "2026-01-14", time: "13:30", name: "CPI" },
-  { date: "2026-02-12", time: "13:30", name: "CPI" },
-  { date: "2026-03-11", time: "12:30", name: "CPI" },
-  { date: "2026-04-14", time: "12:30", name: "CPI" },
-  { date: "2026-05-12", time: "12:30", name: "CPI" },
-  { date: "2026-06-10", time: "12:30", name: "CPI" },
-  { date: "2026-07-14", time: "12:30", name: "CPI" },
-  { date: "2026-08-12", time: "12:30", name: "CPI" },
-  { date: "2026-09-11", time: "12:30", name: "CPI" },
-  { date: "2026-10-13", time: "12:30", name: "CPI" },
-  { date: "2026-11-12", time: "13:30", name: "CPI" },
-  { date: "2026-12-10", time: "13:30", name: "CPI" },
-  { date: "2026-01-09", time: "13:30", name: "NFP" },
-  { date: "2026-02-06", time: "13:30", name: "NFP" },
-  { date: "2026-03-06", time: "13:30", name: "NFP" },
-  { date: "2026-04-03", time: "12:30", name: "NFP" },
-  { date: "2026-05-08", time: "12:30", name: "NFP" },
-  { date: "2026-06-05", time: "12:30", name: "NFP" },
-  { date: "2026-07-02", time: "12:30", name: "NFP" },
-  { date: "2026-08-07", time: "12:30", name: "NFP" },
-  { date: "2026-09-04", time: "12:30", name: "NFP" },
-  { date: "2026-10-02", time: "12:30", name: "NFP" },
-  { date: "2026-11-06", time: "12:30", name: "NFP" },
-  { date: "2026-12-04", time: "13:30", name: "NFP" },
-];
-
-const EVENT_BLACKOUT_MS = 30 * 60 * 1000;
-
-let parsedMacroEvents: { name: string; date: string; ts: number }[] | null = null;
-
-function getEventBlackout(): { blocked: boolean; event?: string; date?: string } {
-  if (!parsedMacroEvents) {
-    parsedMacroEvents = MACRO_EVENTS_2026.map((e) => ({
-      name: e.name,
-      date: e.date,
-      ts: new Date(`${e.date}T${e.time}:00Z`).getTime(),
-    }));
-  }
-  const now = Date.now();
-  for (const event of parsedMacroEvents) {
-    if (Math.abs(now - event.ts) <= EVENT_BLACKOUT_MS) {
-      return { blocked: true, event: event.name, date: event.date };
-    }
-  }
-  return { blocked: false };
+// Event blackout is derived from the universal event gate (lib/macro/event-gate.ts) over the live macro calendar;
+// the hard-coded 2026 FOMC/CPI/NFP list it replaced is gone. Shape kept for the dashboard's macro card.
+function blackoutFrom(w: EventWindow): MacroState["eventBlackout"] {
+  return w.gate && w.event ? { blocked: true, event: w.event.title, date: w.event.time.slice(0, 10) } : { blocked: false };
 }
 
 async function fetchMacroSignals(): Promise<MacroState | null> {
   if (macroCache && Date.now() - macroCache.timestamp < MACRO_CACHE_TTL) {
-    return { ...macroCache.data, eventBlackout: getEventBlackout() };
+    return { ...macroCache.data };
   }
 
   try {
@@ -1374,13 +1325,13 @@ async function fetchMacroSignals(): Promise<MacroState | null> {
       signals: regime.signals,
       bias: regime.bias,
       regime: { components: regime.components, details: regime.details },
-      eventBlackout: getEventBlackout(),
+      eventBlackout: { blocked: false },
     };
 
     macroCache = { data: state, timestamp: Date.now() };
-    return state;
+    return { ...state };
   } catch {
-    return macroCache ? { ...macroCache.data, eventBlackout: getEventBlackout() } : null;
+    return macroCache ? { ...macroCache.data } : null;
   }
 }
 
@@ -3294,9 +3245,12 @@ function computeMultiFactorCall(
     elliott: ElliottMTFResult | null;
     taSystem: TaSystem | null;
     regime: RegimeInfo | null;
+    // Phase 3.2 universal event gate (null/absent = no event near: behaviour identical to before).
+    eventWindow?: EventWindow | null;
   },
   dec: number
 ) {
+  const eventWindow = params.eventWindow ?? null;
   const {
     price,
     rsi,
@@ -3731,6 +3685,8 @@ function computeMultiFactorCall(
 
   let bias: "LONG" | "SHORT" | "WAIT";
   const gateNotes: string[] = [];
+  // Non-gating event-window notes (pre/post window sizing), shown with the macro notes.
+  const macroNotesEarly: string[] = [];
   if (isWait) {
     bias = "WAIT";
     if (confidence >= 55 && confidence < TUNING.minPublishConfidence) {
@@ -3808,9 +3764,33 @@ function computeMultiFactorCall(
 
   if (counterTrend) sizeMultiplier = Math.min(sizeMultiplier, 0.5);
 
+  // ── Universal event gate (Phase 3.2) ──────────────────────────────────────
+  // Size parts are reported as the engine applies them: the headline regime and counter-trend haircuts combine by
+  // min (as before), the event window multiplies on top. total === call.sizeMultiplier.
+  const sizingParts: { label: string; mult: number }[] = [];
+  if (oilGeoScore != null && oilGeoRegime && oilGeoRegime !== "calm") sizingParts.push({ label: `headline ${oilGeoRegime}`, mult: oilGeoRegime === "elevated" ? 0.75 : 0.5 });
+  if (counterTrend) sizingParts.push({ label: "counter-trend", mult: 0.5 });
+  if (eventWindow && eventWindow.state !== "none") {
+    if (eventWindow.gate) {
+      if (bias !== "WAIT") gateNotes.unshift(`Event gate: ${eventWindow.note ?? "release window"}`);
+      else if (eventWindow.note) gateNotes.push(`Event gate: ${eventWindow.note}`);
+      bias = "WAIT";
+      sizeMultiplier = 0;
+      sizingParts.push({ label: eventWindow.state === "blackout" ? "event blackout" : "release in progress", mult: 0 });
+    } else {
+      if (eventWindow.sizeMult < 1) {
+        sizeMultiplier = Math.round(sizeMultiplier * eventWindow.sizeMult * 1000) / 1000;
+        sizingParts.push({ label: eventWindow.state === "pre" ? "pre-release window" : "post-release window", mult: eventWindow.sizeMult });
+      }
+      if (eventWindow.note) macroNotesEarly.push(eventWindow.note);
+    }
+    if (eventWindow.stopMult > 1) stopMult = Math.max(stopMult, eventWindow.stopMult);
+  }
+  const sizing = { base: 1, parts: sizingParts, total: sizeMultiplier };
+
   // Macro regime bonus (crypto only): applied BEFORE levels are built so a lean that drops below tradeable
   // conviction becomes a real WAIT, with the provisional WAIT plan instead of a stale long/short plan.
-  const macroNotes: string[] = [];
+  const macroNotes: string[] = [...macroNotesEarly];
   const macroBonus = getMacroBonus(macroState, bias, isCrypto);
   if (macroBonus !== 0) {
     const side = bias.toLowerCase();
@@ -4104,6 +4084,11 @@ function computeMultiFactorCall(
     geoOverride,
     sizeMultiplier,
     stopMultiplier: stopMult,
+    // Phase 3.2: event-window state for the verdict bar; null when no relevant release is near.
+    eventWindow: eventWindow && eventWindow.state !== "none"
+      ? { state: eventWindow.state, event: eventWindow.event, minutesLeft: eventWindow.minutesLeft, minutesSince: eventWindow.minutesSince, sizeMult: eventWindow.sizeMult, stopMult: eventWindow.stopMult, firstMoveGate: eventWindow.firstMoveGate, firstMovePct: eventWindow.firstMovePct, note: eventWindow.note }
+      : null,
+    sizing,
     strongCategories,
     weightedScore: Math.round(weightedScore * 10) / 10,
     // Raw component votes and the weights actually in play (0 = feed down), logged with every call so the
@@ -4638,6 +4623,22 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
   const catalystData = await computeCatalystScore(symbol, assetClass);
   const macroAsset = macroAssetFor(symbol);
   const macroInfo = macroAsset ? await getMacroScores(macroAsset).catch(() => null) : null;
+
+  // ── Universal event gate + macro coupling (Phase 3.2 / 3.3) ───────────────
+  // Every symbol reads the macro calendar through its lens (crypto -> BTC, metals -> GOLD, energy -> WTI).
+  const lens = macroLensFor(symbol);
+  const gateInputs = await getEventGateInputs(lens).catch(() => null);
+  const eventWindow: EventWindow = gateInputs
+    ? computeEventWindow({ now: nowMs, events: gateInputs.events, lens, firstMoveFor: (t) => firstFiveMinuteMove(candles5m, t, nowMs) })
+    : NO_WINDOW;
+  const macroCoupling: MacroCoupling | null = isCrypto ? gateInputs?.coupling ?? null : null;
+  if (macroState) macroState.eventBlackout = blackoutFrom(eventWindow);
+  // An unconfirmed first move (< 0.5% or against the surprise) withdraws the directional event vote.
+  const gatedMacroScores: MacroScores | null = macroInfo?.scores
+    ? eventWindow.state === "post" && eventWindow.firstMoveGate === "unconfirmed"
+      ? { ...macroInfo.scores, event: 0, weights: { ...macroInfo.scores.weights, event: 0 }, note: `${macroInfo.scores.note}; first move unconfirmed, event vote withdrawn` }
+      : macroInfo.scores
+    : null;
   const nextOilEvent =
     symbol === "OIL"
       ? await getNextOilEvent()
@@ -4705,7 +4706,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       newsSentimentScore: newsSentimentData?.score ?? null,
       oilGeoScore: oilGeoData?.score ?? null,
       oilGeoRegime,
-      macroScores: macroInfo?.scores ?? null,
+      macroScores: gatedMacroScores,
       preEventRisk: macroInfo?.preEventRisk ?? null,
       catalystScore: catalystData.score,
       catalystRiskNote: catalystData.catalystRisk,
@@ -4725,14 +4726,10 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       elliott: elliottMTF,
       taSystem,
       regime,
+      eventWindow,
     },
     dec
   );
-
-  // Event blackout warning
-  if (macroState?.eventBlackout?.blocked) {
-    call.reasoning.unshift(`EVENT BLACKOUT: ${macroState.eventBlackout.event} — expect whipsaw; cut size and widen stops`);
-  }
 
   // ── Anticipatory signals ─────────────────────────────────────────────────────
   const anticipatory = computeAnticipatorySignals({
@@ -5068,7 +5065,7 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
     },
     call,
     taSystem,
-    regime,
+    regime: regime ? { ...regime, macroCoupling: macroCoupling ? { corr30d: macroCoupling.corr30d, mult: macroCoupling.mult } : null } : regime,
     elliott: elliottMTF
       ? {
           consensus: elliottMTF.consensus,

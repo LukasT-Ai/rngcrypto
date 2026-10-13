@@ -102,10 +102,18 @@ export interface VerifiedRelease {
 
 export type SurpriseMagnitude = "inline" | "small" | "large" | "extreme";
 
+export type ZAnchor = "consensus" | "market" | "blended" | "previous";
+export type SdSource = "market" | "rolling" | "prior";
+
 export interface SurpriseResult {
   delta: number | null;
   unit: Unit;
   zScore: number | null;
+  // The expectation the delta and z were measured against, and where it came from (null when no surprise).
+  anchor: number | null;
+  zAnchor: ZAnchor | null;
+  // Where the SD behind the z came from: a liquid Kalshi ladder, our own rolling history, or the taxonomy prior.
+  sdSource: SdSource | null;
   // Economic surprise, −100..+100: positive = higher than consensus. Asset sign is applied in impact.ts.
   score: number | null;
   magnitude: SurpriseMagnitude;
@@ -293,6 +301,59 @@ export interface CalendarRow {
   read: string | null;
   // Economic surprise -100..+100 (positive = above consensus); null without an actual.
   score: number | null;
+  // ── v2 (design F3). All nullable; the UI renders a fallback for every null. ──
+  // Taxonomy relevance per asset (0..1) and the lens asset's relevance after the macro-coupling multiplier.
+  relevance: Record<MacroAsset, number>;
+  lensRelevance: number;
+  // Lens asset: expected direction before the print (from the priced tail skew), observed at the latest reaction
+  // sample after it (falls back to the expected post-print direction while no sample exists).
+  assetDirection: Direction | null;
+  assetDirectionBasis: "expected" | "observed" | null;
+  zScore: number | null;
+  zAnchor: ZAnchor | null;
+  isLive: boolean;
+  market: CalendarMarket | null;
+  fed: CalendarFed | null;
+  reaction: CalendarReaction | null;
+  // First-5-minute confirmation gate for the lens asset: > 0.7% in the surprise direction = confirmed, < 0.5% or
+  // against it = unconfirmed; pending until the 5m sample exists; null before release or without a direction.
+  firstMoveGate: FirstMoveGate | null;
+}
+
+export type FirstMoveGate = "pending" | "confirmed" | "unconfirmed";
+
+export interface CalendarMarket {
+  mean: number | null;
+  sd: number | null;
+  tailSkew: number | null;
+  venue: "kalshi" | "polymarket" | null;
+  volumeUsd: number | null;
+  asOf: string | null;
+  shrunk: boolean;
+}
+
+export interface CalendarFed {
+  expectedChangeBp: number;
+  surpriseSdBp: number;
+  modalLabel: string;
+  modalProb: number;
+}
+
+export interface CalendarReaction {
+  label: ReactionLabel;
+  lensMovePct: number | null;
+  confirmation: ConfirmationStatus | null;
+  // Per-asset moves at the stored samples (5m / 15m / 1h), so the row expansion can show the reaction table.
+  samples: Partial<Record<"5m" | "15m" | "1h", Record<MacroAsset, number | null>>>;
+}
+
+// Rolling 30-day BTC/SPX daily-return correlation and the multiplier it implies for macro and event weights on
+// crypto (0.3..1.0). null when either series is unavailable; the engine then behaves as if mult were 1.
+export interface MacroCoupling {
+  corr30d: number;
+  mult: number;
+  n: number;
+  asOf: string;
 }
 
 export interface MacroState {
@@ -307,6 +368,8 @@ export interface MacroState {
   scores: Record<MacroAsset, MacroScores>;
   alerts: Alert[];
   preEventRisk: { event: ScheduledEvent; minutes: number; importance: Importance } | null;
+  // Phase 3.3: BTC/SPX coupling (null when the SPX proxy is unavailable).
+  macroCoupling: MacroCoupling | null;
   sources: { provider: SourceProvider; enabled: boolean; note: string }[];
   // WTI lens only: latest EIA / API crude inventory prints paired with the next scheduled release.
   oilWeekly?: import("./oil-weekly").WeeklyOilRelease[];

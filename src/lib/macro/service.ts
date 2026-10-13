@@ -1,11 +1,15 @@
-import type { Alert, CalendarRow, EventPhase, EventState, Importance, MacroAsset, MacroRegime, MacroScores, MacroState, MarketSnapshot, ReactionPoint, ScheduledEvent, SnapshotKey, StoredRelease } from "./types";
+import type { Alert, CalendarReaction, CalendarRow, ConfirmationStatus, Direction, EventPhase, EventState, FirstMoveGate, Importance, MacroAsset, MacroCoupling, MacroRegime, MacroScores, MacroState, MarketSnapshot, ReactionLabel, ReactionPoint, ScheduledEvent, SnapshotKey, StoredRelease } from "./types";
 import { MACRO_ASSETS, REACTION_SCHEDULE, SNAPSHOT_KEYS } from "./types";
 import { defFor, getMacroEvents } from "./calendar";
 import { formatValue } from "./taxonomy";
 import { buildScenarios } from "./scenarios";
 import { fetchRelease, latestCpiYoY, sourceStatus } from "./releases";
-import { computeSurprise, magnitudeFromZ } from "./surprise";
+import { computeSurprise, magnitudeFromZ, type MarketPrior } from "./surprise";
 import { impactForSurprise, preReleaseMap, transmission } from "./impact";
+import { getPredictionState, type PredictionState } from "../prediction/service";
+import { fedExpectationFor, fedPriorFor, marketExpectationFor, marketPriorFor, toCalendarMarket } from "./market-prior";
+import { getMacroCoupling } from "./coupling";
+import { firstMoveGate as gateFromMove, gateEligible, type GateEvent } from "./event-gate";
 import { evaluateConfirmation } from "./confirmation";
 import { classifyRegime } from "./regime";
 import { fiveDayChanges, getSnapshot, priceAt, setMarketTtl } from "./market";
@@ -19,7 +23,50 @@ import { fetchFxStreet, fxActualFor } from "./fxstreet";
 const CAL_BACK = 7 * 86400e3;
 const CAL_AHEAD = 14 * 86400e3;
 
-async function buildCalendar(asset: MacroAsset | null, now: number): Promise<CalendarRow[]> {
+const ASSET_KEY: Record<MacroAsset, SnapshotKey> = { BTC: "btc", GOLD: "gold", WTI: "wti" };
+const REACTION_ORDER: ReactionLabel[] = REACTION_SCHEDULE.map((r) => r.label);
+// Below this move (percent) the observed reaction is reported as mixed (mirrors outcome.ts).
+const FLAT_PCT: Record<MacroAsset, number> = { BTC: 0.25, GOLD: 0.15, WTI: 0.35 };
+
+function observedDirection(asset: MacroAsset, movePct: number | null): Direction | null {
+  if (movePct == null) return null;
+  if (movePct > FLAT_PCT[asset]) return "bullish";
+  if (movePct < -FLAT_PCT[asset]) return "bearish";
+  return "mixed";
+}
+
+function dirSign(d: Direction | null | undefined): 1 | -1 | 0 | null {
+  if (d == null) return null;
+  return d === "bullish" ? 1 : d === "bearish" ? -1 : 0;
+}
+
+// Latest stored reaction sample for the lens, plus the 5m/15m/1h table for the row expansion.
+function reactionFor(lens: MacroAsset, reactions: ReactionPoint[], confirmation: ConfirmationStatus | null): CalendarReaction | null {
+  if (reactions.length === 0) return null;
+  const sorted = [...reactions].sort((a, b) => REACTION_ORDER.indexOf(a.label) - REACTION_ORDER.indexOf(b.label));
+  const latest = sorted[sorted.length - 1];
+  const samples: CalendarReaction["samples"] = {};
+  for (const r of sorted) {
+    if (r.label !== "5m" && r.label !== "15m" && r.label !== "1h") continue;
+    samples[r.label] = { BTC: r.changesPct.btc, GOLD: r.changesPct.gold, WTI: r.changesPct.wti };
+  }
+  return { label: latest.label, lensMovePct: latest.changesPct[ASSET_KEY[lens]], confirmation, samples };
+}
+
+// First-5-minute gate from the stored 5m sample (the engine evaluates the same rule on live candles). Between 0.5
+// and 0.7 the 15m sample decides; with no 15m sample yet it stays pending.
+function gateFromReactions(lens: MacroAsset, reactions: ReactionPoint[], surpriseDir: 1 | -1 | 0 | null): FirstMoveGate | null {
+  if (surpriseDir == null || surpriseDir === 0) return null;
+  const five = reactions.find((r) => r.label === "5m")?.changesPct[ASSET_KEY[lens]] ?? null;
+  const g = gateFromMove(five, surpriseDir);
+  if (g !== "pending" || five == null) return g;
+  const fifteen = reactions.find((r) => r.label === "15m")?.changesPct[ASSET_KEY[lens]] ?? null;
+  if (fifteen == null) return "pending";
+  return gateFromMove(fifteen, surpriseDir) === "confirmed" ? "confirmed" : "unconfirmed";
+}
+
+async function buildCalendar(asset: MacroAsset | null, now: number, pred: PredictionState | null, coupling: MacroCoupling | null, activeId: string | null, regime: MacroRegime): Promise<CalendarRow[]> {
+  const lens: MacroAsset = asset ?? "BTC";
   const events = await getMacroEvents(now - CAL_BACK, now + CAL_AHEAD);
   const fx = await fetchFxStreet();
   const stored = getStoredReleases();
@@ -30,29 +77,64 @@ async function buildCalendar(asset: MacroAsset | null, now: number): Promise<Cal
     const def = defFor(e.defId);
     const t = new Date(e.time).getTime();
     const released = t <= now;
+    const st = live.find((x) => x.event.id === e.id) ?? null;
+    const rec = stored.find((r) => r.id === e.id) ?? stored.find((r) => r.defId === e.defId && Math.abs(new Date(r.eventTime).getTime() - t) < 12 * 3600e3) ?? null;
     let actual: number | null = null;
     let actualRaw: string | null = null;
     if (released && def.unit !== "text") {
       // Verified live state first, then the stored history, then the calendar feed's own actual.
-      const st = live.find((s) => s.event.id === e.id);
       if (st?.release?.actual) {
         actual = st.release.actual.value;
         actualRaw = st.release.actual.raw;
+      } else if (rec?.actual != null) {
+        actual = rec.actual;
+        actualRaw = rec.actualRaw ?? formatValue(rec.actual, def.unit, def.decimals);
       } else {
-        const rec = stored.find((r) => r.id === e.id) ?? stored.find((r) => r.defId === e.defId && Math.abs(new Date(r.eventTime).getTime() - t) < 12 * 3600e3);
-        if (rec?.actual != null) {
-          actual = rec.actual;
-          actualRaw = rec.actualRaw ?? formatValue(rec.actual, def.unit, def.decimals);
-        } else {
-          const fa = fxActualFor(fx, e.defId, e.time);
-          if (fa) {
-            actual = fa.value;
-            actualRaw = fa.raw;
-          }
+        const fa = fxActualFor(fx, e.defId, e.time);
+        if (fa) {
+          actual = fa.value;
+          actualRaw = fa.raw;
         }
       }
     }
-    const sur = actual != null ? computeSurprise(def, actual, e.forecast, e.previous) : null;
+    // Prediction-market expectation (Kalshi ladders for prints, meeting buckets for the Fed).
+    const mx = marketExpectationFor(def, e, pred, now);
+    const market = toCalendarMarket(mx);
+    const fed = fedExpectationFor(def, e, pred, now);
+    const prior: MarketPrior | null = mx?.liquid ? { mean: mx.mean, sd: mx.sd } : fedPriorFor(def, e, pred, now);
+    // Live state carries the verified surprise (incl. the synthetic Fed-communication read); otherwise recompute.
+    const sur = st?.surprise ?? (actual != null ? computeSurprise(def, actual, e.forecast, e.previous, rollingSurpriseSD(def.id), prior) : null);
+
+    // Lens direction: observed at the latest sample once reactions exist, else expected from the surprise, else
+    // the pre-release lean from the priced tail skew.
+    const reactions = st?.reactions ?? rec?.reactions ?? [];
+    const confStatus: ConfirmationStatus | null = st?.confirmation?.perAsset[lens].status ?? rec?.confirmation ?? null;
+    const reaction = released ? reactionFor(lens, reactions, confStatus) : null;
+    let assetDirection: Direction | null = null;
+    let basis: CalendarRow["assetDirectionBasis"] = null;
+    let surpriseDir: 1 | -1 | 0 | null = null;
+    if (sur && sur.score != null) {
+      const impacts = st?.postImpact ?? impactForSurprise(def, sur.score, sur.magnitude, regime);
+      const imp = impacts.find((i) => i.asset === lens) ?? null;
+      surpriseDir = dirSign(imp?.direction);
+      assetDirection = imp?.direction ?? null;
+      basis = assetDirection ? "expected" : null;
+    }
+    if (reaction?.lensMovePct != null) {
+      const obs = observedDirection(lens, reaction.lensMovePct);
+      if (obs) {
+        assetDirection = obs;
+        basis = "observed";
+      }
+    }
+    if (!released && assetDirection == null && market?.tailSkew != null && Math.abs(market.tailSkew) >= 0.1) {
+      const pre = preReleaseMap(def, regime).find((i) => i.asset === lens)?.conditional;
+      if (pre) {
+        assetDirection = market.tailSkew > 0 ? pre.ifAbove : pre.ifBelow;
+        basis = "expected";
+      }
+    }
+    const rel = def.relevance[lens] ?? 0;
     rows.push({
       id: e.id,
       defId: e.defId,
@@ -68,6 +150,17 @@ async function buildCalendar(asset: MacroAsset | null, now: number): Promise<Cal
       released,
       read: sur && sur.score != null ? sur.label : null,
       score: sur?.score ?? null,
+      relevance: def.relevance,
+      lensRelevance: Math.round(rel * (lens === "BTC" ? coupling?.mult ?? 1 : 1) * 100) / 100,
+      assetDirection,
+      assetDirectionBasis: basis,
+      zScore: sur?.zScore ?? null,
+      zAnchor: sur?.zAnchor ?? null,
+      isLive: activeId != null && e.id === activeId,
+      market,
+      fed,
+      reaction,
+      firstMoveGate: released ? gateFromReactions(lens, reactions, surpriseDir) : null,
     });
   }
   return rows.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
@@ -81,8 +174,18 @@ export const MACRO_WEIGHTS = {
   eventBoostMultiplier: 2.0,
   eventBoostMinutes: 30,
   eventDecayMinutes: 240,
-  eventHalfLifeMinutes: 120,
+  // Phase 3.2: the directional information in a print is spent inside the hour for BTC/Gold (45-minute half-life,
+  // hard zero at 3h) and inside 10-30 minutes for WTI inventory prints.
+  eventHalfLifeMinutes: 45,
+  eventZeroMinutes: 180,
+  oilInventoryHalfLifeMinutes: 10,
+  oilInventoryZeroMinutes: 30,
 };
+
+function eventWindowFor(asset: MacroAsset, kind: EventState["def"]["kind"]): { halfLife: number; zero: number } {
+  const oil = asset === "WTI" && (kind === "oil_inventory" || kind === "oil_product_inventory");
+  return oil ? { halfLife: MACRO_WEIGHTS.oilInventoryHalfLifeMinutes, zero: MACRO_WEIGHTS.oilInventoryZeroMinutes } : { halfLife: MACRO_WEIGHTS.eventHalfLifeMinutes, zero: MACRO_WEIGHTS.eventZeroMinutes };
+}
 
 const WINDOW_BEFORE = 2 * 3600e3;
 const WINDOW_AFTER = 4 * 3600e3;
@@ -104,6 +207,8 @@ interface Runtime {
   lastTick: number;
   ticking: boolean;
   stateCache: Map<string, { state: MacroState; at: number }>;
+  pred: PredictionState | null;
+  coupling: MacroCoupling | null;
 }
 
 const rt: Runtime = {
@@ -116,6 +221,8 @@ const rt: Runtime = {
   lastTick: 0,
   ticking: false,
   stateCache: new Map(),
+  pred: null,
+  coupling: null,
 };
 
 function phaseFor(secondsToRelease: number, s: EventState | null): EventPhase {
@@ -146,7 +253,11 @@ async function ensureRegime(): Promise<MacroRegime> {
   return rt.regime;
 }
 
-function newState(event: ScheduledEvent, regime: MacroRegime, now: number): EventState {
+function priorFor(def: EventState["def"], event: ScheduledEvent, pred: PredictionState | null, now: number): MarketPrior | null {
+  return marketPriorFor(def, event, pred, now) ?? fedPriorFor(def, event, pred, now);
+}
+
+function newState(event: ScheduledEvent, regime: MacroRegime, now: number, pred: PredictionState | null): EventState {
   const def = defFor(event.defId);
   const stored = findRelease(event.id);
   const st: EventState = {
@@ -187,7 +298,8 @@ function newState(event: ScheduledEvent, regime: MacroRegime, now: number): Even
       note: "Rehydrated from stored release",
       checkedAt: stored.recordedAt,
     };
-    st.surprise = computeSurprise(def, stored.actual, event.forecast ?? stored.forecast, event.previous ?? stored.previous, rollingSurpriseSD(def.id));
+    const ev = { ...event, forecast: event.forecast ?? stored.forecast, previous: event.previous ?? stored.previous };
+    st.surprise = computeSurprise(def, stored.actual, ev.forecast, ev.previous, rollingSurpriseSD(def.id), priorFor(def, ev, pred, now));
     st.postImpact = impactForSurprise(def, st.surprise.score, st.surprise.magnitude, regime);
     st.scenarios = buildScenarios(def, { forecast: event.forecast ?? stored.forecast, previous: event.previous ?? stored.previous }, regime, stored.actual, rollingSurpriseSD(def.id));
   }
@@ -228,7 +340,7 @@ function persist(st: EventState, regime: MacroRegime) {
   upsertRelease(rec);
 }
 
-async function advance(st: EventState, regime: MacroRegime, now: number): Promise<void> {
+async function advance(st: EventState, regime: MacroRegime, now: number, pred: PredictionState | null): Promise<void> {
   const t0 = new Date(st.event.time).getTime();
   st.secondsToRelease = Math.round((t0 - now) / 1000);
   st.phase = phaseFor(st.secondsToRelease, st);
@@ -246,7 +358,7 @@ async function advance(st: EventState, regime: MacroRegime, now: number): Promis
       // Never downgrade a provisional number back to "awaiting"; only a calendar actual may replace it.
       if (!(provisional && rel.status !== "verified")) st.release = rel;
       if (rel.status === "verified" && rel.actual && (!provisional || rel.actual.provider !== "NEWS")) {
-        st.surprise = computeSurprise(st.def, rel.actual.value, st.event.forecast, st.event.previous, rollingSurpriseSD(st.def.id));
+        st.surprise = computeSurprise(st.def, rel.actual.value, st.event.forecast, st.event.previous, rollingSurpriseSD(st.def.id), priorFor(st.def, st.event, pred, now));
         st.postImpact = impactForSurprise(st.def, st.surprise.score, st.surprise.magnitude, regime, rel.actual.components);
         st.scenarios = buildScenarios(st.def, st.event, regime, rel.actual.value, rollingSurpriseSD(st.def.id));
         st.historical = bestHistoricalStats(st.def.id, st.surprise.score, regime);
@@ -295,6 +407,9 @@ async function advance(st: EventState, regime: MacroRegime, now: number): Promis
         delta: Math.round(bp * 10) / 10,
         unit: st.def.unit,
         zScore: Math.round((bp / 5) * 100) / 100,
+        anchor: 0,
+        zAnchor: "market",
+        sdSource: "prior",
         score,
         magnitude,
         label: Math.abs(bp) < 2 ? "Market read: neutral (2Y little changed)" : `Market read: ${bp > 0 ? "hawkish" : "dovish"} (2Y ${bp > 0 ? "+" : ""}${bp.toFixed(1)}bp at ${sample!.label}${dxy != null ? `, DXY ${dxy >= 0 ? "+" : ""}${dxy.toFixed(2)}%` : ""})`,
@@ -323,7 +438,7 @@ function decayWeight(ageMin: number | null): number {
   return w.eventBase * (w.eventBoostMultiplier - f * (w.eventBoostMultiplier - 1));
 }
 
-function scoresFor(asset: MacroAsset, regime: MacroRegime, states: EventState[], now: number): MacroScores {
+function scoresFor(asset: MacroAsset, regime: MacroRegime, states: EventState[], now: number, coupling: MacroCoupling | null): MacroScores {
   // Macro: slow regime lean.
   let macro = 0;
   if (regime.policyBias === "easing") macro += asset === "WTI" ? 5 : 20;
@@ -334,7 +449,8 @@ function scoresFor(asset: MacroAsset, regime: MacroRegime, states: EventState[],
   if (regime.inflationFocus === "high") macro += asset === "GOLD" ? 10 : asset === "BTC" ? -5 : 5;
   if (regime.inflationFocus === "low") macro += asset === "GOLD" ? -10 : asset === "BTC" ? 5 : -5;
 
-  // Event: verified releases in the last 6h, half-life 2h, weighted by importance.
+  // Event: verified releases inside the asset-class window (3h BTC/Gold, 30m WTI inventories), 45-minute
+  // half-life, weighted by importance.
   let eventSum = 0;
   let eventW = 0;
   let youngest: number | null = null;
@@ -343,10 +459,11 @@ function scoresFor(asset: MacroAsset, regime: MacroRegime, states: EventState[],
   for (const s of states) {
     if (!s.postImpact || s.release?.status !== "verified") continue;
     const ageMin = (now - new Date(s.event.time).getTime()) / 60e3;
-    if (ageMin > 360 || ageMin < 0) continue;
+    const win = eventWindowFor(asset, s.def.kind);
+    if (ageMin >= win.zero || ageMin < 0) continue;
     const imp = s.postImpact.find((i) => i.asset === asset);
     if (!imp) continue;
-    const decay = Math.pow(0.5, ageMin / MACRO_WEIGHTS.eventHalfLifeMinutes);
+    const decay = Math.pow(0.5, ageMin / win.halfLife);
     const w = (1 + rank[s.event.importance]) * decay;
     eventSum += imp.score * w;
     eventW += w;
@@ -364,15 +481,18 @@ function scoresFor(asset: MacroAsset, regime: MacroRegime, states: EventState[],
   const event = eventW ? Math.round(eventSum / eventW) : 0;
   const conf = confW ? Math.round(confirmation / confW) : 0;
   const ew = decayWeight(youngest);
+  // Phase 3.3: macro and event weights on the crypto lens scale with the BTC/SPX coupling (0.3..1).
+  const cm = asset === "BTC" && coupling ? coupling.mult : 1;
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
   return {
     macro: Math.round(macro),
     event,
     confirmation: conf,
     // No verified release in the window = no vote, so the weight leaves the engine's denominator instead of
     // diluting the technical evidence toward WAIT for BTC/GOLD/OIL (a ~20% confidence haircut with no information).
-    weights: { macro: MACRO_WEIGHTS.macroBase, event: eventW ? Math.round(ew * 1000) / 1000 : 0, confirmation: confW ? MACRO_WEIGHTS.confirmationBase : 0 },
+    weights: { macro: r3(MACRO_WEIGHTS.macroBase * cm), event: eventW ? r3(ew * cm) : 0, confirmation: confW ? MACRO_WEIGHTS.confirmationBase : 0 },
     eventAgeMinutes: youngest == null ? null : Math.round(youngest),
-    note: youngest == null ? "No verified release in the last 6h; event weight at base" : youngest <= MACRO_WEIGHTS.eventBoostMinutes ? "Fresh release: event weight boosted" : "Event weight decaying toward base",
+    note: youngest == null ? "No verified release inside the event window; event weight at base" : youngest <= MACRO_WEIGHTS.eventBoostMinutes ? "Fresh release: event weight boosted" : "Event weight decaying toward zero at the window end",
   };
 }
 
@@ -391,20 +511,23 @@ export async function tick(): Promise<void> {
     });
     setMarketTtl(hot ? 8_000 : 30_000);
     rt.snapshot = await getSnapshot();
+    // Prediction-market odds (60s cached, never throws) feed the surprise anchor and the calendar.
+    const pred = await getPredictionState().catch(() => null);
+    rt.pred = pred;
 
     for (const e of events) {
       const dt = new Date(e.time).getTime() - now;
       if (dt > WINDOW_BEFORE || dt < -RECENT_KEEP) continue;
       let st = rt.states.get(e.id);
       if (!st) {
-        st = newState(e, regime, now);
+        st = newState(e, regime, now, pred);
         rt.states.set(e.id, st);
       } else {
         st.event = { ...e, forecast: e.forecast ?? st.event.forecast, previous: e.previous ?? st.event.previous };
         // A consensus that lands later (or a revised previous) re-anchors the scenario bands; keep the actual's band marked.
         st.scenarios = buildScenarios(st.def, st.event, regime, st.release?.status === "verified" ? st.release.actual?.value ?? null : null, rollingSurpriseSD(st.def.id));
       }
-      await advance(st, regime, now);
+      await advance(st, regime, now, pred);
     }
     for (const [id, st] of rt.states) {
       if (now - new Date(st.event.time).getTime() > RECENT_KEEP) rt.states.delete(id);
@@ -456,11 +579,13 @@ export async function getMacroState(asset: MacroAsset | null = null): Promise<Ma
   const active = candidates[0] ?? null;
   const recent = all.filter((s) => s !== active && relevantTo(asset, s.def.id) && s.secondsToRelease < 0 && rank[s.event.importance] >= rank.medium).sort((a, b) => b.secondsToRelease - a.secondsToRelease).slice(0, 6);
 
-  const scores = Object.fromEntries(MACRO_ASSETS.map((a) => [a, scoresFor(a, regime, all, now)])) as Record<MacroAsset, MacroScores>;
+  const coupling = await getMacroCoupling().catch(() => null);
+  rt.coupling = coupling;
+  const scores = Object.fromEntries(MACRO_ASSETS.map((a) => [a, scoresFor(a, regime, all, now, coupling)])) as Record<MacroAsset, MacroScores>;
   const nextBig = upcomingAll.find((e) => rank[e.importance] >= rank.high && new Date(e.time).getTime() - now <= 15 * 60e3);
   const preEventRisk = nextBig ? { event: nextBig, minutes: Math.max(0, Math.round((new Date(nextBig.time).getTime() - now) / 60e3)), importance: nextBig.importance } : null;
 
-  const calendar = await buildCalendar(asset, now);
+  const calendar = await buildCalendar(asset, now, rt.pred, coupling, active?.event.id ?? null, regime);
 
   const state: MacroState = {
     asOf: new Date(now).toISOString(),
@@ -473,6 +598,7 @@ export async function getMacroState(asset: MacroAsset | null = null): Promise<Ma
     scores,
     alerts: rt.alerts.filter((a) => !asset || a.asset == null || a.asset === asset).slice(0, 30),
     preEventRisk,
+    macroCoupling: coupling,
     sources: sourceStatus(),
     ...(oilWeekly ? { oilWeekly } : {}),
   };
@@ -484,6 +610,30 @@ export async function getMacroState(asset: MacroAsset | null = null): Promise<Ma
 export async function getMacroScores(asset: MacroAsset): Promise<{ scores: MacroScores; preEventRisk: MacroState["preEventRisk"]; active: EventState | null }> {
   const s = await getMacroState(asset);
   return { scores: s.scores[asset], preEventRisk: s.preEventRisk, active: s.active };
+}
+
+// Inputs for the engine's universal event gate (event-gate.ts): every high/critical event relevant to the lens
+// from 3h back to 90 minutes ahead, with the verified surprise direction and confirmation status where they exist,
+// plus the BTC/SPX coupling. Cheap: reads the cached state for the lens.
+export async function getEventGateInputs(lens: MacroAsset): Promise<{ events: GateEvent[]; coupling: MacroCoupling | null; asOf: string }> {
+  const s = await getMacroState(lens);
+  const now = new Date(s.asOf).getTime();
+  const live = [...rt.states.values()];
+  const cal = await getMacroEvents(now - 3 * 3600e3, now + 90 * 60e3);
+  const events: GateEvent[] = [];
+  for (const e of cal) {
+    const def = defFor(e.defId);
+    const relevance = def.relevance[lens] ?? 0;
+    const ge: GateEvent = { id: e.id, title: e.title, time: new Date(e.time).getTime(), importance: e.importance, kind: def.kind, relevance, surpriseDir: null, confirmation: null };
+    if (!gateEligible(ge)) continue;
+    const st = live.find((x) => x.event.id === e.id);
+    if (st?.postImpact && st.release?.status === "verified") {
+      ge.surpriseDir = dirSign(st.postImpact.find((i) => i.asset === lens)?.direction);
+      ge.confirmation = st.confirmation?.perAsset[lens].status ?? null;
+    }
+    events.push(ge);
+  }
+  return { events, coupling: s.macroCoupling, asOf: s.asOf };
 }
 
 export function macroAssetFor(symbol: string): MacroAsset | null {

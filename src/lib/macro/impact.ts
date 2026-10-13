@@ -151,10 +151,15 @@ export function transmission(def: MacroEventDef, surpriseScore: number | null, r
   return { r, g, o, channels, regimeNotes: notes };
 }
 
+// Gold reacts asymmetrically: surprises that read negative for gold (hot inflation, strong NFP, hawkish Fed) move it
+// more than the mirror-image beats (research-predictive-features 2.2: crashes > rallies, NFP n=35).
+export const GOLD_ASYMMETRY = 1.3;
+
 export function assetScores(t: Transmission, regime: MacroRegime): Record<MacroAsset, number> {
   const riskOffBoost = regime.risk === "off" ? 0.2 : 0;
   const btc = -0.8 * t.r + (0.5 + riskOffBoost) * t.g - 0.15 * t.o;
-  const gold = -0.9 * t.r - 0.2 * t.g + 0.25 * t.o;
+  const goldRaw = -0.9 * t.r - 0.2 * t.g + 0.25 * t.o;
+  const gold = goldRaw < 0 ? goldRaw * GOLD_ASYMMETRY : goldRaw;
   const wti = 0.9 * t.o + 0.5 * t.g - 0.15 * t.r;
   return {
     BTC: Math.round(clamp(btc) * 100),

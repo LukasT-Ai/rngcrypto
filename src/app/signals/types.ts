@@ -120,6 +120,30 @@ export interface RegimeInfo {
   gate: "none" | "blocked_long" | "blocked_short" | "counter_trend"
   perTF: Partial<Record<RegimeTF, RegimeTFInfo>>
   notes: string[]
+  /** Phase 3.3: rolling 30d BTC/SPX correlation and the macro-weight multiplier (crypto only; null otherwise). */
+  macroCoupling?: { corr30d: number; mult: number } | null
+}
+
+/** Phase 3.2 universal event gate state on the verdict. null when no relevant release is near. */
+export interface EventWindowInfo {
+  state: "pre" | "blackout" | "releasing" | "post"
+  event: { id: string; title: string; time: string; importance: "low" | "medium" | "high" | "critical" } | null
+  /** Minutes until this state ends (to the release for pre/blackout, to the window end for post). */
+  minutesLeft: number
+  /** Signed minutes since the release (negative before it). */
+  minutesSince: number | null
+  sizeMult: number
+  stopMult: number
+  firstMoveGate: "pending" | "confirmed" | "unconfirmed" | null
+  firstMovePct: number | null
+  note: string | null
+}
+
+/** Phase 3.2 size decomposition: headline regime and counter-trend combine by min, the event window multiplies on top. */
+export interface SizingInfo {
+  base: number
+  parts: { label: string; mult: number }[]
+  total: number
 }
 
 export interface SignalsResponse {
@@ -228,6 +252,7 @@ export interface SignalsResponse {
     signalFactors: { category: string; assessment: string; weight: number }[]
     geoOverride?: string | null
     sizeMultiplier?: number
+    stopMultiplier?: number
     // Optional: how the engine suggests entering. Absent on older engine builds.
     entryType?: "market" | "limit" | null
     // Measurement layer (2026-10-13, be-measure). All optional; every consumer renders a fallback when absent.
@@ -242,6 +267,10 @@ export interface SignalsResponse {
     calibrationVersion?: string | null
     /** Set on WAIT states when the declined lean was logged as a shadow record (design F2.10 line); null otherwise. */
     shadowClass?: "wait_lean" | "htf_blocked_short" | "regime_blocked" | "event_gated" | null
+    /** Phase 3.2 event-window state; absent on older engine builds, null when no release is near. */
+    eventWindow?: EventWindowInfo | null
+    /** Phase 3.2 size decomposition; absent on older engine builds. */
+    sizing?: SizingInfo | null
   }
   anticipatory: {
     approachingLevels: Array<{

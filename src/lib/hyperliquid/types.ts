@@ -272,8 +272,11 @@ export interface TraderRecord {
   positions: OpenPosition[];
   recent: Trade[];
   copy: CopyStats;
-  /** From the portfolio call, refreshed every PORTFOLIO_TTL: month pnlHistory resampled to one point per UTC day. */
-  portfolio: { at: number; daily: [number, number][] } | null;
+  /**
+   * From the portfolio call, refreshed every PORTFOLIO_TTL: month pnlHistory resampled to one point per UTC day
+   * and the account value at the start of the month window (null when the history is empty).
+   */
+  portfolio: { at: number; daily: [number, number][]; equityStart: number | null } | null;
   /** When the fill window was last computed. */
   scannedAt: number;
   /** When clearinghouseState was last refreshed. */

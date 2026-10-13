@@ -14,14 +14,19 @@
 //
 // The top 60 per asset get their positions refreshed every 2 minutes by refreshHotPositions(). Everything is
 // persisted under <dataDir>/copytrade/ so a restart serves the previous scan immediately. Nothing here throws.
+//
+// Bundling: Next.js compiles instrumentation.ts and the API routes into separate bundles, so this module exists
+// once per bundle with its own memory. Only the instance that runs the jobs (the WRITER) owns the state; every
+// other instance (READERS, i.e. the routes) re-reads scan.json / status.json whenever their mtime changes. Status
+// is written at cycle start, every PERSIST_EVERY records and at the end, so the page fills during the first cycle.
 
 import { join } from "node:path";
 import { getCandidates, getSpecialists, DEFAULT_CRITERIA, DEFAULT_SPECIALISTS, type CandidateCriteria, type SpecialistCriteria } from "./leaderboard";
 import { info, WEIGHT, infoStats } from "./http";
 import { outcomeLabel, refreshOutcomes } from "./outcomes";
-import { COPYTRADE_DIR, listTraderFiles, readJson, removeFile, traderFile, writeJsonAtomic } from "./store";
+import { COPYTRADE_DIR, fileMtime, listTraderFiles, readJson, removeFile, traderFile, writeJsonAtomic } from "./store";
 import { allGroupStats, compactFill, copyStats, countCopyableFills, emptyStats, mapPositions, mergeFills, perCoinStats, positionForGroup, recentTrades, summarizeOpen, totalEquity } from "./stats";
-import { compareScored, computeMix, computeStats30d, dailySeries, equityStartOf, pnlRanks, scoreTrader, COPYABLE_FOCUS_DEFAULT, MIN_COPYABLE_FILLS_FOR_POPULATION } from "./score";
+import { compareScored, computeMix, computeStats30d, dailySeries, equityStartOf, monthStartEquity, pnlRanks, scoreTrader, COPYABLE_FOCUS_DEFAULT, MIN_COPYABLE_FILLS_FOR_POPULATION } from "./score";
 import { ASSETS, FILL_WINDOW_MS, PERP_DEXES, isAssetGroup, type AssetGroup, type AssetStats, type CompactFill, type HlClearinghouseState, type HlFill, type HlPortfolio, type LeaderRow, type ScanStatus, type Score, type TraderRecord, type TraderRow, type Window } from "./types";
 
 export const SCAN_INTERVAL_MS = 15 * 60_000;
@@ -39,6 +44,7 @@ const PERSIST_EVERY = 25;
 const POOL_SIZE = Number(process.env.COPYTRADE_POOL ?? 1500);
 
 const SCAN_FILE = join(COPYTRADE_DIR, "scan.json");
+const STATUS_FILE = join(COPYTRADE_DIR, "status.json");
 const SCAN_VERSION = 3;
 
 // ── Per-trader fill file ─────────────────────────────────────────────────────
@@ -102,6 +108,19 @@ interface ScanFile {
   records: TraderRecord[];
 }
 
+/** Small, frequently written status shared with reader instances (see the bundling note above). */
+interface StatusFile {
+  version: number;
+  savedAt: number;
+  nextScanAt: number | null;
+  lastFullScanAt: number | null;
+  cycle: { startedAt: number; finishedAt: number | null; scanned: number; failed: number; total: number } | null;
+  pool: ScanStatus["pool"];
+  perAsset: ScanStatus["perAsset"];
+  candidates: number;
+  scanned: number;
+}
+
 const records = new Map<string, TraderRecord>();
 let candidates: LeaderRow[] = []; // core set, ranked by month pnl
 let discovered: LeaderRow[] = []; // pool members that qualified
@@ -113,39 +132,99 @@ let nextScanAt: number | null = null;
 let scanning = false;
 let probing = false;
 let hotBusy = false;
-let loaded = false;
-let lastCycle: { startedAt: number; finishedAt: number | null; scanned: number; failed: number } | null = null;
+let writer = false; // true once this instance runs a job; writers never reload over their own state
+let scanMtime = -1;
+let statusMtime = -1;
+let status: StatusFile | null = null; // the last status read (readers) or written (writer)
+let lastCycle: { startedAt: number; finishedAt: number | null; scanned: number; failed: number; total: number } | null = null;
 const probeStats = { probed: 0, kept: 0, failed: 0, lastAt: null as number | null };
 
-function loadFromDisk() {
-  if (loaded) return;
-  loaded = true;
+function readScanFile(): boolean {
   const f = readJson<ScanFile>(SCAN_FILE);
-  if (!f || f.version !== SCAN_VERSION) return;
-  if (Array.isArray(f.candidates)) candidates = f.candidates;
-  if (Array.isArray(f.discovered)) discovered = f.discovered;
-  if (f.probed && typeof f.probed === "object") probed = f.probed;
+  if (!f || f.version !== SCAN_VERSION) return false;
+  records.clear();
+  candidates = Array.isArray(f.candidates) ? f.candidates : [];
+  discovered = Array.isArray(f.discovered) ? f.discovered : [];
+  probed = f.probed && typeof f.probed === "object" ? f.probed : {};
   if (Array.isArray(f.records)) for (const r of f.records) if (r && typeof r.address === "string") records.set(r.address, r);
   lastFullScanAt = typeof f.lastFullScanAt === "number" ? f.lastFullScanAt : null;
   candidatesAt = f.savedAt ?? null;
+  return true;
+}
+
+/**
+ * Bring this instance up to date with the files. The writer loads once at startup (before its first job) and
+ * then trusts its memory; readers re-read whenever a file's mtime moved. statSync on two files per request.
+ */
+function syncFromDisk() {
+  const sm = fileMtime(SCAN_FILE);
+  const tm = fileMtime(STATUS_FILE);
+  if (writer && scanMtime >= 0) return;
+  if (sm !== scanMtime) {
+    scanMtime = sm;
+    if (sm > 0) readScanFile();
+  }
+  if (tm !== statusMtime) {
+    statusMtime = tm;
+    status = tm > 0 ? readJson<StatusFile>(STATUS_FILE) : null;
+    if (status && status.version !== SCAN_VERSION) status = null;
+    if (status) {
+      nextScanAt = status.nextScanAt;
+      if (status.lastFullScanAt != null) lastFullScanAt = status.lastFullScanAt;
+      lastCycle = status.cycle;
+    }
+  }
+}
+
+/** Called by the job runners: load the previous state once, then own it. */
+function becomeWriter() {
+  if (writer) return;
+  syncFromDisk();
+  writer = true;
+}
+
+function currentStatus(now = Date.now()): StatusFile {
+  const set = getScanSet();
+  const recs = set.map((c) => records.get(c.address)).filter((r): r is TraderRecord => !!r);
+  const known = new Set(discovered.map((d) => d.address));
+  const remaining = pool.filter((p) => !known.has(p.address) && isProbeDue(p.address, now)).length;
+  return {
+    version: SCAN_VERSION,
+    savedAt: now,
+    nextScanAt,
+    lastFullScanAt,
+    cycle: lastCycle,
+    pool: { size: pool.length, probed: pool.length - remaining, remaining, discovered: discovered.length },
+    perAsset: perAssetCounts(recs),
+    candidates: set.length,
+    scanned: recs.length,
+  };
+}
+
+function persistStatus() {
+  status = currentStatus();
+  if (writeJsonAtomic(STATUS_FILE, status)) statusMtime = fileMtime(STATUS_FILE);
 }
 
 function persist() {
-  writeJsonAtomic(SCAN_FILE, { version: SCAN_VERSION, savedAt: Date.now(), lastFullScanAt, candidates, discovered, probed, records: [...records.values()] } satisfies ScanFile);
+  if (writeJsonAtomic(SCAN_FILE, { version: SCAN_VERSION, savedAt: Date.now(), lastFullScanAt, candidates, discovered, probed, records: [...records.values()] } satisfies ScanFile)) scanMtime = fileMtime(SCAN_FILE);
+  persistStatus();
 }
 
 export function setNextScanAt(t: number | null) {
+  becomeWriter();
   nextScanAt = t;
+  persistStatus();
 }
 
 export function getRecord(address: string): TraderRecord | null {
-  loadFromDisk();
+  syncFromDisk();
   return records.get(address.toLowerCase()) ?? null;
 }
 
 /** The current scan set: core candidates followed by discovered pool traders (deduped). */
 export function getScanSet(): LeaderRow[] {
-  loadFromDisk();
+  syncFromDisk();
   const seen = new Set<string>();
   const out: LeaderRow[] = [];
   for (const r of [...candidates, ...discovered]) {
@@ -169,23 +248,25 @@ export function perAssetCounts(recs: Iterable<TraderRecord>): Record<AssetGroup,
 const isProbeDue = (address: string, now: number) => !(probed[address] && now - probed[address] < PROBE_TTL_MS);
 
 export function getScanStatus(now = Date.now()): ScanStatus {
+  syncFromDisk();
+  // Readers take pool/progress numbers from status.json (the pool itself lives only in the writer's memory).
+  const s = writer ? currentStatus(now) : (status ?? currentStatus(now));
   const set = getScanSet();
   const recs = set.map((c) => records.get(c.address)).filter((r): r is TraderRecord => !!r);
-  const known = new Set(discovered.map((d) => d.address));
-  const remaining = pool.filter((p) => !known.has(p.address) && isProbeDue(p.address, now)).length;
   return {
-    candidates: set.length,
-    scanned: recs.length,
+    candidates: Math.max(set.length, s.candidates),
+    scanned: Math.max(recs.length, s.scanned),
     lastFullScanAt,
     nextScanAt,
     stale: lastFullScanAt == null || now - lastFullScanAt > STALE_AFTER_MS,
-    perAsset: perAssetCounts(recs),
-    pool: { size: pool.length, probed: pool.length - remaining, remaining, discovered: discovered.length },
+    perAsset: recs.length ? perAssetCounts(recs) : s.perAsset,
+    pool: s.pool,
   };
 }
 
 export function getScanDebug() {
-  return { scanning, probing, hotBusy, lastCycle, probeStats, candidatesAt, core: candidates.length, discovered: discovered.length, pool: pool.length, probed: Object.keys(probed).length, info: { ...infoStats }, records: records.size };
+  syncFromDisk();
+  return { writer, scanning, probing, hotBusy, lastCycle, probeStats, candidatesAt, core: candidates.length, discovered: discovered.length, pool: pool.length, probed: Object.keys(probed).length, info: { ...infoStats }, records: records.size, status };
 }
 
 // ── Scanning one trader ──────────────────────────────────────────────────────
@@ -195,7 +276,7 @@ export function buildRecord(leader: LeaderRow, fills: CompactFill[], states: (Hl
   const positions = anyState ? mapPositions(states, fills) : (prev?.positions ?? []);
   const equity = totalEquity(states) || leader.equity;
   const perCoin = perCoinStats(fills);
-  const equityStart = equityStartOf(equity, leader.windows.month?.pnl ?? 0);
+  const equityStart = equityStartOf(equity, leader.windows.month?.pnl ?? 0, portfolio?.equityStart ?? null);
   const daily = portfolio?.daily ?? [];
   return {
     address: leader.address,
@@ -241,7 +322,7 @@ async function scanTrader(leader: LeaderRow, now: number): Promise<TraderRecord 
   let portfolio = prev?.portfolio ?? null;
   if (!portfolio || now - portfolio.at > PORTFOLIO_TTL_MS) {
     const p = await info<HlPortfolio>({ type: "portfolio", user: address }, WEIGHT.portfolio);
-    if (p) portfolio = { at: now, daily: dailySeries(p) };
+    if (p) portfolio = { at: now, daily: dailySeries(p), equityStart: monthStartEquity(p) };
   }
   const rec = buildRecord(leader, fills, states, prev, complete, portfolio, now);
   records.set(address, rec);
@@ -280,11 +361,11 @@ async function refreshSets(opts: { take?: number; poolSize?: number; criteria?: 
  * the sets (the one-off script); opts.probeAll also drains the discovery pool inside this call. Never throws.
  */
 export async function runScanCycle(opts: { take?: number; poolSize?: number; criteria?: CandidateCriteria; specialists?: SpecialistCriteria | null; probeAll?: boolean; onProgress?: (done: number, total: number, address: string) => void } = {}): Promise<{ scanned: number; failed: number; probed: number; total: number }> {
-  loadFromDisk();
+  becomeWriter();
   if (scanning) return { scanned: 0, failed: 0, probed: 0, total: 0 };
   scanning = true;
   const startedAt = Date.now();
-  lastCycle = { startedAt, finishedAt: null, scanned: 0, failed: 0 };
+  lastCycle = { startedAt, finishedAt: null, scanned: 0, failed: 0, total: 0 };
   let scanned = 0;
   let failed = 0;
   let probedNow = 0;
@@ -295,6 +376,8 @@ export async function runScanCycle(opts: { take?: number; poolSize?: number; cri
     const core = new Set(candidates.map((x) => x.address));
     const queue: LeaderRow[] = [...candidates, ...discovered.filter((d) => !core.has(d.address))];
     total = queue.length;
+    lastCycle = { startedAt, finishedAt: null, scanned, failed, total };
+    persistStatus();
     await Promise.all(
       Array.from({ length: WORKERS }, async () => {
         while (queue.length) {
@@ -312,7 +395,7 @@ export async function runScanCycle(opts: { take?: number; poolSize?: number; cri
           } catch {
             failed++;
           }
-          lastCycle = { startedAt, finishedAt: null, scanned, failed };
+          lastCycle = { startedAt, finishedAt: null, scanned, failed, total };
           opts.onProgress?.(scanned + failed, total, leader.address);
           if ((scanned + failed) % PERSIST_EVERY === 0) persist();
         }
@@ -332,7 +415,8 @@ export async function runScanCycle(opts: { take?: number; poolSize?: number; cri
     /* next cycle */
   } finally {
     scanning = false;
-    lastCycle = { startedAt, finishedAt: Date.now(), scanned, failed };
+    lastCycle = { startedAt, finishedAt: Date.now(), scanned, failed, total };
+    persistStatus();
   }
   if (opts.probeAll) {
     let n: number;
@@ -351,7 +435,7 @@ export async function runScanCycle(opts: { take?: number; poolSize?: number; cri
  * exhausted, caller idles). Never throws; never runs concurrently with itself.
  */
 export async function probeBatch(max = 10, onEach?: (address: string) => void): Promise<number> {
-  loadFromDisk();
+  becomeWriter();
   if (probing) return 0;
   probing = true;
   let done = 0;
@@ -394,7 +478,7 @@ export async function probeBatch(max = 10, onEach?: (address: string) => void): 
 
 /** Addresses in the top n per asset group by realized 30d pnl in that group (plus anyone currently positioned). */
 export function hotAddresses(n = HOT_PER_ASSET): string[] {
-  loadFromDisk();
+  becomeWriter();
   const set = new Set<string>();
   for (const group of ASSETS) {
     const ranked = [...records.values()]
@@ -429,7 +513,7 @@ export async function refreshHotPositions(n = HOT_PER_ASSET): Promise<number> {
             rec.positions = positions;
             rec.open = summarizeOpen(positions);
             rec.equity = totalEquity(states) || rec.equity;
-            rec.stats30d = { ...rec.stats30d, medianLeverage: computeStats30d(rec.perCoin, [], positions, rec.portfolio?.daily ?? [], equityStartOf(rec.equity, rec.windows.month?.pnl ?? 0)).medianLeverage };
+            rec.stats30d = { ...rec.stats30d, medianLeverage: computeStats30d(rec.perCoin, [], positions, rec.portfolio?.daily ?? [], equityStartOf(rec.equity, rec.windows.month?.pnl ?? 0, rec.portfolio?.equityStart ?? null)).medianLeverage };
             rec.positionsAt = Date.now();
             done++;
           } catch {
@@ -470,7 +554,7 @@ export function scoreAll(recs: TraderRecord[], now = Date.now()): Map<string, Sc
   pop.forEach((r, i) => pctl.set(r.address, ranks[i]));
   const out = new Map<string, Score>();
   for (const r of recs) {
-    out.set(r.address, scoreTrader({ mix: r.mix, stats30d: r.stats30d, copy: r.copy, positions: r.positions, equity: r.equity, monthPnl: r.windows.month?.pnl ?? 0, daily: r.portfolio?.daily ?? [], pnlPctl: pctl.get(r.address) ?? null, now }));
+    out.set(r.address, scoreTrader({ mix: r.mix, stats30d: r.stats30d, copy: r.copy, positions: r.positions, equity: r.equity, monthPnl: r.windows.month?.pnl ?? 0, equityStart: r.portfolio?.equityStart ?? null, daily: r.portfolio?.daily ?? [], pnlPctl: pctl.get(r.address) ?? null, now }));
   }
   return out;
 }
@@ -558,7 +642,7 @@ export function buildSummary(recs: TraderRecord[], window: Window, n = 5, nCopya
 }
 
 function currentRecords(): TraderRecord[] {
-  loadFromDisk();
+  syncFromDisk();
   const set = getScanSet();
   return set.length ? set.map((c) => records.get(c.address)).filter((r): r is TraderRecord => !!r) : [...records.values()];
 }

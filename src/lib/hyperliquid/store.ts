@@ -2,7 +2,7 @@
 // production and the repo's data/ directory locally (same resolution as push-cache.ts and the signals ledger).
 // Writes are atomic (tmp + rename) so a crash mid-write never leaves a half file behind.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, readdirSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, readdirSync, unlinkSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const VOLUME = process.env.RAILWAY_VOLUME_MOUNT_PATH;
@@ -23,6 +23,15 @@ export function readJson<T>(file: string): T | null {
     return JSON.parse(readFileSync(file, "utf-8")) as T;
   } catch {
     return null;
+  }
+}
+
+/** mtime in ms, or 0 when the file does not exist. */
+export function fileMtime(file: string): number {
+  try {
+    return statSync(file).mtimeMs;
+  } catch {
+    return 0;
   }
 }
 

@@ -7,7 +7,7 @@ import { compactFill, groupStats, mapPositions, mergeFills, openedAtFromFills, p
 import { TokenBucket } from "./http";
 import { buildRecord, buildRows, buildSummary, labelMix, perAssetCounts, scoreAll } from "./scanner";
 import { parsePortfolio } from "./trader";
-import { averageHoldMinutes, computeMix, computeStats30d, dailySeries, equityStartOf, lin, maxDrawdownPct, pnlRanks, profitableWeeks, scoreTrader, sortinoDaily, compareScored } from "./score";
+import { averageHoldMinutes, computeMix, computeStats30d, dailySeries, equityStartOf, lin, maxDrawdownPct, monthStartEquity, pnlRanks, profitableWeeks, scoreTrader, sortinoDaily, compareScored } from "./score";
 import { copyStats } from "./stats";
 import type { CompactFill, CopyStats, HlClearinghouseState, HlFill, HlPortfolio, LeaderRow, OpenPosition, TraderRecord } from "./types";
 
@@ -387,6 +387,9 @@ describe("stats30d and portfolio metrics", () => {
     expect(dailySeries(null)).toEqual([]);
     expect(equityStartOf(12_000, 2_000)).toBe(10_000);
     expect(equityStartOf(500, 2_000)).toBe(1000);
+    expect(equityStartOf(500, 2_000, 30_000)).toBe(30_000); // recorded start wins over the floor
+    expect(monthStartEquity(portfolio)).toBe(10_000);
+    expect(monthStartEquity(null)).toBeNull();
   });
 
   it("lin interpolates piecewise and clamps", () => {
@@ -556,7 +559,7 @@ describe("records and ranking", () => {
   const recs: TraderRecord[] = [
     buildRecord(leader("0xa", 500), fillsA, [state, null, null], null, true, null, 10),
     buildRecord(leader("0xb", 9000), fillsB, [null, null, null], null, true, null, 10),
-    buildRecord(leader("0xc", 100), fillsC, [null, null, null], null, true, { at: 1, daily }, 10),
+    buildRecord(leader("0xc", 100), fillsC, [null, null, null], null, true, { at: 1, daily, equityStart: 90_000 }, 10),
   ];
   const q = (over: Partial<Parameters<typeof buildRows>[1]>): Parameters<typeof buildRows>[1] => ({ asset: "ALL", window: "month", sort: "assetPnl", minVolume: 0, limit: 50, minFocus: 0, ...over });
 

@@ -24,7 +24,7 @@ const specialists = Number(arg("--specialists") ?? 0);
 const window = (arg("--window") ?? "month") as Window;
 
 const usd = (n: number) => (Math.abs(n) >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : Math.abs(n) >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : n.toFixed(0));
-const pct = (n: number | null) => (n == null ? "  -  " : `${(n * 100).toFixed(0).padStart(3)}%`);
+const pct = (n: number | null) => (n == null ? "  -  " : `${n.toFixed(0).padStart(3)}%`); // fields are already percents
 const name = (a: string, d: string | null) => (d ? d.slice(0, 18) : `${a.slice(0, 6)}..${a.slice(-4)}`).padEnd(18);
 
 async function main() {

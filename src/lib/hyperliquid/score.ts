@@ -130,7 +130,21 @@ export function dailySeries(p: HlPortfolio | null): [number, number][] {
   return [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([d, v]) => [d * DAY_MS, r2(v)]);
 }
 
-export const equityStartOf = (equity: number, monthPnl: number) => Math.max(equity - monthPnl, 1000);
+/** Account value at the start of the portfolio month window (first accountValueHistory point), or null. */
+export function monthStartEquity(p: HlPortfolio | null): number | null {
+  if (!Array.isArray(p)) return null;
+  const month = p.find((e) => Array.isArray(e) && e[0] === "month")?.[1];
+  const first = month?.accountValueHistory?.[0];
+  const v = first ? num(first[1]) : 0;
+  return v > 0 ? v : null;
+}
+
+/**
+ * Equity base for ROI, daily returns and the drawdown curve. The rubric's helper is max(equity - month pnl, 1000);
+ * the recorded start-of-window account value is used when known because wallets that withdrew profits would
+ * otherwise collapse onto the 1000 floor and show 100%+ drawdowns.
+ */
+export const equityStartOf = (equity: number, monthPnl: number, recordedStart: number | null = null) => Math.max(recordedStart ?? equity - monthPnl, 1000);
 
 /** Max drawdown (%) of the equity curve equityStart + d_i; null under 7 daily points. */
 export function maxDrawdownPct(daily: [number, number][], equityStart: number): number | null {
@@ -215,6 +229,8 @@ export interface ScoreInput {
   positions: OpenPosition[];
   equity: number;
   monthPnl: number;
+  /** Recorded start-of-month account value when known (see equityStartOf). */
+  equityStart?: number | null;
   daily: [number, number][];
   /** Percentile (0..100) of copy.pnlNet within the population P; null when the wallet is outside P. */
   pnlPctl: number | null;
@@ -245,7 +261,7 @@ export function scoreTrader(inp: ScoreInput): Score {
   const { mix, stats30d: st, copy, positions, equity, daily } = inp;
   if (copy.fills < 5) return { ...NOT_SCORED, reasons: [...NOT_SCORED.reasons] };
 
-  const equityStart = equityStartOf(equity, inp.monthPnl);
+  const equityStart = equityStartOf(equity, inp.monthPnl, inp.equityStart ?? null);
   const winRate = copy.trades > 0 ? (copy.wins / copy.trades) * 100 : null;
   const pf = copy.grossLosses > 0 ? copy.grossWins / copy.grossLosses : copy.trades >= 20 ? 2.5 : null;
 
@@ -364,7 +380,7 @@ export function scoreTrader(inp: ScoreInput): Score {
   if (dd != null && dd <= 10) positives.push(`Max drawdown only ${Math.round(dd)}%`);
   if (pf != null && pf >= 1.5 && copy.trades >= 20) positives.push(`Profit factor ${pf.toFixed(1)} on ${copy.trades} trades`);
   if (copy.activeDays >= 25 && daysSince < 1) positives.push(`Active daily, last trade ${Math.max(1, Math.round(daysSince * 24))}h ago`);
-  if (medLev != null && medLev <= 5) positives.push(`Leverage around ${Math.round(medLev)}x`);
+  if (medLev != null && medLev <= 5) positives.push(`Leverage around ${medLev < 1 ? medLev.toFixed(1) : Math.round(medLev)}x`);
   const negatives: string[] = [];
   if (copy.topTradeShare != null && copy.topTradeShare >= 0.5) negatives.push(`Top single trade is ${Math.round(copy.topTradeShare * 100)}% of all profit`);
   if (winRate != null && copy.trades >= 20 && winRate < 45) negatives.push(`Win rate below 45%`);

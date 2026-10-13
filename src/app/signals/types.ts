@@ -230,6 +230,18 @@ export interface SignalsResponse {
     sizeMultiplier?: number
     // Optional: how the engine suggests entering. Absent on older engine builds.
     entryType?: "market" | "limit" | null
+    // Measurement layer (2026-10-13, be-measure). All optional; every consumer renders a fallback when absent.
+    /** Raw component votes and in-play weights; absent on older engine builds. */
+    components?: Record<string, { score: number; weight: number }>
+    gateNotes?: string[]
+    /** 50 + |weightedScore| / 2 before haircuts (tooltip only). */
+    confidenceRaw?: number
+    /** Calibrated P(TP1), only when >= 100 decided calls exist on the current engine version; else null. */
+    pTp1?: number | null
+    pTp1Ci?: [number, number] | null
+    calibrationVersion?: string | null
+    /** Set on WAIT states when the declined lean was logged as a shadow record (design F2.10 line); null otherwise. */
+    shadowClass?: "wait_lean" | "htf_blocked_short" | "regime_blocked" | "event_gated" | null
   }
   anticipatory: {
     approachingLevels: Array<{

@@ -206,6 +206,53 @@ describe("performance exclusions", () => {
     expect(stats.breakdowns.byEntryType.find((b) => b.key === "market")?.n).toBe(21);
   });
 
+  it("keeps shadow records out of every public number and reports them in their own block", () => {
+    const shadowWin = sig({ ...win, id: "sw", shadow: true, shadowClass: "wait_lean" });
+    const shadowLoss = sig({ ...loss, id: "sl", shadow: true, shadowClass: "htf_blocked_short", bias: "SHORT" });
+    const shadowOpen = sig({ id: "so", shadow: true, shadowClass: "regime_blocked" });
+    const { stats, signals } = computePerformance([win, loss, shadowWin, shadowLoss, shadowOpen], { dedupe: false, rangeDays: null });
+    expect(stats.kpis.closedN).toBe(2);
+    expect(stats.kpis.openN).toBe(0);
+    expect(stats.kpis.sumR).toBe(2);
+    expect(stats.equity).toHaveLength(2);
+    expect(stats.calibration.brier.n).toBe(2);
+    expect(stats.versions[0].n).toBe(2);
+    expect(signals.some((s) => s.shadow)).toBe(false);
+    expect(stats.meta.shadowN).toBe(3);
+    const lean = stats.shadow.byClass.find((c) => c.key === "wait_lean")!;
+    expect(lean.n).toBe(1);
+    expect(lean.tp1Rate).toBe(100);
+    expect(lean.expectancyR).toBe(3);
+    expect(stats.shadow.byClass.find((c) => c.key === "htf_blocked_short")?.tp1Rate).toBe(0);
+    expect(stats.shadow.byClass.find((c) => c.key === "regime_blocked")).toMatchObject({ n: 0, openN: 1, tp1Rate: null });
+    expect(stats.shadow.byClass.find((c) => c.key === "event_gated")?.n).toBe(0);
+    // The legacy view agrees.
+    expect(computeStats([win, loss, shadowWin, shadowLoss]).total).toBe(2);
+  });
+
+  it("builds the per-component reliability table from logged inputs", () => {
+    const inputs = (ms: number, mom: number): NonNullable<SignalLog["context"]>["inputs"] => ({
+      weightedScore: ms, confidenceRaw: 60, components: { marketStructure: { score: ms, weight: 0.13 }, momentum: { score: mom, weight: 0.11 }, etf: { score: 50, weight: 0 } }, rr1: 1, rr2: 2, rr3: 3, entryType: "market", atrPct: 1, fundingRate: null, minutesToNextEvent: null, tuning: {}, gateNotes: [], engineVersion: "v", calibrationVersion: null, pTp1: null, regime: null, regimeGate: null, markAtSignal: 100, lastAtSignal: 100, candleCloseTime: null,
+    });
+    const ctx = (ms: number, mom: number) => ({ factors: {}, catalystScore: 0, oilGeoScore: null, oilRegime: null, atr: 1, tradeType: null, timeframe: "15m", inputs: inputs(ms, mom) });
+    const rows: SignalLog[] = [];
+    // marketStructure agrees on 6 rows: 5 wins. Disagrees on 4 rows: 1 win. momentum: neutral everywhere.
+    for (let i = 0; i < 6; i++) rows.push({ ...(i < 5 ? win : loss), id: `a${i}`, context: ctx(30, 0) });
+    for (let i = 0; i < 4; i++) rows.push({ ...(i < 1 ? win : loss), id: `d${i}`, context: ctx(-30, 0) });
+    const { stats } = computePerformance(rows, { dedupe: false, rangeDays: null });
+    const ms = stats.components.find((c) => c.name === "marketStructure")!;
+    expect(ms).toMatchObject({ nAgree: 6, nDisagree: 4, weight: 0.13, candidateWeight: null });
+    expect(ms.pWinAgree).toBeCloseTo(5 / 6, 4);
+    expect(ms.pWinDisagree).toBe(0.25);
+    expect(ms.lift).toBeCloseTo(5 / 6 - 0.25, 4);
+    expect(ms.liftLo).toBeLessThan(ms.lift as number);
+    expect(ms.liftHi).toBeGreaterThan(ms.lift as number);
+    // Neutral votes are "disagree or neutral"; a feed that was down (weight 0) casts no vote at all.
+    expect(stats.components.find((c) => c.name === "momentum")).toMatchObject({ nAgree: 0, nDisagree: 10, lift: null });
+    expect(stats.components.find((c) => c.name === "etf")).toMatchObject({ nAgree: 0, nDisagree: 0, weight: 0 });
+    expect(stats.components[0].name).toBe("marketStructure");
+  });
+
   it("keeps the legacy stats object in R and skips excluded records", () => {
     const stats = computeStats([win, loss, unfilled, unverifiable]);
     expect(stats.total).toBe(2);

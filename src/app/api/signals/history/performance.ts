@@ -192,6 +192,10 @@ export interface PerformanceStats {
   };
   /** Engine versions seen in the closed sample, newest last-signal first. */
   versions: { version: string; firstAt: number; lastAt: number; n: number; netR: number | null }[];
+  /** Per-component reliability from the logged inputs (perf audit 3.2), sorted by |lift|. Empty until records carry inputs. */
+  components: ComponentReliability[];
+  /** Declined calls followed as shadow records; never in any number above. */
+  shadow: { byClass: { key: ShadowKey; n: number; tp1Rate: number | null; wilsonLo: number | null; wilsonHi: number | null; expectancyR: number | null; expectancyNetR: number | null; openN: number }[]; note: string };
   /** Ledger download card (PR 13); null until the daily hash has run. */
   ledger: { url: string; csvUrl: string; sha256: string; hashedAt: string; bytes: number; count: number } | null;
   changelog: { at: string; commit: string; title: string; effect: string }[];
@@ -226,6 +230,116 @@ export interface HoldStats {
   p25: number | null;
   median: number | null;
   p75: number | null;
+}
+
+export type ShadowKey = "wait_lean" | "htf_blocked_short" | "regime_blocked" | "event_gated";
+export const SHADOW_KEYS: ShadowKey[] = ["wait_lean", "htf_blocked_short", "regime_blocked", "event_gated"];
+
+export interface ComponentReliability {
+  name: string;
+  /** Decided rows where the component voted with the call (sign agrees) / against or neutral. */
+  nAgree: number;
+  nDisagree: number;
+  /** TP1 rate (0..1) on each side; null below 1 row. */
+  pWinAgree: number | null;
+  pWinDisagree: number | null;
+  /** pWinAgree - pWinDisagree with a Newcombe 95% interval; null when either side is empty. */
+  lift: number | null;
+  liftLo: number | null;
+  liftHi: number | null;
+  /** Mean in-play weight over the rows. */
+  weight: number;
+  /** Display-only candidate (perf audit 3.3): weight x clamp(1 + shrunk lift, 0.7, 1.3) when the CI excludes zero and both sides have >= 40; else null. */
+  candidateWeight: number | null;
+}
+
+// Newcombe (1998) hybrid score interval for a difference of two proportions.
+function newcombe(k1: number, n1: number, k2: number, n2: number): [number, number] | null {
+  if (!(n1 > 0) || !(n2 > 0)) return null;
+  const p1 = k1 / n1;
+  const p2 = k2 / n2;
+  const [l1, u1] = wilsonFrac(k1, n1);
+  const [l2, u2] = wilsonFrac(k2, n2);
+  const d = p1 - p2;
+  const lo = d - Math.sqrt((p1 - l1) ** 2 + (u2 - p2) ** 2);
+  const hi = d + Math.sqrt((u1 - p1) ** 2 + (p2 - l2) ** 2);
+  return [Math.max(-1, lo), Math.min(1, hi)];
+}
+
+export function componentReliability(rows: NormalizedSignal[]): ComponentReliability[] {
+  const decided = rows.filter((s) => !s.open && !s.excluded && s.components && (s.highestTp >= 1 || s.stoppedAfterTp === 0));
+  const names = new Set<string>();
+  for (const s of decided) for (const k of Object.keys(s.components!)) names.add(k);
+  const out: ComponentReliability[] = [];
+  const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+  for (const name of names) {
+    let nA = 0, wA = 0, nD = 0, wD = 0, wsum = 0, wn = 0;
+    for (const s of decided) {
+      const c = s.components![name];
+      if (!c) continue;
+      wsum += c.weight;
+      wn++;
+      // A component whose feed was down (weight 0) cast no vote; it is neither agreement nor disagreement.
+      if (!(c.weight > 0)) continue;
+      const dir = Math.sign(c.score);
+      const agree = dir !== 0 && dir === (s.bias === "LONG" ? 1 : -1);
+      const win = s.highestTp >= 1 ? 1 : 0;
+      if (agree) {
+        nA++;
+        wA += win;
+      } else {
+        nD++;
+        wD += win;
+      }
+    }
+    const pA = nA ? wA / nA : null;
+    const pD = nD ? wD / nD : null;
+    const ci = newcombe(wA, nA, wD, nD);
+    const lift = pA != null && pD != null ? pA - pD : null;
+    const weight = wn ? wsum / wn : 0;
+    let candidate: number | null = null;
+    if (lift != null && ci && nA >= 40 && nD >= 40 && (ci[0] > 0 || ci[1] < 0)) {
+      const shrunk = lift * (Math.min(nA, nD) / (Math.min(nA, nD) + 40));
+      candidate = r4(weight * Math.min(1.3, Math.max(0.7, 1 + shrunk)));
+    }
+    out.push({
+      name,
+      nAgree: nA,
+      nDisagree: nD,
+      pWinAgree: pA == null ? null : r4(pA),
+      pWinDisagree: pD == null ? null : r4(pD),
+      lift: lift == null ? null : r4(lift),
+      liftLo: ci ? r4(ci[0]) : null,
+      liftHi: ci ? r4(ci[1]) : null,
+      weight: r4(weight),
+      candidateWeight: candidate,
+    });
+  }
+  return out.sort((a, b) => Math.abs(b.lift ?? 0) - Math.abs(a.lift ?? 0));
+}
+
+export function shadowStats(shadowRows: NormalizedSignal[]): PerformanceStats["shadow"] {
+  const byClass = SHADOW_KEYS.map((key) => {
+    const list = shadowRows.filter((s) => s.shadowClass === key);
+    const closed = list.filter((s) => !s.open && !s.excluded);
+    const decided = closed.filter((s) => s.highestTp >= 1 || s.stoppedAfterTp === 0);
+    const wins = decided.filter((s) => s.highestTp >= 1).length;
+    const [lo, hi] = wilson(wins, decided.length);
+    return {
+      key,
+      n: decided.length,
+      tp1Rate: decided.length ? pct(wins, decided.length) : null,
+      wilsonLo: lo,
+      wilsonHi: hi,
+      expectancyR: r2(mean(closed.map((s) => s.realizedR).filter((x): x is number => x != null))),
+      expectancyNetR: r2(mean(closed.map((s) => s.realizedNetR).filter((x): x is number => x != null))),
+      openN: list.filter((s) => s.open).length,
+    };
+  });
+  return {
+    byClass,
+    note: "Calls a gate declined (lean below the publish threshold, short blocked by the higher-timeframe rule, call blocked by the regime gate, call inside an event blackout) are followed through the same fill model and cost model but never enter a public number. A class that beats the published record argues the gate removes edge; one that trails it argues the gate earns its keep. n counts decided shadow records.",
+  };
 }
 
 export const PROVISIONAL_TARGET = 100;
@@ -757,6 +871,8 @@ export function computePerformance(all: SignalLog[], opts: PerformanceOptions = 
     rHistogram: rHistogram(rs, nets),
     calibration: calibration(closed.map(toCalRow), mapping, plattMeta),
     versions,
+    components: componentReliability(closed),
+    shadow: shadowStats(shadowRows),
     ledger: opts.ledger ?? null,
     changelog: opts.changelog ?? [],
     breakdowns: {

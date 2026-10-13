@@ -7,7 +7,7 @@
  *
  * ENGINE_VERSION bumps whenever scoring behaviour changes so logged history can be bucketed per version.
  */
-import { appendSignal, type SignalContext, type SignalInputs } from "../../app/api/signals/history/logger";
+import { appendSignal, type ShadowClass, type SignalContext, type SignalInputs } from "../../app/api/signals/history/logger";
 import { FACTOR } from "./factors";
 import { stampActiveSetups } from "./setup-tracker";
 import { fetchOrderFlowRaw, summarizeOrderFlow, type LiquidationSummary, type OrderBookSummary, type OrderFlowRaw } from "./orderflow";
@@ -4914,6 +4914,46 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
       context: logContext,
     }).catch(() => {});
   }
+
+  // Shadow log (perf audit 1.4): calls a gate declined are followed through the same fill model with
+  // `shadow: true`, excluded from every public number, so each gate becomes a measurable claim.
+  // Classes: a lean below the publish threshold, a short blocked by the HTF rule, a call blocked by the
+  // regime gate, a call inside an event blackout (be-macro's gate sets call.eventWindow).
+  let shadowClass: ShadowClass | null = null;
+  if (call.bias === "WAIT") {
+    const eventState = (call as { eventWindow?: { state?: string } | null }).eventWindow?.state;
+    if (eventState === "blackout") shadowClass = "event_gated";
+    else if (call.regimeGate === "blocked_long" || call.regimeGate === "blocked_short") shadowClass = "regime_blocked";
+    else if (call.gateNotes.some((n) => n.includes("higher timeframes are not trending down"))) shadowClass = "htf_blocked_short";
+    else if (call.confidence >= 55 && call.confidence < getTuning().minPublishConfidence) shadowClass = "wait_lean";
+  }
+  if (shouldLog && shadowClass) {
+    const shadowBias: "LONG" | "SHORT" = call.regimeGate === "blocked_long" ? "LONG" : call.regimeGate === "blocked_short" ? "SHORT" : shadowClass === "htf_blocked_short" ? "SHORT" : call.weightedScore >= 0 ? "LONG" : "SHORT";
+    const levelsOk = call.entry > 0 && call.stopLoss > 0 && call.tp1 > 0 && call.entry !== call.stopLoss && (shadowBias === "LONG" ? call.tp1 > call.entry && call.stopLoss < call.entry : call.tp1 < call.entry && call.stopLoss > call.entry);
+    if (levelsOk) {
+      appendSignal({
+        symbol,
+        timestamp: Date.now(),
+        bias: shadowBias,
+        confidence: call.confidence,
+        grade: call.grade,
+        entry: call.entry,
+        stopLoss: call.stopLoss,
+        tp1: call.tp1,
+        tp2: call.tp2,
+        tp3: call.tp3,
+        priceAtSignal: round(currentPrice, dec),
+        engineVersion: ENGINE_VERSION,
+        context: logContext,
+        shadow: true,
+        shadowClass,
+      }).catch(() => {});
+    } else {
+      shadowClass = null;
+    }
+  }
+  // Surfaced on the call so the verdict can say "declined ... logged as shadow" (design F2.10).
+  Object.assign(call, { shadowClass });
 
   // ── Build response ─────────────────────────────────────────────────────────
   // A limit entry (resting at support/resistance) must actually trade before the call counts; see the fill model.

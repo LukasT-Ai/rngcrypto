@@ -16,6 +16,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import * as engine from "../src/lib/signals/engine";
 import { DEFAULT_TUNING, ENGINE_VERSION, getTuning, scoreFromCandles, setTuning, type Candle, type Tuning } from "../src/lib/signals/engine";
 import { COST_MODEL, costInR, type CostVenue } from "../src/app/api/signals/history/check/core";
 import { calibration, type CalRow } from "../src/app/api/signals/history/performance";
@@ -57,6 +58,22 @@ setTuning({
 });
 const COOLDOWN_MS = parseFloat(arg("cooldown-min", "60")) * 60e3;
 const MIN_CONF = getTuning().minPublishConfidence;
+// --weights-json <file>: override the factor weight literal for out-of-sample validation of a candidate
+// weight vector (perf audit 3.4). The engine must export setWeights(); until it does this prints a warning
+// and runs with the defaults, so a report never silently claims a weight set it did not use.
+const WEIGHTS_JSON = arg("weights-json", "");
+let weightsApplied: Record<string, number> | null = null;
+if (WEIGHTS_JSON) {
+  const override = JSON.parse(readFileSync(WEIGHTS_JSON, "utf-8")) as Record<string, number>;
+  const hook = (engine as { setWeights?: (w: Record<string, number>) => unknown }).setWeights;
+  if (typeof hook === "function") {
+    hook(override);
+    weightsApplied = override;
+    console.log(`weights override applied from ${WEIGHTS_JSON}: ${JSON.stringify(override)}`);
+  } else {
+    console.log(`WARNING: --weights-json given but the engine exports no setWeights(); running with default weights`);
+  }
+}
 
 async function get(url: string): Promise<unknown> {
   const r = await fetch(url, { headers: { "User-Agent": "rngcrypto-backtest" } });
@@ -356,7 +373,7 @@ async function main() {
   const report = {
     engineVersion: ENGINE_VERSION,
     generatedAt: new Date().toISOString(),
-    params: { days: DAYS, symbols: SYMBOLS, slippage: SLIP, fee: FEE, horizonHours: HORIZON_MS / H1, fillWindowCandles: FILL_WINDOW, cooldownMin: COOLDOWN_MS / 60e3, tuning: getTuning(), costModel: COST_MODEL_ON ? { ...VENUE, nextOpenFill: true, fundingApplied: false } : { legacy: true, roundTrip: (SLIP + FEE) * 2 } },
+    params: { days: DAYS, symbols: SYMBOLS, slippage: SLIP, fee: FEE, horizonHours: HORIZON_MS / H1, fillWindowCandles: FILL_WINDOW, cooldownMin: COOLDOWN_MS / 60e3, tuning: getTuning(), weightsOverride: weightsApplied, costModel: COST_MODEL_ON ? { ...VENUE, nextOpenFill: true, fundingApplied: false } : { legacy: true, roundTrip: (SLIP + FEE) * 2 } },
     caveats: [
       "Candles only: funding, open interest, sentiment, news, catalysts, ETF flows, liquidations and the macro regime are null, exactly as the live engine treats a feed that is down.",
       "Binance.US spot candles stand in for Strike's perp feed; wicks differ slightly.",

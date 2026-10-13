@@ -2,7 +2,9 @@ import type { AssetImpact, Importance, MacroScores } from "@/lib/macro/types"
 import type { SignalFeatures } from "@/lib/signals/features/types"
 
 // Phase 4 keyless feature feeds (design F2); produced by be-features, every sub-object nullable except session.
-export type { SignalFeatures, FundingFeature, OiFeature, CvdFeature, BookFeature, VolFeature, BasisFeature, MacroRatesFeature, StablecoinFeature, SessionFeature } from "@/lib/signals/features/types"
+export type { SignalFeatures, FundingFeature, OiFeature, CvdFeature, BookFeature, VolFeature, BasisFeature, MacroRatesFeature, StablecoinFeature, SessionFeature, OiQuadrant } from "@/lib/signals/features/types"
+// Canonical UI name (ui-flow's features-contract.ts becomes a re-export of this).
+export type Features = SignalFeatures
 
 // ---------------------------------------------------------------------------
 // Verdict v2 contract (research/design-ux-ui.md F1.1). Every field is optional and nullable until the producing

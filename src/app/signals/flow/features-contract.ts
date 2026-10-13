@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
-// Wave 2 `features.*` contract. TEMPORARY MIRROR of be-features' canonical types (build/be-features 1e6837a,
+// Wave 2 `features.*` contract. TEMPORARY MIRROR of be-features' canonical types (build/be-features 530c5c5,
 // src/lib/signals/features/types.ts, re-exported from ../types.ts as `features?: SignalFeatures | null`). The type
 // block below is copied verbatim so the tiles are compiled against the real nullability. After the branches merge,
 // replace the block with
-//   export type { SignalFeatures as Features, FundingFeature, OiFeature, CvdFeature, BookFeature, VolFeature, BasisFeature, MacroRatesFeature, StablecoinFeature, SessionFeature } from "@/lib/signals/features/types"
+//   export type { Features, FundingFeature, OiFeature, CvdFeature, BookFeature, VolFeature, BasisFeature, MacroRatesFeature, StablecoinFeature, SessionFeature, OiQuadrant } from "../types"
 // and keep the helpers. Only ui-flow owned files import from here.
 // ---------------------------------------------------------------------------
 

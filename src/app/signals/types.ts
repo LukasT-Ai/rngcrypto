@@ -539,3 +539,209 @@ export interface HistoryResponse {
     byBias?: Record<"LONG" | "SHORT", CalibrationBucket & { total: number; pending: number }>
   }
 }
+
+// ---------------------------------------------------------------------------
+// Performance page v2 (design-ux-ui.md F4.1). Every field is optional so the page
+// renders against today's API and lights up as the measurement PRs land.
+// Rates are percent (0-100) like the existing tp1Rate; Brier terms are raw.
+// ---------------------------------------------------------------------------
+
+export interface PerfCostModel {
+  venue: string
+  takerBps: number
+  makerBps: number
+  slipBps: number
+  fundingApplied: boolean
+}
+
+export interface PerfKpisV2 {
+  expectancyNetR?: number | null
+  profitFactorNet?: number | null
+  sumNetR?: number | null
+  costModel?: PerfCostModel | null
+  maxDrawdownR?: number | null
+  maxDrawdownNetR?: number | null
+  longestUnderwaterDays?: number | null
+  /** SD(R) / sqrt(n) */
+  seExpectancyR?: number | null
+  fillRate?: { market: number | null; limit: number | null; nMarket: number; nLimit: number } | null
+  expiryRate?: number | null
+  medianHoldMin?: { winners: number | null; losers: number | null } | null
+}
+
+export interface PerfRHistogramBin {
+  bin: string
+  n: number
+  netN: number
+}
+
+export interface PerfCalBucket {
+  key: string
+  n: number
+  wins: number
+  losses: number
+  tp1Rate: number | null
+  expectancyR: number | null
+  meanConf?: number | null
+  wilsonLo?: number | null
+  wilsonHi?: number | null
+  pPos?: number | null
+  meanNetR?: number | null
+  brierNaive?: number | null
+  brierCal?: number | null
+}
+
+export interface PerfBrier {
+  naive: number
+  calibrated: number | null
+  base: number
+  bss: number
+  bssCalibrated: number | null
+  reliability: number
+  resolution: number
+  uncertainty: number
+  n: number
+}
+
+export interface PerfPlatt {
+  a: number
+  b: number
+  n: number
+  holdoutBrier: number
+  fitAt: string
+  version: string
+}
+
+export interface PerfCalibrationV2 {
+  byConfidence?: PerfCalBucket[]
+  byGrade?: PerfCalBucket[]
+  byRr1?: PerfCalBucket[]
+  byPTp1?: PerfCalBucket[]
+  brier?: PerfBrier | null
+  platt?: PerfPlatt | null
+}
+
+export interface PerfComponentRow {
+  name: string
+  nAgree: number
+  nDisagree: number
+  pWinAgree: number | null
+  pWinDisagree: number | null
+  lift: number | null
+  liftLo: number | null
+  liftHi: number | null
+  weight: number
+  candidateWeight: number | null
+}
+
+export type PerfShadowClass = "wait_lean" | "htf_blocked_short" | "regime_blocked" | "event_gated"
+export interface PerfShadowRow {
+  key: PerfShadowClass
+  n: number
+  tp1Rate: number | null
+  wilsonLo: number | null
+  wilsonHi: number | null
+  expectancyR: number | null
+}
+
+export interface PerfVersionRow {
+  version: string
+  firstAt: number
+  lastAt: number
+  n: number
+  netR: number | null
+}
+
+export interface PerfLedger {
+  url: string
+  csvUrl: string
+  sha256: string
+  hashedAt: string
+  bytes: number
+}
+
+export interface PerfChangelogEntry {
+  at: string
+  commit: string
+  title: string
+  effect: string
+}
+
+/** Optional additions to PerformanceStats (F4.1). Intersected with the server type in PerformanceDashboard. */
+export interface PerformanceStatsV2 {
+  kpis: PerfKpisV2
+  rHistogram?: PerfRHistogramBin[]
+  calibration: PerfCalibrationV2
+  components?: PerfComponentRow[]
+  shadow?: { byClass: PerfShadowRow[]; note: string } | null
+  versions?: PerfVersionRow[]
+  ledger?: PerfLedger | null
+  changelog?: PerfChangelogEntry[]
+  meta: {
+    /** Current engine version and when it started, for the provisional banner. */
+    engineVersion?: string | null
+    engineVersionSince?: number | null
+  }
+}
+
+/** Optional per-row additions on NormalizedSignal. */
+export interface SignalRowV2 {
+  netR?: number | null
+  costR?: number | null
+  grossR?: number | null
+  reasonText?: string | null
+  pTp1?: number | null
+  entryType?: "market" | "limit" | null
+}
+
+/** Optional additions on open rows. */
+export interface OpenSignalV2 {
+  /** ms epoch when the fill window closes (pending fills). */
+  fillWindowEndsAt?: number | null
+  /** ms epoch of the last candle the checker evaluated. */
+  lastCheckAt?: number | null
+  checkerStalled?: boolean
+}
+
+/** GET /api/signals/history/:id */
+export interface AuditRecord {
+  signal: Record<string, unknown>
+  inputs: {
+    weightedScore?: number | null
+    confidenceRaw?: number | null
+    components?: Record<string, { score: number; weight: number }>
+    rr1?: number | null
+    rr2?: number | null
+    rr3?: number | null
+    entryType?: "market" | "limit" | null
+    atrPct?: number | null
+    fundingRate?: number | null
+    minutesToNextEvent?: number | null
+    tuning?: Record<string, unknown> | null
+    gateNotes?: string[] | null
+    engineVersion?: string | null
+    calibrationVersion?: string | null
+    blocks?: Record<string, number> | null
+    mode?: string | null
+    eventWindow?: Record<string, unknown> | null
+  } | null
+  resolution: {
+    firstEligibleCandle?: number | null
+    fillCandle?: number | null
+    fillPrice?: number | null
+    tpTouches?: { level: 1 | 2 | 3; at: number; price: number }[]
+    stopTouch?: { at: number; price: number } | null
+    horizonEnd?: number | null
+    closedReason?: string | null
+    grossR?: number | null
+    netR?: number | null
+    costR?: number | null
+    coverageGap?: boolean | { from: number; to: number } | null
+    reasonText?: string | null
+  } | null
+}
+
+/** Optional additions on equity points: the net-of-cost cumulative curve. */
+export interface PerfEquityPointV2 {
+  cumNetR?: number | null
+}

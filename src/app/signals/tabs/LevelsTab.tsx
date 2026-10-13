@@ -1,13 +1,21 @@
 "use client"
 
-import React from "react"
-import { Clock, Layers } from "lucide-react"
+import React, { useMemo } from "react"
+import { CandlestickChart, Clock, Layers } from "lucide-react"
+import { LevelsChart, type PlanLine } from "@/components/levels-chart"
+import { readFeatures } from "../flow/features-contract"
 import { cn } from "@/lib/utils"
 import type { SignalsResponse } from "../types"
 import { AMBER, Chip, GREEN, LABEL, RED, SURFACE, SectionTitle, TD, TH, TableScroll, Tip, dirColor, dirLabel, fmt, pctFrom, timeAgo } from "../shared"
 
 type LevelRow = { kind: "Support" | "Resistance" | "Fib" | "Daily high" | "Daily low" | "Weekly high" | "Weekly low" | "Buy wall" | "Sell wall"; label: string; price: number }
 type Setup = SignalsResponse["activeSetups"][number]
+
+// 260px below the sm breakpoint, 380px above. Reads the media query once per mount; a viewport resize across the
+// breakpoint is rare enough that it is not worth a listener on a tab that re-renders every poll.
+function useChartHeight() {
+  return useMemo(() => (typeof window !== "undefined" && window.matchMedia?.("(max-width: 639px)").matches ? 260 : 380), [])
+}
 
 export const LevelsTab = React.memo(function LevelsTab({ d, dp, accent }: { d: SignalsResponse; dp: number; accent: string }) {
   const price = d.price.mark
@@ -25,6 +33,32 @@ export const LevelsTab = React.memo(function LevelsTab({ d, dp, accent }: { d: S
   }
   const calledTip = (s: Setup) =>
     s.calledAt ? `First called ${new Date(s.calledAt).toLocaleString()}${s.calledEntry != null ? ` at $${fmt(s.calledEntry, dp)}` : ""}. Levels update with price; the direction has held since then.` : null
+
+  // Chart overlays (P1-12 + F2.4). Memoized on the inputs so the chart's price-line effect only re-runs when a level moves.
+  const call = d.call
+  const vol = readFeatures(d)?.vol ?? null
+  const emPct = vol && Number.isFinite(vol.expectedMove24hPct) ? vol.expectedMove24hPct : null
+  const lines = useMemo<PlanLine[]>(() => {
+    const out: PlanLine[] = []
+    if (call.bias !== "WAIT") {
+      out.push({ price: call.entry, title: "Entry", color: accent, width: 2 })
+      out.push({ price: call.stopLoss, title: "Stop", color: RED, width: 2 })
+      out.push({ price: call.tp1, title: "TP1", color: GREEN })
+      out.push({ price: call.tp2, title: "TP2", color: GREEN })
+      out.push({ price: call.tp3, title: "TP3", color: GREEN })
+    }
+    for (const w of book?.bidWalls.slice(0, 3) ?? []) out.push({ price: w.price, title: `Bid wall ${fmtUsd(w.usd)}`, color: GREEN, style: "dotted" })
+    for (const w of book?.askWalls.slice(0, 3) ?? []) out.push({ price: w.price, title: `Ask wall ${fmtUsd(w.usd)}`, color: RED, style: "dotted" })
+    if (emPct != null && price > 0) {
+      const em = price * (emPct / 100)
+      out.push({ price: price + em, title: "1 sd 24h", color: "rgba(255,255,255,0.35)", style: "dashed" })
+      out.push({ price: price - em, title: "1 sd 24h", color: "rgba(255,255,255,0.35)", style: "dashed" })
+    }
+    return out
+  }, [call.bias, call.entry, call.stopLoss, call.tp1, call.tp2, call.tp3, book, emPct, price, accent])
+  const candles = d.candles ?? []
+  const chartHeight = useChartHeight()
+  const chartAria = `Price chart with ${candles.length} candles${call.bias !== "WAIT" ? `, ${dirLabel(call.bias).toLowerCase()} plan: entry $${fmt(call.entry, dp)}, stop $${fmt(call.stopLoss, dp)}, targets $${fmt(call.tp1, dp)}, $${fmt(call.tp2, dp)}, $${fmt(call.tp3, dp)}` : ", no active plan"}${book ? `, ${book.bidWalls.length} bid and ${book.askWalls.length} ask walls` : ""}${emPct != null ? `, expected move ±${emPct.toFixed(2)}% over 24h` : ""}. Levels are listed in the table below.`
 
   const rows: LevelRow[] = [
     ...(book?.bidWalls ?? []).map((w) => ({ kind: "Buy wall" as const, label: `Buy wall ${fmtUsd(w.usd)}`, price: w.price })),
@@ -60,6 +94,33 @@ export const LevelsTab = React.memo(function LevelsTab({ d, dp, accent }: { d: S
 
   return (
     <div className="space-y-6">
+      {/* Price chart with the plan, walls and the expected-move band (P1-12, F2.4) */}
+      {candles.length > 1 && (
+        <div id="sec-chart">
+          <SectionTitle
+            icon={CandlestickChart}
+            right={
+              <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-white/50">
+                {call.bias !== "WAIT" && (
+                  <>
+                    <span className="inline-flex items-center gap-1"><span aria-hidden className="inline-block h-0.5 w-3" style={{ backgroundColor: accent }} />entry</span>
+                    <span className="inline-flex items-center gap-1"><span aria-hidden className="inline-block h-0.5 w-3" style={{ backgroundColor: RED }} />stop</span>
+                    <span className="inline-flex items-center gap-1"><span aria-hidden className="inline-block h-0.5 w-3" style={{ backgroundColor: GREEN }} />targets</span>
+                  </>
+                )}
+                {book && <span className="inline-flex items-center gap-1"><span aria-hidden className="inline-block h-0.5 w-3 border-t border-dotted border-white/60" />walls</span>}
+                {emPct != null ? <span className="inline-flex items-center gap-1"><span aria-hidden className="inline-block h-0.5 w-3 border-t border-dashed border-white/40" />1 sd 24h</span> : <span className="text-white/35">expected-move band: Deribit off</span>}
+              </span>
+            }
+          >
+            Chart
+          </SectionTitle>
+          <div className={cn(SURFACE, "overflow-hidden p-1 sm:p-2")}>
+            <LevelsChart candles={candles} lines={lines} dp={dp} height={chartHeight} ariaLabel={chartAria} />
+          </div>
+        </div>
+      )}
+
       {/* Active setups: table from md up, one card per setup below */}
       <div id="sec-active-setups">
         <SectionTitle

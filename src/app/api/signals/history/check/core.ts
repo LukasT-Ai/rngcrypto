@@ -83,9 +83,12 @@ async function fetchCandles(strike: string, sinceMs: number): Promise<Candle[]> 
 const r4 = (n: number) => Math.round(n * 10000) / 10000;
 
 // ── Cost model (perf audit 1.3) ──────────────────────────────────────────────
-// Fees and slippage in basis points of notional per leg; funding charged over the hold. Figures are the
-// public base tiers as of 2026-10 (Hyperliquid 3.5/1 bp; Strike 5 bp flat, hourly funding) and are meant to
-// be conservative placeholders: verify against the venue fee pages before quoting them.
+// Fees and slippage in basis points of notional per leg; funding charged over the hold. Fee figures verified
+// 2026-10-13 against the venue docs: Strike (docs.strikefinance.org/perpetuals/trading-fees) taker 5 bp at
+// tier 0 (2.8 bp at $200M+ 30d volume), maker rebate -0.5 bp, fees on filled notional, funding hourly at one
+// eighth of the 8h rate (capped +/-4% per 8h); Hyperliquid base tier taker 4.5 bp, maker 1.5 bp. Slippage is
+// an assumption (3 bp per market leg), not a venue figure. A market-in, market-out Strike signal therefore
+// pays 10 bp before slippage and funding.
 export interface CostVenue {
   venue: string;
   takerBps: number;
@@ -95,8 +98,8 @@ export interface CostVenue {
   fundingApplied: boolean;
 }
 export const COST_MODEL: Record<"HYPERLIQUID" | "STRIKE", CostVenue> = {
-  HYPERLIQUID: { venue: "Hyperliquid", takerBps: 3.5, makerBps: 1, slipBps: 3, fundingIntervalHours: 1, fundingApplied: true },
-  STRIKE: { venue: "Strike", takerBps: 5, makerBps: 5, slipBps: 3, fundingIntervalHours: 1, fundingApplied: true },
+  HYPERLIQUID: { venue: "Hyperliquid", takerBps: 4.5, makerBps: 1.5, slipBps: 3, fundingIntervalHours: 1, fundingApplied: true },
+  STRIKE: { venue: "Strike", takerBps: 5, makerBps: -0.5, slipBps: 3, fundingIntervalHours: 1, fundingApplied: true },
 };
 export function activeCostVenue(): CostVenue {
   const key = (process.env.COST_VENUE ?? "STRIKE").toUpperCase();
@@ -110,7 +113,8 @@ export interface CostBreakdown {
   fundingR: number;
 }
 
-// Round-trip cost in R. Entry leg: market = taker + slippage, limit = maker (resting, no slippage). Exit leg:
+// Round-trip cost in R. Entry leg: market = taker + slippage, limit = maker (resting, no slippage; a negative
+// maker figure is a rebate and reduces the cost). Exit leg:
 // always taker + slippage (stops and horizon exits are market orders; a TP exit is charged the same so the
 // model never flatters a touch). Funding: `fundingRate8h` is a fraction per 8h (the engine's unit); longs pay
 // when it is positive, shorts collect. Everything is expressed per unit of notional and divided by the risk.

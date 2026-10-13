@@ -119,16 +119,17 @@ describe("fill model", () => {
 
   it("costInR charges maker on limit entries and signs funding by side", () => {
     const base = { fillPrice: 100, stopLoss: 99, holdHours: 16, venue: COST_MODEL.STRIKE } as const;
-    // Limit long: maker 5 + taker 5 + slip 3 = 13 bp x 100 = 0.13R, plus 0.0008/8h x 2 intervals x 100 = 0.16R paid.
+    // Limit long: maker rebate -0.5 + taker 5 = 4.5 bp fee, exit slip 3 bp -> 7.5 bp x 100 = 0.075R,
+    // plus 0.0008/8h x 2 intervals x 100 = 0.16R funding paid.
     const long = costInR({ ...base, bias: "LONG", entryType: "limit", fundingRate8h: 0.0008 });
-    expect(long?.feeR).toBeCloseTo(0.1, 6);
+    expect(long?.feeR).toBeCloseTo(0.045, 6);
     expect(long?.slipR).toBeCloseTo(0.03, 6);
     expect(long?.fundingR).toBeCloseTo(0.16, 6);
-    expect(long?.costR).toBeCloseTo(0.29, 6);
+    expect(long?.costR).toBeCloseTo(0.235, 6);
     // Same funding collects for a short.
     const short = costInR({ ...base, bias: "SHORT", stopLoss: 101, entryType: "limit", fundingRate8h: 0.0008 });
     expect(short?.fundingR).toBeCloseTo(-0.16, 6);
-    expect(short?.costR).toBeCloseTo(-0.03, 6);
+    expect(short?.costR).toBeCloseTo(-0.085, 6);
     // No funding feed: only fees and slippage.
     expect(costInR({ ...base, bias: "LONG", entryType: "market", fundingRate8h: null })?.costR).toBeCloseTo(0.16, 6);
     expect(costInR({ ...base, stopLoss: 100, bias: "LONG", entryType: "market", fundingRate8h: null })).toBeNull();

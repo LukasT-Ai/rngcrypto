@@ -45,6 +45,18 @@ export function transmission(def: MacroEventDef, surpriseScore: number | null, r
       g = s;
       r = 0.4 * s;
       break;
+    case "foreign_cb":
+      // Hawkish abroad = stronger EUR/JPY/GBP = weaker dollar: the mirror image of a Fed shock, at a third of the size.
+      r = -0.3 * s;
+      break;
+    case "trade":
+      // Narrower deficit adds to GDP; small growth read.
+      g = 0.3 * s;
+      break;
+    case "fiscal":
+    case "positioning":
+    case "market_event":
+      break;
     case "policy_rate":
       r = s;
       break;
@@ -156,7 +168,7 @@ export function directionOf(score: number): Direction {
 }
 
 function confidenceFor(score: number, magnitude: SurpriseMagnitude | null, relevance: number, kind: MacroEventDef["kind"]): Confidence {
-  if (kind === "auction") return "low";
+  if (kind === "auction" || kind === "fiscal" || kind === "positioning" || kind === "market_event") return "low";
   // Fed communication has no number: confidence comes only from a synthetic score derived from the 2Y reaction.
   if (kind === "fed_communication" && (magnitude == null || Math.abs(score) < 20)) return "low";
   const a = Math.abs(score);

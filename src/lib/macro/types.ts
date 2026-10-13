@@ -20,9 +20,19 @@ export type EventKind =
   | "sentiment"
   | "auction"
   | "housing"
+  // Foreign central banks and the foreign data that moves them: + = hawkish abroad = weaker dollar.
+  | "foreign_cb"
+  // Trade balance style prints: + = narrower deficit.
+  | "trade"
+  // Budget, TIC flows, consumer credit: informational, no transmission.
+  | "fiscal"
+  // CFTC positioning: informational, no transmission.
+  | "positioning"
+  // Options expiries, elections: dated risk events with no number.
+  | "market_event"
   | "crypto";
 
-export type Unit = "pct" | "k" | "m" | "index" | "mb" | "rate" | "text";
+export type Unit = "pct" | "k" | "m" | "b" | "index" | "mb" | "rate" | "text";
 
 export type SourceProvider = "BLS" | "FRED" | "EIA" | "BEA" | "FXSTREET" | "NEWS" | "NONE";
 export type Transform = "mom_pct" | "yoy_pct" | "diff_k" | "level" | "level_m" | "weekly_change_mb";
@@ -54,6 +64,8 @@ export interface ScheduledEvent {
   unit: Unit;
   source: "fxstreet" | "faireconomy" | "scheduled";
   retrievedAt: string;
+  // FXStreet country code (US, EMU, UK, JP, CN, ...). Undefined = US.
+  country?: string;
   // Where forecast/previous came from when not straight from the calendar feed (e.g. "BLS prior print",
   // "EIA consensus (proxy)"). null = calendar consensus. Lets the UI label proxies honestly.
   forecastSource?: string | null;
@@ -271,6 +283,7 @@ export interface CalendarRow {
   time: string;
   importance: Importance;
   kind: EventKind;
+  country: string;
   forecastRaw: string | null;
   forecastSource: string | null;
   previousRaw: string | null;

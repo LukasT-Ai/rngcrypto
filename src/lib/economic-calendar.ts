@@ -89,6 +89,11 @@ export function generateScheduledEvents(): CalendarEvent[] {
       source: "scheduled",
     });
 
+    // Deribit/CME monthly BTC options expiry: last Friday of the month, 08:00 UTC.
+    const lastDay = new Date(Date.UTC(year, m + 1, 0));
+    const lastFri = new Date(Date.UTC(year, m, lastDay.getUTCDate() - ((lastDay.getUTCDay() + 2) % 7), 8, 0, 0));
+    events.push({ name: "BTC Options Expiry (Deribit monthly)", time: lastFri, impact: "medium", currency: "ALL", source: "scheduled" });
+
     const optExpiry = getThirdFriday(year, m);
     const isQuarterEnd = (m + 1) % 3 === 0;
     events.push({

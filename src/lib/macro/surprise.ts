@@ -29,6 +29,10 @@ export const KIND_WORDS: Record<string, { above: string; below: string }> = {
   policy_rate: { above: "more hawkish than expected", below: "more dovish than expected" },
   sentiment: { above: "stronger than expected", below: "weaker than expected" },
   housing: { above: "stronger than expected", below: "weaker than expected" },
+  foreign_cb: { above: "more hawkish than expected", below: "more dovish than expected" },
+  trade: { above: "a narrower deficit than expected", below: "a wider deficit than expected" },
+  fiscal: { above: "larger than expected", below: "smaller than expected" },
+  positioning: { above: "more net long than expected", below: "less net long than expected" },
 };
 
 export function computeSurprise(

@@ -141,11 +141,12 @@ const timeLabel = (iso: string) => new Intl.DateTimeFormat("en-US", { hour: "num
 export function EconomicCalendar({ rows, isLoading }: { rows: CalendarRow[] | undefined; isLoading?: boolean }) {
   const now = useNow(15_000)
   const [showPast, setShowPast] = useState(true)
+  const [showLow, setShowLow] = useState(false)
   if (!rows || rows.length === 0) {
     if (!isLoading) return null
     return <div className="rounded-xl border border-white/[0.07] px-3 py-3 text-[11px] text-white/40">Loading economic calendar…</div>
   }
-  const list = rows.filter((r) => showPast || !r.released)
+  const list = rows.filter((r) => (showPast || !r.released) && (showLow || r.importance !== "low"))
   const groups: { day: string; rows: CalendarRow[] }[] = []
   for (const r of list) {
     const day = dayLabel(r.time)
@@ -154,18 +155,26 @@ export function EconomicCalendar({ rows, isLoading }: { rows: CalendarRow[] | un
     else groups.push({ day, rows: [r] })
   }
   const pastCount = rows.filter((r) => r.released).length
+  const lowCount = rows.filter((r) => r.importance === "low").length
   const cell = "px-2 py-1.5 font-mono text-[11px] whitespace-nowrap"
   return (
     <div id="sec-calendar" className="rounded-xl border border-white/[0.07] bg-[rgb(var(--surface-rgb,10_14_23)/0.45)] backdrop-blur-md">
       <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <CalendarClock className="size-3.5" style={{ color: "var(--brand, #9CA3AF)" }} />
         <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--brand, #9CA3AF)" }}>Economic calendar</span>
-        <span className="text-[10px] text-white/30">last 7d with actuals · next 14d with consensus · medium impact and up</span>
-        {pastCount > 0 && (
-          <button type="button" onClick={() => setShowPast((v) => !v)} className="ml-auto text-[10px] text-white/45 hover:text-white/80">
-            {showPast ? "hide released" : `show released (${pastCount})`}
-          </button>
-        )}
+        <span className="text-[10px] text-white/30">last 7d with actuals · next 14d with consensus · US, ECB, BoE, BoJ, China</span>
+        <span className="ml-auto inline-flex items-center gap-3">
+          {lowCount > 0 && (
+            <button type="button" onClick={() => setShowLow((v) => !v)} className="text-[10px] text-white/45 hover:text-white/80">
+              {showLow ? "hide low impact" : `show low impact (${lowCount})`}
+            </button>
+          )}
+          {pastCount > 0 && (
+            <button type="button" onClick={() => setShowPast((v) => !v)} className="text-[10px] text-white/45 hover:text-white/80">
+              {showPast ? "hide released" : `show released (${pastCount})`}
+            </button>
+          )}
+        </span>
       </div>
       <div className="max-h-[28rem] overflow-auto border-t border-white/[0.05]">
         <table className="w-full border-collapse">
@@ -201,6 +210,7 @@ export function EconomicCalendar({ rows, isLoading }: { rows: CalendarRow[] | un
                       <td className="px-2 py-1.5 text-[11px]">
                         <span className="inline-flex items-center gap-1.5">
                           <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: c }} />
+                          {r.country !== "US" && <span className="rounded bg-white/[0.06] px-1 py-px text-[9px] font-bold text-white/50">{r.country === "EMU" ? "EU" : r.country}</span>}
                           <span className={`font-sans ${r.released ? "text-white/70" : "text-white/85"}`}>{r.title}</span>
                           {tag && (
                             <span className="rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide" style={{ color: r.kind === "housing" ? "var(--brand, #9CA3AF)" : "rgba(255,255,255,0.35)", backgroundColor: r.kind === "housing" ? "rgb(var(--brand-rgb,156_163_175)/0.12)" : "rgba(255,255,255,0.05)" }}>

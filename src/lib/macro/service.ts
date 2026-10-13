@@ -26,7 +26,7 @@ async function buildCalendar(asset: MacroAsset | null, now: number): Promise<Cal
   const live = [...rt.states.values()];
   const rows: CalendarRow[] = [];
   for (const e of events) {
-    if (!relevantTo(asset, e.defId) || rank[e.importance] < rank.medium) continue;
+    if (!relevantTo(asset, e.defId)) continue;
     const def = defFor(e.defId);
     const t = new Date(e.time).getTime();
     const released = t <= now;
@@ -60,6 +60,7 @@ async function buildCalendar(asset: MacroAsset | null, now: number): Promise<Cal
       time: e.time,
       importance: e.importance,
       kind: def.kind,
+      country: e.country ?? "US",
       forecastRaw: e.forecastRaw,
       forecastSource: e.forecastSource ?? null,
       previousRaw: e.previousRaw,

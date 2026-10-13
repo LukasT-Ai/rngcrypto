@@ -167,6 +167,9 @@ function matchScheduledName(name: string): MacroEventDef | null {
   if (n.includes("eia")) return defFor("eia_crude");
   if (n.includes("api weekly")) return defFor("api_crude");
   if (n.includes("baker hughes")) return defFor("baker_hughes");
+  if (n.includes("quad witching")) return defFor("opex_quad");
+  if (n.includes("options expiry") && n.includes("btc")) return defFor("btc_opex");
+  if (n.includes("options expiry")) return defFor("opex_monthly");
   return null;
 }
 

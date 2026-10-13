@@ -104,7 +104,7 @@ export function FlowTab({ d }: { d: SignalsResponse }) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {m.fearGreed && <StatCard label="Fear & Greed" value={String(m.fearGreed.value)} sub={m.fearGreed.classification} color={m.fearGreed.value >= 60 ? GREEN : m.fearGreed.value <= 40 ? RED : undefined} icon={Eye} />}
           {m.fundingRate != null && (
-            <StatCard label="Funding rate" value={`${(m.fundingRate * 100).toFixed(4)}%`} sub={m.fundingRate < 0 ? "Shorts paying longs" : m.fundingRate > 0.01 ? "Overleveraged longs" : "Neutral"} color={m.fundingRate < 0 ? GREEN : m.fundingRate > 0.01 ? RED : undefined} icon={Activity} />
+            <StatCard label="Funding rate (8h equiv.)" value={`${(m.fundingRate * 100).toFixed(4)}%`} sub={m.fundingRate < 0 ? "Shorts paying longs" : m.fundingRate > 0.01 ? "Overleveraged longs" : "Neutral"} color={m.fundingRate < 0 ? GREEN : m.fundingRate > 0.01 ? RED : undefined} icon={Activity} />
           )}
           {m.openInterest != null && <StatCard label="Open interest" value={`$${fmtCompact(m.openInterest)}`} icon={BarChart3} />}
           {m.putCallRatio != null && (

@@ -13,7 +13,7 @@ import { stampActiveSetups } from "./setup-tracker";
 import { fetchOrderFlowRaw, summarizeOrderFlow, type LiquidationSummary, type OrderBookSummary, type OrderFlowRaw } from "./orderflow";
 
 // Bump whenever scoring behaviour changes; every logged signal carries it so history can be bucketed.
-export const ENGINE_VERSION = "2026.10.12-regime";
+export const ENGINE_VERSION = "2026.10.13-feeds";
 
 /**
  * Strategy tuning. Defaults come from a 36-configuration sweep of the walk-forward backtest (scripts/backtest.ts,
@@ -926,6 +926,9 @@ function detectCandlestickPattern(candles: Candle[]): string | null {
  * `r * 100` as a percentage, so Strike's `markPrice.r` is a fraction). The old thresholds (0.01 / 0.03 /
  * 0.05) were 1% / 3% / 5% per interval and never fired. Typical perps funding sits around ±0.0001.
  */
+// Strike settles funding every hour; thresholds below are quoted per 8h.
+export const STRIKE_FUNDING_INTERVALS_PER_8H = 8;
+
 export const FUNDING = {
   ELEVATED: 0.0003, // 0.03% per 8h
   HIGH: 0.0008, // 0.08% per 8h
@@ -4362,7 +4365,10 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
   // Parse mark price
   const markData = getResult(4) as Record<string, string> | null;
   const markPrice = markData ? parseFloat(markData.p) : null;
-  const strikeFunding = markData ? parseFloat(markData.r) : null;
+  // Strike funds HOURLY (markPrice.T is the next top of the hour; r is ~8x smaller than OKX's 8h rate for the
+  // same book). FUNDING thresholds are per 8h, so scale the hourly rate up before any comparison.
+  const strikeFundingRaw = markData ? parseFloat(markData.r) : null;
+  const strikeFunding = strikeFundingRaw != null && Number.isFinite(strikeFundingRaw) ? strikeFundingRaw * STRIKE_FUNDING_INTERVALS_PER_8H : null;
 
   const lastCandle = raw15m[raw15m.length - 1];
   const currentPrice = markPrice ?? lastCandle?.close ?? 0;
@@ -4543,12 +4549,13 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
 
   // OKX fallback for long/short ratio (Binance is geo-restricted from US)
   const okxLSRaw = getResult(17) as { code?: string; data?: string[][] } | null;
+  // OKX rubik stat arrays are NEWEST-FIRST (verified against the live API): index 0 is the latest sample.
   if (longShortRatio == null && okxLSRaw?.code === "0" && Array.isArray(okxLSRaw.data) && okxLSRaw.data.length > 0) {
-    const latest = okxLSRaw.data[okxLSRaw.data.length - 1];
+    const latest = okxLSRaw.data[0];
     if (latest?.[1]) longShortRatio = parseFloat(latest[1]);
     if (okxLSRaw.data.length >= 3) {
-      const recent = parseFloat(okxLSRaw.data[okxLSRaw.data.length - 1][1]);
-      const older = parseFloat(okxLSRaw.data[0][1]);
+      const recent = parseFloat(okxLSRaw.data[0][1]);
+      const older = parseFloat(okxLSRaw.data[okxLSRaw.data.length - 1][1]);
       if (!isNaN(recent) && !isNaN(older) && older > 0) {
         longShortChange = ((recent - older) / older) * 100;
       }
@@ -4560,11 +4567,11 @@ export async function computeSignal(symbolIn: string, opts: { log?: boolean } = 
   let okxOIChange: number | null = null;
   const okxOIRaw = getResult(18) as { code?: string; data?: string[][] } | null;
   if (okxOIRaw?.code === "0" && Array.isArray(okxOIRaw.data) && okxOIRaw.data.length > 0) {
-    const latest = okxOIRaw.data[okxOIRaw.data.length - 1];
+    const latest = okxOIRaw.data[0]; // newest-first
     if (latest?.[1]) okxOI = parseFloat(latest[1]);
     if (okxOIRaw.data.length >= 5) {
-      const recentOI = parseFloat(okxOIRaw.data[okxOIRaw.data.length - 1][1]);
-      const olderOI = parseFloat(okxOIRaw.data[0][1]);
+      const recentOI = parseFloat(okxOIRaw.data[0][1]);
+      const olderOI = parseFloat(okxOIRaw.data[okxOIRaw.data.length - 1][1]);
       if (!isNaN(recentOI) && !isNaN(olderOI) && olderOI > 0) {
         okxOIChange = ((recentOI - olderOI) / olderOI) * 100;
       }

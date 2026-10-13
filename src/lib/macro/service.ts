@@ -368,7 +368,9 @@ function scoresFor(asset: MacroAsset, regime: MacroRegime, states: EventState[],
     macro: Math.round(macro),
     event,
     confirmation: conf,
-    weights: { macro: MACRO_WEIGHTS.macroBase, event: Math.round(ew * 1000) / 1000, confirmation: MACRO_WEIGHTS.confirmationBase },
+    // No verified release in the window = no vote, so the weight leaves the engine's denominator instead of
+    // diluting the technical evidence toward WAIT for BTC/GOLD/OIL (a ~20% confidence haircut with no information).
+    weights: { macro: MACRO_WEIGHTS.macroBase, event: eventW ? Math.round(ew * 1000) / 1000 : 0, confirmation: confW ? MACRO_WEIGHTS.confirmationBase : 0 },
     eventAgeMinutes: youngest == null ? null : Math.round(youngest),
     note: youngest == null ? "No verified release in the last 6h; event weight at base" : youngest <= MACRO_WEIGHTS.eventBoostMinutes ? "Fresh release: event weight boosted" : "Event weight decaying toward base",
   };

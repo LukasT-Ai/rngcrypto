@@ -17,6 +17,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_TUNING, ENGINE_VERSION, getTuning, getWeights, scoreFromCandles, setTuning, setWeights, type Candle, type FactorWeights, type Tuning } from "../src/lib/signals/engine";
+import { DEFAULT_BLOCK_OPTIONS, getBlockOptions, setBlockOptions, type BlockName } from "../src/lib/signals/blocks";
 import { COST_MODEL, costInR, type CostVenue } from "../src/app/api/signals/history/check/core";
 import { calibration, type CalRow } from "../src/app/api/signals/history/performance";
 import { buildHoldBuckets, type HoldBucketFile } from "../src/lib/signals/setup-tracker";
@@ -74,7 +75,19 @@ setTuning({
   shortNeedsBearRegime: flag("short-regime", DEFAULT_TUNING.shortNeedsBearRegime),
   minRr: parseFloat(arg("min-rr", String(DEFAULT_TUNING.minRr))),
   sessionRules: flag("session-rules", DEFAULT_TUNING.sessionRules),
+  // PR 26 blocks: --blocks 1 --combine vote|sum (research R2.3 / R2.4); research/backtest-blocks.md records the runs.
+  blockMode: process.argv.includes("--blocks") ? (flag("blocks") ? (arg("combine", "vote") === "sum" ? "sum" : "vote") : "off") : DEFAULT_TUNING.blockMode,
 });
+// Block options (PR 26): --block-agg mean|median (R2.5), --drop-block trend,timing,flow (ablation),
+// --block-weights 0.45,0.30,0.25 (trend,timing,flow), --vote-threshold 25.
+{
+  const agg = arg("block-agg", DEFAULT_BLOCK_OPTIONS.agg) === "median" ? "median" : "mean";
+  const drop = arg("drop-block", "").split(",").map((s) => s.trim()).filter((s): s is BlockName => s === "trend" || s === "timing" || s === "flow");
+  const bw = arg("block-weights", "").split(",").map((s) => parseFloat(s));
+  const weights = bw.length === 3 && bw.every((v) => Number.isFinite(v) && v >= 0) ? { trend: bw[0], timing: bw[1], flow: bw[2] } : undefined;
+  const voteThreshold = parseFloat(arg("vote-threshold", String(DEFAULT_BLOCK_OPTIONS.voteThreshold)));
+  setBlockOptions({ agg, drop, ...(weights ? { weights } : {}), voteThreshold: Number.isFinite(voteThreshold) ? voteThreshold : DEFAULT_BLOCK_OPTIONS.voteThreshold });
+}
 // Flat horizon override in hours (R4.2); ignored per trade when --horizon-by-tf is on (the engine's call.horizonMin wins).
 const HORIZON_HOURS = parseFloat(arg("horizon-hours", String(HORIZON_MS / H1)));
 // --report-buckets: month / hour / weekday / setup / mode / dominant-TF summaries with per-bucket t-stats (R5.1).
@@ -455,7 +468,7 @@ async function main() {
   const report = {
     engineVersion: ENGINE_VERSION,
     generatedAt: new Date().toISOString(),
-    params: { days: DAYS, symbols: SYMBOLS, slippage: SLIP, fee: FEE, horizonHours: HORIZON_HOURS, asOf: Number.isFinite(ASOF) ? new Date(Math.floor(ASOF / 3600e3) * 3600e3).toISOString() : null, label: LABEL || null, fillWindowCandles: FILL_WINDOW, cooldownMin: COOLDOWN_MS / 60e3, tuning: getTuning(), weights: getWeights(), weightsOverride: weightsApplied, costModel: COST_MODEL_ON ? { ...VENUE, nextOpenFill: true, fundingApplied: false } : { legacy: true, roundTrip: (SLIP + FEE) * 2 } },
+    params: { days: DAYS, symbols: SYMBOLS, slippage: SLIP, fee: FEE, horizonHours: HORIZON_HOURS, asOf: Number.isFinite(ASOF) ? new Date(Math.floor(ASOF / 3600e3) * 3600e3).toISOString() : null, label: LABEL || null, fillWindowCandles: FILL_WINDOW, cooldownMin: COOLDOWN_MS / 60e3, tuning: getTuning(), weights: getWeights(), weightsOverride: weightsApplied, blockOptions: getBlockOptions(), costModel: COST_MODEL_ON ? { ...VENUE, nextOpenFill: true, fundingApplied: false } : { legacy: true, roundTrip: (SLIP + FEE) * 2 } },
     caveats: [
       "Candles only: funding, open interest, sentiment, news, catalysts, ETF flows, liquidations and the macro regime are null, exactly as the live engine treats a feed that is down.",
       "Binance.US spot candles stand in for Strike's perp feed; wicks differ slightly.",
@@ -549,7 +562,7 @@ async function main() {
   console.log(`Brier naive ${br.naive} . base ${br.base} . BSS ${br.bss} . rel ${br.reliability} . res ${br.resolution} . unc ${br.uncertainty} . n ${br.n}`);
   console.log(`\nwritten ${file}`);
   const t = getTuning();
-  console.log(`SUMMARY ${LABEL || "run"} | days=${DAYS} conf>=${t.minPublishConfidence} shortGate=${t.shortNeedsHtfBear ? 1 : 0} stopBuf=${t.stopBufferAtr} minStopAtr=${t.minStopAtr} floorX=${t.stopFloorScale} regimeW=${t.regimeWeight} regimeGate=${t.regimeGate} cooldown=${COOLDOWN_MS / 60e3}m | mr=${t.mrWithRegime ? 1 : 0} be=${t.breakevenAfterTp1 ? 1 : 0} hTf=${t.horizonByTf ? 1 : 0} hH=${HORIZON_HOURS} htfBoth=${t.htfGateBoth ? 1 : 0} htfVote=${t.htfVote ? 1 : 0} shortRegime=${t.shortNeedsBearRegime ? 1 : 0} minRr=${t.minRr} session=${t.sessionRules ? 1 : 0} | signals=${o.signals} unfilled=${o.unfilled} closed=${o.closed} TP1=${o.tp1Rate}% gross=${o.expectancyGrossR} net=${o.expectancyNetR} PF=${o.profitFactorNet} sum=${o.sumNetR} SR=${o.sharpePerTrade} t=${o.tStat} long=${o.longShare}%`);
+  console.log(`SUMMARY ${LABEL || "run"} | days=${DAYS} conf>=${t.minPublishConfidence} shortGate=${t.shortNeedsHtfBear ? 1 : 0} stopBuf=${t.stopBufferAtr} minStopAtr=${t.minStopAtr} floorX=${t.stopFloorScale} regimeW=${t.regimeWeight} regimeGate=${t.regimeGate} cooldown=${COOLDOWN_MS / 60e3}m | mr=${t.mrWithRegime ? 1 : 0} be=${t.breakevenAfterTp1 ? 1 : 0} hTf=${t.horizonByTf ? 1 : 0} hH=${HORIZON_HOURS} htfBoth=${t.htfGateBoth ? 1 : 0} htfVote=${t.htfVote ? 1 : 0} shortRegime=${t.shortNeedsBearRegime ? 1 : 0} minRr=${t.minRr} session=${t.sessionRules ? 1 : 0} blocks=${t.blockMode}${t.blockMode !== "off" ? `(${getBlockOptions().agg}${getBlockOptions().drop.length ? " drop:" + getBlockOptions().drop.join("+") : ""})` : ""} | signals=${o.signals} unfilled=${o.unfilled} closed=${o.closed} TP1=${o.tp1Rate}% gross=${o.expectancyGrossR} net=${o.expectancyNetR} PF=${o.profitFactorNet} sum=${o.sumNetR} SR=${o.sharpePerTrade} t=${o.tStat} long=${o.longShare}%`);
 }
 
 main().catch((e) => {

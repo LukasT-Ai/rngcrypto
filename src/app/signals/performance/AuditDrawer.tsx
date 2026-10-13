@@ -195,7 +195,7 @@ export default function AuditDrawer({ row, onClose }: { row: AuditRow | null; on
                       )}
                       <Kv k="Weighted score" v={inputs.weightedScore == null ? "—" : inputs.weightedScore.toFixed(2)} />
                       <Kv k="Confidence raw → published" v={`${inputs.confidenceRaw == null ? "—" : inputs.confidenceRaw.toFixed(0)} → ${row.confidence}`} />
-                      {inputs.pTp1 != null && <Kv k="Calibrated P(TP1)" v={`${Math.round(inputs.pTp1)}%`} />}
+                      {inputs.pTp1 != null && <Kv k="Calibrated P(TP1)" v={`${Math.round(inputs.pTp1 * 100)}%`} />}
                       {(inputs.regime || inputs.regimeGate) && <Kv k="Regime · gate" v={`${inputs.regime ?? "—"} · ${inputs.regimeGate ?? "none"}`} mono={false} />}
                       {inputs.markAtSignal != null && <Kv k="Mark · last at signal" v={`${fmtPrice(inputs.markAtSignal)} · ${inputs.lastAtSignal == null ? "—" : fmtPrice(inputs.lastAtSignal)}`} />}
                       <Kv k="Mode" v={inputs.mode ?? "—"} mono={false} />

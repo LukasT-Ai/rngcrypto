@@ -1,5 +1,6 @@
 "use client"
 
+import { useNow } from "./shared"
 import React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ExternalLink, Scale } from "lucide-react"
@@ -65,9 +66,10 @@ const ASSET_NAME: Record<MacroAsset, string> = { BTC: "BTC", GOLD: "Gold", WTI: 
 
 // The selected ticker's own price odds: implied median from the nearest dated ladder plus the rungs in play.
 function AssetOddsLine({ asset, state }: { asset: MacroAsset; state: PredictionApi }) {
+  const now = useNow(60_000)
   const odds = state.byAsset[asset]
   if (!odds || odds.markets.length === 0) return null
-  const soon = Date.now() + 20 * 3600e3
+  const soon = now + 20 * 3600e3
   const dated = odds.markets.filter((m) => impliedMedian(m) != null && (!m.closeTime || new Date(m.closeTime).getTime() > soon))
   const m = dated[0] ?? odds.markets[0]
   const med = impliedMedian(m)

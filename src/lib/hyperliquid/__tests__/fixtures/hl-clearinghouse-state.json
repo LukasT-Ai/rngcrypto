@@ -1,0 +1,180 @@
+{
+ "marginSummary": {
+  "accountValue": "1386799.694256",
+  "totalNtlPos": "14884475.506081",
+  "totalRawUsd": "16271275.2003370002",
+  "totalMarginUsed": "1797187.683342"
+ },
+ "crossMarginSummary": {
+  "accountValue": "1386799.694256",
+  "totalNtlPos": "14884475.506081",
+  "totalRawUsd": "16271275.2003370002",
+  "totalMarginUsed": "1797187.683342"
+ },
+ "crossMaintenanceMarginUsed": "895773.329901",
+ "withdrawable": "0.0",
+ "assetPositions": [
+  {
+   "type": "oneWay",
+   "position": {
+    "coin": "BTC",
+    "szi": "-1.0",
+    "leverage": {
+     "type": "cross",
+     "value": 11
+    },
+    "entryPx": "81208.0",
+    "positionValue": "83476.0",
+    "unrealizedPnl": "-2268.0",
+    "returnOnEquity": "-0.3072111122",
+    "liquidationPx": "10473362.6322716065",
+    "marginUsed": "7588.727272",
+    "maxLeverage": 40,
+    "cumFunding": {
+     "allTime": "-1805936.214007",
+     "sinceOpen": "-982.90754",
+     "sinceChange": "-12.727496"
+    }
+   }
+  },
+  {
+   "type": "oneWay",
+   "position": {
+    "coin": "SOL",
+    "szi": "-2.0",
+    "leverage": {
+     "type": "cross",
+     "value": 11
+    },
+    "entryPx": "107.055",
+    "positionValue": "213.71",
+    "unrealizedPnl": "0.4",
+    "returnOnEquity": "0.0205501845",
+    "liquidationPx": "5131697.2038658541",
+    "marginUsed": "19.428181",
+    "maxLeverage": 20,
+    "cumFunding": {
+     "allTime": "-2706715.034366",
+     "sinceOpen": "-0.025425",
+     "sinceChange": "-0.025425"
+    }
+   }
+  },
+  {
+   "type": "oneWay",
+   "position": {
+    "coin": "FARTCOIN",
+    "szi": "-3450.9",
+    "leverage": {
+     "type": "cross",
+     "value": 3
+    },
+    "entryPx": "0.18142",
+    "positionValue": "557.492895",
+    "unrealizedPnl": "68.581187",
+    "returnOnEquity": "0.3286249454",
+    "liquidationPx": "2903.4097613498",
+    "marginUsed": "185.830965",
+    "maxLeverage": 10,
+    "cumFunding": {
+     "allTime": "-29.692645",
+     "sinceOpen": "-29.692645",
+     "sinceChange": "-7.842052"
+    }
+   }
+  },
+  {
+   "type": "oneWay",
+   "position": {
+    "coin": "PUMP",
+    "szi": "-741.0",
+    "leverage": {
+     "type": "cross",
+     "value": 5
+    },
+    "entryPx": "0.005818",
+    "positionValue": "3.719079",
+    "unrealizedPnl": "0.592261",
+    "returnOnEquity": "0.6868641768",
+    "liquidationPx": "13520.6787741238",
+    "marginUsed": "0.743815",
+    "maxLeverage": 10,
+    "cumFunding": {
+     "allTime": "-1878072.667967",
+     "sinceOpen": "-27.734245",
+     "sinceChange": "-0.006745"
+    }
+   }
+  },
+  {
+   "type": "oneWay",
+   "position": {
+    "coin": "ZEC",
+    "szi": "-9562.7",
+    "leverage": {
+     "type": "cross",
+     "value": 10
+    },
+    "entryPx": "1376.5753",
+    "positionValue": "11706519.6371199992",
+    "unrealizedPnl": "1457257.6117529999",
+    "returnOnEquity": "1.1070208681",
+    "liquidationPx": "2263.6822649129",
+    "marginUsed": "1170651.9637120001",
+    "maxLeverage": 10,
+    "cumFunding": {
+     "allTime": "-182336.833933",
+     "sinceOpen": "-182336.833933",
+     "sinceChange": "-18509.66982"
+    }
+   }
+  },
+  {
+   "type": "oneWay",
+   "position": {
+    "coin": "MON",
+    "szi": "-9392.0",
+    "leverage": {
+     "type": "cross",
+     "value": 5
+    },
+    "entryPx": "0.034639",
+    "positionValue": "230.442112",
+    "unrealizedPnl": "94.895246",
+    "returnOnEquity": "1.458412993",
+    "liquidationPx": "1018.2760668168",
+    "marginUsed": "46.088422",
+    "maxLeverage": 5,
+    "cumFunding": {
+     "allTime": "-1.217909",
+     "sinceOpen": "-1.217909",
+     "sinceChange": "-1.217909"
+    }
+   }
+  },
+  {
+   "type": "oneWay",
+   "position": {
+    "coin": "XMR",
+    "szi": "-5666.275",
+    "leverage": {
+     "type": "cross",
+     "value": 5
+    },
+    "entryPx": "566.635",
+    "positionValue": "3093474.5048750001",
+    "unrealizedPnl": "117235.378566",
+    "returnOnEquity": "0.1825692492",
+    "liquidationPx": "2233.7237218995",
+    "marginUsed": "618694.900975",
+    "maxLeverage": 5,
+    "cumFunding": {
+     "allTime": "-80971.336916",
+     "sinceOpen": "-80971.336916",
+     "sinceChange": "481.037755"
+    }
+   }
+  }
+ ],
+ "time": 1791931352867
+}

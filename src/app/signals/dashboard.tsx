@@ -10,7 +10,7 @@ import { LevelsTab } from "./tabs/LevelsTab"
 import { MomentumTab } from "./tabs/MomentumTab"
 import { FlowTab } from "./tabs/FlowTab"
 import type { HistoryResponse, MarketMapResponse, SignalsResponse } from "./types"
-import { MacroAlerts, MacroEventCard, NextEventsStrip, RecentResults, WeeklyOilCard, useMacroState } from "./MacroEventPanel"
+import { EconomicCalendar, MacroAlerts, MacroEventCard, NextEventsStrip, RecentResults, WeeklyOilCard, useMacroState } from "./MacroEventPanel"
 import { PredictionOddsPanel } from "./PredictionOddsPanel"
 import type { MacroAsset } from "@/lib/macro/types"
 import { THEMES, themeStyle, type SignalsVariant } from "./themes"
@@ -579,69 +579,8 @@ export default function SignalsDashboard({ variant = "signals" }: { variant?: Si
 
             <MacroEventCard state={macroQ.data} isLoading={macroQ.isLoading} asset={predAsset} />
             <PredictionOddsPanel asset={predAsset} symbol={symbol} />
-            {/* ── 3. Upcoming Catalysts ────────────────────────────────── */}
-            {d?.events && d.events.length > 0 && (
-              <motion.div {...fadeUp} id="sec-calendar">
-                <div className="flex items-center gap-2 mb-3">
-                  <Calendar className="size-4" style={{ color: accent }} />
-                  <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">
-                    Upcoming Catalysts
-                  </h2>
-                  <span className="text-[10px] text-[#9CA3AF]/80">Next 24h</span>
-                </div>
-                <div className="rounded-xl border border-white/[0.08] bg-[rgb(var(--surface-rgb)/0.5)] backdrop-blur-md divide-y divide-white/[0.04]">
-                  {d.events.slice(0, 6).map((event, i) => {
-                    const eventTime = new Date(event.time)
-                    const msUntil = eventTime.getTime() - Date.now()
-                    const hoursUntil = msUntil / (60 * 60 * 1000)
-                    const countdown = hoursUntil < 1
-                      ? `${Math.max(1, Math.round(hoursUntil * 60))}m`
-                      : hoursUntil < 24
-                        ? `${Math.floor(hoursUntil)}h ${Math.round((hoursUntil % 1) * 60)}m`
-                        : `${Math.round(hoursUntil)}h`
-                    const impactColor = event.impact === "high"
-                      ? "#FF3B5C"
-                      : event.impact === "medium"
-                        ? "#F59E0B"
-                        : "#6B7280"
-                    const isImminent = hoursUntil <= 2
-
-                    return (
-                      <div
-                        key={i}
-                        className={cn(
-                          "flex items-center justify-between px-4 py-2.5",
-                          isImminent && "bg-[#FF3B5C]/[0.03]"
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span
-                            className="size-2 rounded-full shrink-0"
-                            style={{ backgroundColor: impactColor }}
-                          />
-                          <span className="text-sm text-white/70">{event.name}</span>
-                          <span
-                            className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase"
-                            style={{ backgroundColor: `${impactColor}15`, color: impactColor }}
-                          >
-                            {event.impact}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-[#9CA3AF]/80">{event.currency}</span>
-                          <span
-                            className="font-mono text-xs font-semibold"
-                            style={{ color: isImminent ? "#FF3B5C" : accent }}
-                          >
-                            in {countdown}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </motion.div>
-            )}
+            {/* ── 3. Economic calendar: last 7d actuals + next 14d consensus, per lens ── */}
+            <EconomicCalendar rows={macroQ.data?.calendar} isLoading={macroQ.isLoading} />
 
             {/* ── 3b. Oil Geopolitical Catalysts ───────────────────────── */}
             {d?.oilGeopolitical && d.oilGeopolitical.events.length > 0 && (() => {

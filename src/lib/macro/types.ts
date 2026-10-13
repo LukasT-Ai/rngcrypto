@@ -262,11 +262,33 @@ export interface MacroScores {
   note: string;
 }
 
+// One line of the economic calendar table: a release from the last 7 days or the next 14, with consensus, previous
+// and (once out) the actual plus the surprise read. Built per lens so each ticker sees only what moves it.
+export interface CalendarRow {
+  id: string;
+  defId: string;
+  title: string;
+  time: string;
+  importance: Importance;
+  kind: EventKind;
+  forecastRaw: string | null;
+  forecastSource: string | null;
+  previousRaw: string | null;
+  actualRaw: string | null;
+  released: boolean;
+  // "Slightly stronger than expected" once an actual exists; null before release or for text events.
+  read: string | null;
+  // Economic surprise -100..+100 (positive = above consensus); null without an actual.
+  score: number | null;
+}
+
 export interface MacroState {
   asOf: string;
   regime: MacroRegime;
   market: MarketSnapshot;
   upcoming: ScheduledEvent[];
+  // Full calendar table (last 7d + next 14d) for the lens, with actuals.
+  calendar: CalendarRow[];
   active: EventState | null;
   recent: EventState[];
   scores: Record<MacroAsset, MacroScores>;

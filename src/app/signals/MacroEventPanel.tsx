@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { CalendarClock, CheckCircle2, ChevronDown, Clock, Droplets, Radio, ShieldAlert, Zap } from "lucide-react"
-import type { AssetImpact, Confidence, Direction, EventState, Importance, MacroAsset, MacroScores, MacroState, ScheduledEvent, SnapshotKey } from "@/lib/macro/types"
+import type { AssetImpact, CalendarRow, Confidence, Direction, EventState, Importance, MacroAsset, MacroScores, MacroState, ScheduledEvent, SnapshotKey } from "@/lib/macro/types"
 import type { ScenarioGuide as ScenarioGuideData } from "@/lib/macro/scenarios"
 import type { WeeklyOilRelease } from "@/lib/macro/oil-weekly"
 import { formatCompactCountdown, formatCountdown, formatDataAge, formatLocalDateTime, formatLocalTime, formatTimeAgo, urgencyFor } from "@/lib/macro/format"
@@ -113,6 +113,124 @@ export function NextEventsStrip({ events }: { events: ScheduledEvent[] | undefin
           </span>
         )
       })}
+    </div>
+  )
+}
+
+// ── Economic calendar table: last 7d with actuals, next 14d with consensus ──
+
+const kindTag: Partial<Record<CalendarRow["kind"], string>> = {
+  housing: "housing",
+  inflation: "inflation",
+  labor_strength: "labor",
+  labor_weakness: "labor",
+  wages: "wages",
+  growth: "growth",
+  policy_rate: "fed",
+  fed_communication: "fed",
+  oil_inventory: "oil",
+  oil_product_inventory: "oil",
+  oil_production: "oil",
+  sentiment: "sentiment",
+  auction: "treasury",
+}
+
+const dayLabel = (iso: string) => new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" }).format(new Date(iso))
+const timeLabel = (iso: string) => new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(iso))
+
+export function EconomicCalendar({ rows, isLoading }: { rows: CalendarRow[] | undefined; isLoading?: boolean }) {
+  const now = useNow(15_000)
+  const [showPast, setShowPast] = useState(true)
+  if (!rows || rows.length === 0) {
+    if (!isLoading) return null
+    return <div className="rounded-xl border border-white/[0.07] px-3 py-3 text-[11px] text-white/40">Loading economic calendar…</div>
+  }
+  const list = rows.filter((r) => showPast || !r.released)
+  const groups: { day: string; rows: CalendarRow[] }[] = []
+  for (const r of list) {
+    const day = dayLabel(r.time)
+    const g = groups[groups.length - 1]
+    if (g && g.day === day) g.rows.push(r)
+    else groups.push({ day, rows: [r] })
+  }
+  const pastCount = rows.filter((r) => r.released).length
+  const cell = "px-2 py-1.5 font-mono text-[11px] whitespace-nowrap"
+  return (
+    <div id="sec-calendar" className="rounded-xl border border-white/[0.07] bg-[rgb(var(--surface-rgb,10_14_23)/0.45)] backdrop-blur-md">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+        <CalendarClock className="size-3.5" style={{ color: "var(--brand, #9CA3AF)" }} />
+        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--brand, #9CA3AF)" }}>Economic calendar</span>
+        <span className="text-[10px] text-white/30">last 7d with actuals · next 14d with consensus · medium impact and up</span>
+        {pastCount > 0 && (
+          <button type="button" onClick={() => setShowPast((v) => !v)} className="ml-auto text-[10px] text-white/45 hover:text-white/80">
+            {showPast ? "hide released" : `show released (${pastCount})`}
+          </button>
+        )}
+      </div>
+      <div className="max-h-[28rem] overflow-auto border-t border-white/[0.05]">
+        <table className="w-full border-collapse">
+          <thead className="sticky top-0 bg-[rgb(var(--surface-rgb,10_14_23))] text-[9px] uppercase tracking-wider text-white/35">
+            <tr>
+              <th className="px-2 py-1.5 text-left font-semibold">Time</th>
+              <th className="px-2 py-1.5 text-left font-semibold">Release</th>
+              <th className="px-2 py-1.5 text-right font-semibold">Actual</th>
+              <th className="px-2 py-1.5 text-right font-semibold">Forecast</th>
+              <th className="px-2 py-1.5 text-right font-semibold">Previous</th>
+              <th className="px-2 py-1.5 text-left font-semibold">Read</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((g) => (
+              <React.Fragment key={g.day}>
+                <tr>
+                  <td colSpan={6} className="bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-white/55">{g.day}</td>
+                </tr>
+                {g.rows.map((r) => {
+                  const s = Math.round((new Date(r.time).getTime() - now) / 1000)
+                  const u = r.released ? "normal" : urgencyFor(s)
+                  const c = impColor[r.importance]
+                  const hot = !r.released && (u === "now" || u === "urgent" || u === "strong")
+                  const tag = kindTag[r.kind]
+                  const text = r.kind === "fed_communication" || r.kind === "auction"
+                  return (
+                    <tr key={r.id} className={`border-t border-white/[0.04] ${hot ? "bg-[#FF3B5C]/[0.04]" : ""} ${r.released ? "text-white/60" : "text-white/80"}`} title={formatLocalDateTime(r.time)}>
+                      <td className={cell}>
+                        <span className="text-white/55">{timeLabel(r.time)}</span>
+                        {!r.released && <span className={`ml-1.5 ${hot ? "text-[#FF3B5C] font-bold" : "text-white/35"}`}>{s <= 0 ? "now" : formatCompactCountdown(s)}</span>}
+                      </td>
+                      <td className="px-2 py-1.5 text-[11px]">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: c }} />
+                          <span className={`font-sans ${r.released ? "text-white/70" : "text-white/85"}`}>{r.title}</span>
+                          {tag && (
+                            <span className="rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide" style={{ color: r.kind === "housing" ? "var(--brand, #9CA3AF)" : "rgba(255,255,255,0.35)", backgroundColor: r.kind === "housing" ? "rgb(var(--brand-rgb,156_163_175)/0.12)" : "rgba(255,255,255,0.05)" }}>
+                              {tag}
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                      <td className={`${cell} text-right ${r.actualRaw ? "font-bold text-white" : "text-white/30"}`}>
+                        {r.actualRaw ?? (r.released && !text ? "awaiting" : "—")}
+                      </td>
+                      <td className={`${cell} text-right`} title={r.forecastSource ?? undefined}>
+                        {r.forecastRaw ? `${r.forecastRaw}${r.forecastSource ? "*" : ""}` : "—"}
+                      </td>
+                      <td className={`${cell} text-right`}>{r.previousRaw ?? "—"}</td>
+                      <td className="px-2 py-1.5 text-[11px]">
+                        {r.read ? (
+                          <span style={{ color: r.score != null && Math.abs(r.score) >= 20 ? "#F59E0B" : "rgba(255,255,255,0.6)" }}>{r.read}</span>
+                        ) : (
+                          <span className="text-white/25">{text ? "market read after release" : r.released ? "" : "pending"}</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

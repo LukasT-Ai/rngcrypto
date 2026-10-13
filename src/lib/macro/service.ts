@@ -1,4 +1,4 @@
-import type { Alert, EventPhase, EventState, Importance, MacroAsset, MacroRegime, MacroScores, MacroState, MarketSnapshot, ReactionPoint, ScheduledEvent, SnapshotKey, StoredRelease } from "./types";
+import type { Alert, CalendarRow, EventPhase, EventState, Importance, MacroAsset, MacroRegime, MacroScores, MacroState, MarketSnapshot, ReactionPoint, ScheduledEvent, SnapshotKey, StoredRelease } from "./types";
 import { MACRO_ASSETS, REACTION_SCHEDULE, SNAPSHOT_KEYS } from "./types";
 import { defFor, getMacroEvents } from "./calendar";
 import { formatValue } from "./taxonomy";
@@ -13,6 +13,64 @@ import { bestHistoricalStats, findRelease, getStoredReleases, rollingSurpriseSD,
 import { buildWeeklyOil } from "./oil-weekly";
 import { deriveAlerts } from "./alerts";
 import { summarizeOutcome } from "./outcome";
+import { fetchFxStreet, fxActualFor } from "./fxstreet";
+
+// Economic calendar table: last 7 days (with actuals) and next 14 days, medium importance and up, per lens.
+const CAL_BACK = 7 * 86400e3;
+const CAL_AHEAD = 14 * 86400e3;
+
+async function buildCalendar(asset: MacroAsset | null, now: number): Promise<CalendarRow[]> {
+  const events = await getMacroEvents(now - CAL_BACK, now + CAL_AHEAD);
+  const fx = await fetchFxStreet();
+  const stored = getStoredReleases();
+  const live = [...rt.states.values()];
+  const rows: CalendarRow[] = [];
+  for (const e of events) {
+    if (!relevantTo(asset, e.defId) || rank[e.importance] < rank.medium) continue;
+    const def = defFor(e.defId);
+    const t = new Date(e.time).getTime();
+    const released = t <= now;
+    let actual: number | null = null;
+    let actualRaw: string | null = null;
+    if (released && def.unit !== "text") {
+      // Verified live state first, then the stored history, then the calendar feed's own actual.
+      const st = live.find((s) => s.event.id === e.id);
+      if (st?.release?.actual) {
+        actual = st.release.actual.value;
+        actualRaw = st.release.actual.raw;
+      } else {
+        const rec = stored.find((r) => r.id === e.id) ?? stored.find((r) => r.defId === e.defId && Math.abs(new Date(r.eventTime).getTime() - t) < 12 * 3600e3);
+        if (rec?.actual != null) {
+          actual = rec.actual;
+          actualRaw = rec.actualRaw ?? formatValue(rec.actual, def.unit, def.decimals);
+        } else {
+          const fa = fxActualFor(fx, e.defId, e.time);
+          if (fa) {
+            actual = fa.value;
+            actualRaw = fa.raw;
+          }
+        }
+      }
+    }
+    const sur = actual != null ? computeSurprise(def, actual, e.forecast, e.previous) : null;
+    rows.push({
+      id: e.id,
+      defId: e.defId,
+      title: e.title,
+      time: e.time,
+      importance: e.importance,
+      kind: def.kind,
+      forecastRaw: e.forecastRaw,
+      forecastSource: e.forecastSource ?? null,
+      previousRaw: e.previousRaw,
+      actualRaw,
+      released,
+      read: sur && sur.score != null ? sur.label : null,
+      score: sur?.score ?? null,
+    });
+  }
+  return rows.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+}
 
 // Configurable blend (also surfaced in the API so the UI can show it).
 export const MACRO_WEIGHTS = {
@@ -399,11 +457,14 @@ export async function getMacroState(asset: MacroAsset | null = null): Promise<Ma
   const nextBig = upcomingAll.find((e) => rank[e.importance] >= rank.high && new Date(e.time).getTime() - now <= 15 * 60e3);
   const preEventRisk = nextBig ? { event: nextBig, minutes: Math.max(0, Math.round((new Date(nextBig.time).getTime() - now) / 60e3)), importance: nextBig.importance } : null;
 
+  const calendar = await buildCalendar(asset, now);
+
   const state: MacroState = {
     asOf: new Date(now).toISOString(),
     regime,
     market,
     upcoming,
+    calendar,
     active,
     recent,
     scores,

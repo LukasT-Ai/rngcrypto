@@ -26,7 +26,7 @@ export interface FxItem {
 const BASE = "https://calendar-api.fxstreet.com/en/api/v1/eventDates";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; rngcrypto-signals)", Referer: "https://www.fxstreet.com/", Accept: "application/json" };
 const TTL = 10 * 60_000;
-const BACK_DAYS = 3;
+const BACK_DAYS = 7;
 const AHEAD_DAYS = 21;
 
 let cache: { items: FxItem[]; at: number; ok: boolean } | null = null;

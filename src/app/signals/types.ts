@@ -1,4 +1,8 @@
 import type { AssetImpact, Importance, MacroScores } from "@/lib/macro/types"
+import type { SignalFeatures } from "@/lib/signals/features/types"
+
+// Phase 4 keyless feature feeds (design F2); produced by be-features, every sub-object nullable except session.
+export type { SignalFeatures, FundingFeature, OiFeature, CvdFeature, BookFeature, VolFeature, BasisFeature, MacroRatesFeature, StablecoinFeature, SessionFeature } from "@/lib/signals/features/types"
 
 // ---------------------------------------------------------------------------
 // Verdict v2 contract (research/design-ux-ui.md F1.1). Every field is optional and nullable until the producing
@@ -300,6 +304,7 @@ export interface SignalsResponse {
     liquidations: LiquidationInfo | null
   }
   orderBook?: OrderBookInfo | null
+  features?: SignalFeatures | null
   regime?: RegimeInfo | null
   divergences: {
     rsiDivergence15m: string | null

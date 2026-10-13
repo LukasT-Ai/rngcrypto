@@ -1,4 +1,71 @@
-import type { AssetImpact, MacroScores } from "@/lib/macro/types"
+import type { AssetImpact, Importance, MacroScores } from "@/lib/macro/types"
+
+// ---------------------------------------------------------------------------
+// Verdict v2 contract (research/design-ux-ui.md F1.1). Every field is optional and nullable until the producing
+// backend phase ships; the UI renders a defined fallback for each null.
+// ---------------------------------------------------------------------------
+
+export type CallMode = "trend" | "reversion" | "standby"
+export type InvalidationKind = "stop" | "regime" | "structure"
+export type FlipDirection = "to_long" | "to_short" | "to_wait"
+export type EventWindowState = "none" | "pre" | "blackout" | "releasing" | "post"
+export type FirstMoveGate = "pending" | "confirmed" | "failed"
+export type HoldTF = "15m" | "1h" | "4h" | "1d"
+
+export interface CallInvalidation {
+  level: number
+  kind: InvalidationKind
+  reason: string
+}
+
+export interface CallFlip {
+  text: string
+  factor: string
+  distance: number
+  direction: FlipDirection
+}
+
+export interface ExpectedHold {
+  medianMin: number
+  p25Min: number
+  p75Min: number
+  n: number
+  tf: HoldTF
+}
+
+export interface CallBlocks {
+  trend: number
+  timing: number
+  flow: number
+}
+
+export interface EventWindow {
+  state: EventWindowState
+  eventId: string
+  title: string
+  importance: Importance
+  minutesTo: number
+  minutesLeft: number
+  sizeMultiplier: number
+  stopMultiplier: number
+  firstMoveGate: FirstMoveGate | null
+}
+
+export interface SizingPart {
+  key: string
+  mult: number
+  reason: string
+}
+
+export interface CallSizing {
+  final: number
+  parts: SizingPart[]
+}
+
+export interface MacroCoupling {
+  corr30d: number
+  mult: number
+}
 
 // Response shapes for /api/signals, /api/signals/market-map and /api/signals/history.
 // recommendation.ts imports these through dashboard.tsx, which re-exports them.
@@ -120,6 +187,8 @@ export interface RegimeInfo {
   gate: "none" | "blocked_long" | "blocked_short" | "counter_trend"
   perTF: Partial<Record<RegimeTF, RegimeTFInfo>>
   notes: string[]
+  /** F2.8 macro coupling multiplier (Phase 3.3). Null or absent until the engine emits it. */
+  macroCoupling?: MacroCoupling | null
 }
 
 export interface SignalsResponse {
@@ -230,7 +299,34 @@ export interface SignalsResponse {
     sizeMultiplier?: number
     // Optional: how the engine suggests entering. Absent on older engine builds.
     entryType?: "market" | "limit" | null
+    // ── Verdict v2 (F1.1). All optional; see the fallback column in the design doc. ──
+    /** Calibrated P(TP1) in 0..1, gated at n >= 100 decided calls. Fallback: show `confidence` as "evidence". */
+    pTp1?: number | null
+    /** [lo, hi] interval for pTp1 in 0..1. */
+    pTp1Ci?: [number, number] | null
+    /** Raw (uncalibrated) confidence, tooltip only. */
+    confidenceRaw?: number
+    calibrationVersion?: string | null
+    /** Stop plus structural reason. Fallback: `invalidates[0]`. */
+    invalidation?: CallInvalidation | null
+    /** Two smallest flip distances. Fallback: reco.confirmation / reco.butWatch. */
+    flips?: CallFlip[] | null
+    /** Hold-time bucket (symbol x bias x regime). Fallback: `expectedDuration` string labelled "estimate". */
+    expectedHold?: ExpectedHold | null
+    horizonMin?: number | null
+    /** Strategy family chosen by regime and ADX. Chip hidden when null. */
+    mode?: CallMode | null
+    /** TREND / TIMING / FLOW block scores, -100..100. Header tally shown when null. */
+    blocks?: CallBlocks | null
+    /** Universal event gate state. Bar hidden when null or state === "none". */
+    eventWindow?: EventWindow | null
+    /** Size multiplier with its parts. Fallback: `sizeMultiplier`. */
+    sizing?: CallSizing | null
+    /** Stop anchor label ("4h swing", "1h swing", "AVWAP"). Shown on the STOP tile when present. */
+    stopAnchor?: string | null
   }
+  /** Feed names that were down at call time (engine audit 4.8). Empty or absent means all feeds were up. */
+  degraded?: string[]
   anticipatory: {
     approachingLevels: Array<{
       level: number

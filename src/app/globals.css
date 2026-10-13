@@ -241,3 +241,31 @@
 }
 .scrollbar-none::-webkit-scrollbar { display: none; }
 .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Signal pages: section entrance (once per mount) and the reduced-motion contract */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rise-in { animation: rise-in 200ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rise-in,
+  .pulse-live,
+  .skeleton,
+  .animate-hot-scroll,
+  .flash-gain,
+  .flash-loss,
+  .animate-ping,
+  .animate-pulse,
+  .animate-in,
+  .animate-out {
+    animation: none !important;
+  }
+  .signals-root *,
+  .signals-root *::before,
+  .signals-root *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

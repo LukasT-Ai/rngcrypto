@@ -1,0 +1,336 @@
+{
+  "generatedAt": "2026-10-13T09:44:44.225Z",
+  "source": "data\\backtests\\wave2\\backtest-2026-10-13-09-44-44-final120.json (120d, 2026.10.13-wave2-09c7c7)",
+  "buckets": {
+    "BTC|LONG|Transition": {
+      "n": 10,
+      "p25": 403,
+      "median": 1240,
+      "p75": 1341
+    },
+    "BTC|LONG|*": {
+      "n": 63,
+      "p25": 118,
+      "median": 400,
+      "p75": 945
+    },
+    "*|LONG|Transition": {
+      "n": 137,
+      "p25": 65,
+      "median": 225,
+      "p75": 895
+    },
+    "*|LONG|*": {
+      "n": 586,
+      "p25": 75,
+      "median": 260,
+      "p75": 804
+    },
+    "*|*|*": {
+      "n": 707,
+      "p25": 80,
+      "median": 290,
+      "p75": 875
+    },
+    "BTC|SHORT|Bear regime": {
+      "n": 20,
+      "p25": 80,
+      "median": 465,
+      "p75": 1440
+    },
+    "BTC|SHORT|*": {
+      "n": 20,
+      "p25": 80,
+      "median": 465,
+      "p75": 1440
+    },
+    "*|SHORT|Bear regime": {
+      "n": 121,
+      "p25": 85,
+      "median": 505,
+      "p75": 1310
+    },
+    "*|SHORT|*": {
+      "n": 121,
+      "p25": 85,
+      "median": 505,
+      "p75": 1310
+    },
+    "BTC|LONG|Mixed": {
+      "n": 28,
+      "p25": 170,
+      "median": 383,
+      "p75": 850
+    },
+    "*|LONG|Mixed": {
+      "n": 194,
+      "p25": 86,
+      "median": 318,
+      "p75": 860
+    },
+    "BTC|LONG|Bull regime": {
+      "n": 25,
+      "p25": 115,
+      "median": 370,
+      "p75": 650
+    },
+    "*|LONG|Bull regime": {
+      "n": 255,
+      "p25": 70,
+      "median": 225,
+      "p75": 663
+    },
+    "ETH|LONG|Transition": {
+      "n": 20,
+      "p25": 80,
+      "median": 365,
+      "p75": 1436
+    },
+    "ETH|LONG|*": {
+      "n": 85,
+      "p25": 65,
+      "median": 300,
+      "p75": 1005
+    },
+    "ETH|LONG|Mixed": {
+      "n": 38,
+      "p25": 78,
+      "median": 298,
+      "p75": 699
+    },
+    "ETH|SHORT|Bear regime": {
+      "n": 9,
+      "p25": 190,
+      "median": 210,
+      "p75": 680
+    },
+    "ETH|SHORT|*": {
+      "n": 9,
+      "p25": 190,
+      "median": 210,
+      "p75": 680
+    },
+    "ETH|LONG|Bull regime": {
+      "n": 27,
+      "p25": 20,
+      "median": 225,
+      "p75": 975
+    },
+    "BNB|SHORT|Bear regime": {
+      "n": 24,
+      "p25": 149,
+      "median": 460,
+      "p75": 1343
+    },
+    "BNB|SHORT|*": {
+      "n": 24,
+      "p25": 149,
+      "median": 460,
+      "p75": 1343
+    },
+    "BNB|LONG|Transition": {
+      "n": 12,
+      "p25": 441,
+      "median": 1068,
+      "p75": 1440
+    },
+    "BNB|LONG|*": {
+      "n": 67,
+      "p25": 135,
+      "median": 555,
+      "p75": 1183
+    },
+    "BNB|LONG|Mixed": {
+      "n": 28,
+      "p25": 160,
+      "median": 608,
+      "p75": 898
+    },
+    "BNB|LONG|Bull regime": {
+      "n": 27,
+      "p25": 88,
+      "median": 250,
+      "p75": 783
+    },
+    "ADA|LONG|Mixed": {
+      "n": 26,
+      "p25": 68,
+      "median": 248,
+      "p75": 541
+    },
+    "ADA|LONG|*": {
+      "n": 74,
+      "p25": 56,
+      "median": 240,
+      "p75": 556
+    },
+    "ADA|SHORT|Bear regime": {
+      "n": 14,
+      "p25": 43,
+      "median": 533,
+      "p75": 1395
+    },
+    "ADA|SHORT|*": {
+      "n": 14,
+      "p25": 43,
+      "median": 533,
+      "p75": 1395
+    },
+    "ADA|LONG|Transition": {
+      "n": 20,
+      "p25": 55,
+      "median": 270,
+      "p75": 580
+    },
+    "ADA|LONG|Bull regime": {
+      "n": 28,
+      "p25": 64,
+      "median": 183,
+      "p75": 466
+    },
+    "XRP|LONG|Transition": {
+      "n": 10,
+      "p25": 90,
+      "median": 150,
+      "p75": 698
+    },
+    "XRP|LONG|*": {
+      "n": 51,
+      "p25": 78,
+      "median": 165,
+      "p75": 708
+    },
+    "XRP|SHORT|Bear regime": {
+      "n": 37,
+      "p25": 385,
+      "median": 830,
+      "p75": 1420
+    },
+    "XRP|SHORT|*": {
+      "n": 37,
+      "p25": 385,
+      "median": 830,
+      "p75": 1420
+    },
+    "XRP|LONG|Mixed": {
+      "n": 22,
+      "p25": 83,
+      "median": 220,
+      "p75": 843
+    },
+    "XRP|LONG|Bull regime": {
+      "n": 19,
+      "p25": 40,
+      "median": 165,
+      "p75": 308
+    },
+    "SOL|LONG|Transition": {
+      "n": 23,
+      "p25": 53,
+      "median": 115,
+      "p75": 285
+    },
+    "SOL|LONG|*": {
+      "n": 82,
+      "p25": 56,
+      "median": 200,
+      "p75": 721
+    },
+    "SOL|LONG|Mixed": {
+      "n": 30,
+      "p25": 89,
+      "median": 285,
+      "p75": 835
+    },
+    "SOL|SHORT|Bear regime": {
+      "n": 13,
+      "p25": 85,
+      "median": 235,
+      "p75": 565
+    },
+    "SOL|SHORT|*": {
+      "n": 13,
+      "p25": 85,
+      "median": 235,
+      "p75": 565
+    },
+    "SOL|LONG|Bull regime": {
+      "n": 29,
+      "p25": 50,
+      "median": 420,
+      "p75": 860
+    },
+    "NEAR|LONG|Bull regime": {
+      "n": 45,
+      "p25": 50,
+      "median": 125,
+      "p75": 360
+    },
+    "NEAR|LONG|*": {
+      "n": 69,
+      "p25": 50,
+      "median": 195,
+      "p75": 645
+    },
+    "NEAR|LONG|Mixed": {
+      "n": 4,
+      "p25": 1104,
+      "median": 1440,
+      "p75": 1440
+    },
+    "NEAR|LONG|Transition": {
+      "n": 20,
+      "p25": 41,
+      "median": 208,
+      "p75": 499
+    },
+    "NEAR|SHORT|Bear regime": {
+      "n": 2,
+      "p25": 284,
+      "median": 323,
+      "p75": 361
+    },
+    "NEAR|SHORT|*": {
+      "n": 2,
+      "p25": 284,
+      "median": 323,
+      "p75": 361
+    },
+    "ZEC|LONG|Transition": {
+      "n": 22,
+      "p25": 56,
+      "median": 113,
+      "p75": 303
+    },
+    "ZEC|LONG|*": {
+      "n": 95,
+      "p25": 98,
+      "median": 240,
+      "p75": 998
+    },
+    "ZEC|LONG|Mixed": {
+      "n": 18,
+      "p25": 80,
+      "median": 283,
+      "p75": 1096
+    },
+    "ZEC|SHORT|Bear regime": {
+      "n": 2,
+      "p25": 180,
+      "median": 305,
+      "p75": 430
+    },
+    "ZEC|SHORT|*": {
+      "n": 2,
+      "p25": 180,
+      "median": 305,
+      "p75": 430
+    },
+    "ZEC|LONG|Bull regime": {
+      "n": 55,
+      "p25": 160,
+      "median": 290,
+      "p75": 1058
+    }
+  }
+}

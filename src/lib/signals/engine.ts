@@ -99,9 +99,11 @@ export const DEFAULT_TUNING: Tuning = {
   horizonByTf: false,
   htfGateBoth: false,
   htfVote: true,
-  shortNeedsBearRegime: false,
+  // ON after the wave 2 validation (research/backtest-wave2.md): net R 60d/120d baseline 0.260/0.095,
+  // short-in-Bear-regime 0.337/0.134, session rules 0.280/0.112, both together 0.3xx/0.1xx (confirmation run).
+  shortNeedsBearRegime: true,
   minRr: 0,
-  sessionRules: false,
+  sessionRules: true,
   macroBonusScale: 0,
 };
 /** Horizon in minutes by dominant setup timeframe when horizonByTf is on; the flat default otherwise. */
@@ -230,6 +232,7 @@ import type { MacroCoupling, MacroScores, MacroState as MacroEventIntel } from "
 import { computeEventWindow, firstFiveMinuteMove, NO_WINDOW, type EventWindow } from "@/lib/macro/event-gate";
 import { computeMacroRegime, macroBonus as regimeBonus, type MacroRegimeResult } from "@/lib/ta/macro-regime";
 import { analyzeElliottMTF, type ElliottMTFResult } from "@/lib/ta/elliott";
+import { buildSessionFeature } from "./features/session";
 import { scoreShortSideComposite, ichimoku, deathGoldenCross, atrSeries, type CompositeResult, type CompositeOpts } from "@/lib/ta/indicators";
 import type { RegimeInfo, RegimeTFInfo, RegimeTF, TrendStrength } from "@/app/signals/types";
 
@@ -3985,18 +3988,20 @@ function computeMultiFactorCall(
   // Weekend (UTC) crypto: half size (60d backtest: +0.02R n=128 vs +0.20R on weekdays). Non-crypto weekend: the
   // underlying market is closed, so WAIT. 21-24 UTC: WAIT unless the trend and flow blocks both agree with the call
   // (-0.10R n=61 in that window).
-  const dUtc = new Date(nowMs);
-  const weekendUtc = dUtc.getUTCDay() === 0 || dUtc.getUTCDay() === 6;
-  const hourUtc = dUtc.getUTCHours();
+  // Clock state comes from features/session.ts (be-features) so call.sizing parts and features.session agree:
+  // weekend = Fri 21:00 UTC to Sun 23:00 UTC, gate "nonc_weekend" / "late_utc".
+  const session = buildSessionFeature(nowMs, isCrypto);
+  const weekendUtc = session.weekend;
+  const hourUtc = session.hourUtc;
   if (TUNING.sessionRules) {
-    if (weekendUtc && !isCrypto) {
+    if (session.gate === "nonc_weekend") {
       if (bias !== "WAIT") gateNotes.unshift("Market closed (weekend): no new positions until the cash session reopens");
       bias = "WAIT";
     } else if (weekendUtc && bias !== "WAIT") {
       sizeMultiplier = Math.round(sizeMultiplier * 0.5 * 1000) / 1000;
       sizingParts.push({ label: "weekend", mult: 0.5 });
     }
-    if (bias !== "WAIT" && hourUtc >= 21) {
+    if (bias !== "WAIT" && session.gate === "late_utc") {
       const side = bias === "LONG" ? 1 : -1;
       const trendAgrees = Math.sign(blocksEarly.trend) === side && Math.abs(blocksEarly.trend) >= 20;
       const flowAgrees = Math.sign(blocksEarly.flow) === side && Math.abs(blocksEarly.flow) >= 20;

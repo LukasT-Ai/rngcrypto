@@ -60,15 +60,15 @@ afterEach(() => {
 });
 
 describe("wave 2 defaults", () => {
-  it("every structural knob is OFF by default and the macro bonus is frozen", () => {
+  it("validated knobs are ON (short-in-Bear-regime, session rules); the rest OFF; macro bonus frozen", () => {
     expect(DEFAULT_TUNING.mrWithRegime).toBe(false);
     expect(DEFAULT_TUNING.breakevenAfterTp1).toBe(false);
     expect(DEFAULT_TUNING.horizonByTf).toBe(false);
     expect(DEFAULT_TUNING.htfGateBoth).toBe(false);
     expect(DEFAULT_TUNING.htfVote).toBe(true);
-    expect(DEFAULT_TUNING.shortNeedsBearRegime).toBe(false);
+    expect(DEFAULT_TUNING.shortNeedsBearRegime).toBe(true);
     expect(DEFAULT_TUNING.minRr).toBe(0);
-    expect(DEFAULT_TUNING.sessionRules).toBe(false);
+    expect(DEFAULT_TUNING.sessionRules).toBe(true);
     expect(DEFAULT_TUNING.macroBonusScale).toBe(0);
     expect(HORIZON_MIN_BY_TF).toEqual({ "15m": 720, "1h": 2160, "4h": 5760, "1d": 5760 });
     expect(DEFAULT_HORIZON_MIN).toBe(1440);

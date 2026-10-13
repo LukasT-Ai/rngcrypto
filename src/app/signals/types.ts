@@ -43,10 +43,15 @@ export interface CallBlocks {
 export interface SessionFeature {
   name: "asia" | "london" | "us" | "off"
   weekend: boolean
-  volMult?: number | null
-  sizeMult?: number | null
+  /** Volatility scale by session (US 1.3, Asia 0.8, London 1.0, off 0.9, weekend 0.7). */
+  volScale?: number | null
+  lowLiquidity?: boolean
+  /** Confidence haircut in percent (10 on weekends). The size multiplier itself lives on call.sizing. */
+  haircutPct?: number | null
   gate?: "none" | "late_utc" | "nonc_weekend" | string | null
-  label?: string | null
+  asOf?: number
+  ttlMs?: number
+  hourUtc?: number
 }
 
 /** Phase 4 feature block (F2). Only `session` is consumed here; ui-flow declares the other members. */

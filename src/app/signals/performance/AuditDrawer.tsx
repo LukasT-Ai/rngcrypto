@@ -24,7 +24,7 @@ const rAt = (s: AuditRow, price: number | null | undefined, fill?: number | null
 
 function buildTimeline(s: AuditRow, res: AuditRecord["resolution"] | null): Step[] {
   const steps: Step[] = []
-  const fillPrice = res?.fillPrice ?? (s.fillStatus === "filled" ? s.entry : null)
+  const fillPrice = res?.fillPrice ?? s.fillPrice ?? (s.fillStatus === "filled" ? s.entry : null)
   steps.push({ at: s.timestamp, label: `Call published (${s.bias} ${s.symbol}, entry ${fmtPrice(s.entry)})`, kind: "info" })
   if (res?.firstEligibleCandle != null) steps.push({ at: res.firstEligibleCandle, label: "First eligible candle", kind: "eligible" })
   const fillAt = res?.fillCandle ?? s.filledAt
@@ -37,8 +37,8 @@ function buildTimeline(s: AuditRow, res: AuditRecord["resolution"] | null): Step
   else if (!res && s.closedReason === "stop" && s.closedAt != null) steps.push({ at: s.closedAt, label: "Stop touched", price: s.stopLoss, r: rAt(s, s.stopLoss, fillPrice), kind: "stop" })
   if (res?.horizonEnd != null) steps.push({ at: res.horizonEnd, label: (res.closedReason ?? s.closedReason) === "horizon" ? "Horizon reached, exited at last close" : "Horizon end", kind: "horizon" })
   else if (!res && s.closedReason === "horizon" && s.closedAt != null) steps.push({ at: s.closedAt, label: "Horizon reached, exited at last close", kind: "horizon" })
-  const gross = res?.grossR ?? s.grossR ?? s.realizedR
-  const net = res?.netR ?? s.netR
+  const gross = res?.grossR ?? s.realizedR
+  const net = res?.netR ?? s.realizedNetR
   const cost = res?.costR ?? s.costR
   if (!s.open && !s.excluded && (gross != null || net != null)) steps.push({ at: s.closedAt ?? null, label: `Result: ${fmtR(gross)} gross${net != null ? `, ${fmtR(net)} net` : ""}${cost != null ? ` (cost ${fmtR(-Math.abs(cost))})` : ""}`, kind: "cost" })
   return steps.sort((a, b) => (a.at ?? Infinity) - (b.at ?? Infinity))
@@ -97,7 +97,7 @@ export default function AuditDrawer({ row, onClose }: { row: AuditRow | null; on
   const timeline = useMemo(() => (row ? buildTimeline(row, res) : []), [row, res])
   const reason = res?.reasonText ?? row?.reasonText ?? row?.outcomeLabel ?? null
   const fillAt = res?.fillCandle ?? row?.filledAt ?? null
-  const gap = res?.coverageGap
+  const gap = res?.coverageGap ?? (row?.coverageGap ? true : null)
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
@@ -152,9 +152,9 @@ export default function AuditDrawer({ row, onClose }: { row: AuditRow | null; on
                   </ol>
                   <div className="mt-4">
                     <Kv k="Closed reason" v={res?.closedReason ?? row.closedReason ?? (row.open ? "open" : "—")} mono={false} />
-                    <Kv k="Gross R" v={fmtR(res?.grossR ?? row.grossR ?? row.realizedR)} />
-                    <Kv k="Net R" v={(res?.netR ?? row.netR) != null ? fmtR(res?.netR ?? row.netR) : "— not yet available"} />
-                    <Kv k="Cost" v={(res?.costR ?? row.costR) != null ? fmtR(-Math.abs((res?.costR ?? row.costR) as number)) : "—"} />
+                    <Kv k="Gross R" v={fmtR(res?.grossR ?? row.realizedR)} />
+                    <Kv k="Net R" v={(res?.netR ?? row.realizedNetR) != null ? fmtR(res?.netR ?? row.realizedNetR) : "— not yet available"} />
+                    <Kv k={row.costEstimated ? "Cost (estimated, no funding)" : "Cost"} v={(res?.costR ?? row.costR) != null ? fmtR(-Math.abs((res?.costR ?? row.costR) as number)) : "—"} />
                     <Kv k="MFE / MAE" v={`${row.mfeR == null ? "—" : `+${row.mfeR.toFixed(2)}`} / ${row.maeR == null ? "—" : `-${row.maeR.toFixed(2)}`}`} />
                     <Kv k="Stop · TP1 · TP2 · TP3" v={`${fmtPrice(row.stopLoss)} · ${fmtPrice(row.tp1)} · ${fmtPrice(row.tp2)} · ${fmtPrice(row.tp3)}`} />
                     <Kv k="Engine" v={inputs?.engineVersion ?? row.engineVersion} />

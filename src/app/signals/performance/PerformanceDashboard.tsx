@@ -552,7 +552,7 @@ export default function PerformanceDashboard() {
                     </thead>
                     <tbody>
                       {rows.map((s) => {
-                        const rShown = s.open ? null : s.excluded ? null : hasNet ? s.netR ?? s.realizedR : s.realizedR
+                        const rShown = s.open ? null : s.excluded ? null : hasNet ? s.realizedNetR ?? s.realizedR : s.realizedR
                         const reason = s.reasonText ?? null
                         return (
                           <React.Fragment key={s.id}>
@@ -565,7 +565,7 @@ export default function PerformanceDashboard() {
                               <td className="pl-4"><TpBadges s={s} /></td>
                               <td className="text-right font-mono tabular-nums whitespace-nowrap" style={{ color: rShown == null ? GRAY : rShown > 0 ? GREEN : rShown < 0 ? RED : "#F9FAFB" }}>
                                 {s.open ? (s.fillStatus === "pending" ? "pending fill" : "open") : s.excluded ? "n/a" : fmtR(rShown)}
-                                {!s.open && !s.excluded && hasNet && s.netR != null && <span className="text-white/50"> ({fmtR(s.realizedR)})</span>}
+                                {!s.open && !s.excluded && hasNet && s.realizedNetR != null && <span className="text-white/50"> ({fmtR(s.realizedR)})</span>}
                               </td>
                               <td className="text-right font-mono tabular-nums text-[#9CA3AF]">{s.mfeR == null ? "—" : `+${s.mfeR.toFixed(2)}`} / {s.maeR == null ? "—" : `-${s.maeR.toFixed(2)}`}</td>
                               <td className="text-right">
@@ -585,7 +585,7 @@ export default function PerformanceDashboard() {
                 </div>
                 <div className="md:hidden space-y-2">
                   {rows.map((s) => {
-                    const rShown = s.open ? null : s.excluded ? null : hasNet ? s.netR ?? s.realizedR : s.realizedR
+                    const rShown = s.open ? null : s.excluded ? null : hasNet ? s.realizedNetR ?? s.realizedR : s.realizedR
                     return (
                       <button type="button" key={s.id} onClick={() => setAuditRow(s)} className="block w-full text-left rounded-lg border border-white/[0.06] bg-black/20 p-3 text-xs space-y-1.5 transition-colors hover:border-white/20 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]">
                         <div className="flex items-center gap-2">

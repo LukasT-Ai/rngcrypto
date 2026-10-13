@@ -684,14 +684,21 @@ export interface PerformanceStatsV2 {
   }
 }
 
-/** Optional per-row additions on NormalizedSignal. */
+/** Optional per-row additions on NormalizedSignal (be-measure PR 04 names). realizedR stays gross. */
 export interface SignalRowV2 {
-  netR?: number | null
-  costR?: number | null
-  grossR?: number | null
-  reasonText?: string | null
-  pTp1?: number | null
   entryType?: "market" | "limit" | null
+  fillPrice?: number | null
+  costR?: number | null
+  /** true = legacy close, cost estimated without funding */
+  costEstimated?: boolean
+  realizedNetR?: number | null
+  shadow?: boolean
+  shadowClass?: string | null
+  coverageGap?: boolean
+  /** Plain-language resolution sentence (PR 13). */
+  reasonText?: string | null
+  /** Calibrated P(TP1) in percent (PR 17). */
+  pTp1?: number | null
 }
 
 /** Optional additions on open rows. */

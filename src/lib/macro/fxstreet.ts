@@ -94,6 +94,7 @@ const FX_ALIASES: Record<string, [RegExp, string][]> = {
     [/^core personal consumption expenditures - price index \(yoy\)$/i, "core_pce_yoy"],
     [/^personal consumption expenditures - price index \(mom\)$/i, "pce_mom"],
     [/^personal consumption expenditures - price index \(yoy\)$/i, "pce_yoy"],
+    [/^personal consumption expenditures prices \(qoq\)$/i, "pce_qq"],
     [/^core personal consumption expenditures \(qoq\)$/i, "core_pce_qq"],
     [/^gross domestic product price index$/i, "gdp_price"],
     [/^import price index \(mom\)$/i, "import_prices"],
@@ -105,6 +106,8 @@ const FX_ALIASES: Record<string, [RegExp, string][]> = {
     [/^nonfarm payrolls$/i, "nfp"],
     [/^nonfarm payrolls benchmark revision$/i, "nfp_benchmark"],
     [/^unemployment rate$/i, "unemployment"],
+    [/^labor force participation rate$/i, "participation"],
+    [/^u6 underemployment rate$/i, "u6"],
     [/^average hourly earnings \(mom\)$/i, "ahe_mom"],
     [/^average hourly earnings \(yoy\)$/i, "ahe_yoy"],
     [/^initial jobless claims$/i, "claims"],
@@ -141,6 +144,7 @@ const FX_ALIASES: Record<string, [RegExp, string][]> = {
     // Sentiment
     [/^consumer confidence$/i, "cb_confidence"],
     [/^michigan consumer sentiment index$/i, "uom_sentiment"],
+    [/^michigan consumer expectations index$/i, "uom_expectations"],
     [/^nfib business optimism index$/i, "nfib"],
     // Housing
     [/^housing starts \(mom\)$/i, "housing_starts"],
@@ -170,7 +174,9 @@ const FX_ALIASES: Record<string, [RegExp, string][]> = {
     [/^fed monetary policy report$/i, "fed_testimony"],
     [/^jackson hole symposium$/i, "jackson_hole"],
     [/^loan officer survey$/i, "sloos"],
-    [/^fed's .* speech$|^fed's beige book$|^fed's chair/i, "fed_speech"],
+    [/^fed's chair .* speech$/i, "fed_chair_speech"],
+    [/^interest rate projections - current$/i, "fed_dot_median"],
+    [/^fed's .* speech$|^fed's beige book$/i, "fed_speech"],
     [/^bank stress test results$/i, "fed_speech"],
     // Energy
     [/^eia crude oil stocks change$/i, "eia_crude"],
@@ -218,7 +224,7 @@ const FX_ALIASES: Record<string, [RegExp, string][]> = {
   ],
   JP: [
     [/^boj interest rate decision$/i, "boj_rate"],
-    [/^boj monetary policy statement$/i, "boj_statement"],
+    [/^boj (monetary policy statement|outlook report)$/i, "boj_statement"],
     [/^boj press conference$/i, "boj_presser"],
     [/^boj governor .* speech$/i, "boj_speech"],
     [/^tokyo consumer price index \(yoy\)$/i, "tokyo_cpi_yoy"],

@@ -263,7 +263,7 @@ export function ExtLink({ href, label, children, className, stop = true }: { hre
   )
 }
 
-/** Name or shortened address, with copy + explorer actions. */
+/** Name or shortened address, with a copy action. All detail stays inside the dashboard (no outbound links). */
 export function TraderName({ address, displayName, size = "sm" }: { address: string; displayName: string | null; size?: "sm" | "lg" }) {
   return (
     <span className="inline-flex min-w-0 items-center gap-1">
@@ -272,7 +272,6 @@ export function TraderName({ address, displayName, size = "sm" }: { address: str
         {displayName && <span className="font-mono text-[11px] text-white/45">{shortAddr(address)}</span>}
       </span>
       <CopyButton text={address} />
-      <ExtLink href={addressUrl(address)} label="Open on Hyperliquid explorer" />
     </span>
   )
 }

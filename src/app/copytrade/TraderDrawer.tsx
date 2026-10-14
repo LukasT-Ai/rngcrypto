@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useMemo, useState } from "react"
-import { AlertTriangle, ExternalLink, Wallet } from "lucide-react"
+import { AlertTriangle, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { AMBER, Chip, FOCUS_RING, GREEN, LABEL, RED, Tip } from "../signals/shared"
@@ -9,7 +9,7 @@ import { Kpi, Segmented } from "../signals/performance/perf-shared"
 import { RNG_THEME, themeStyle } from "../signals/themes"
 import type { Asset, AssetGroup, AssetStats, Mix, OpenPosition, Score, Stats30d, Trade, TraderDetail, TraderRow, Window } from "./types"
 import { ASSET_GROUPS } from "./types"
-import { Ago, CopyButton, GRADE_WORD, GROUP_COINS, MIX_COLORS, MixBar, MixLegend, SUBSCORES, ScoreChip, addressUrl, dirWord, fmtInt, fmtNum, fmtPct, fmtPx, fmtRate, fmtSize, fmtUsd, groupOf, posHealth, shortAddr, sideColor, signColor, tradeUrl, txUrl, utc, winRateColor } from "./ct-shared"
+import { Ago, CopyButton, GRADE_WORD, GROUP_COINS, MIX_COLORS, MixBar, MixLegend, SUBSCORES, ScoreChip, dirWord, fmtInt, fmtNum, fmtPct, fmtPx, fmtRate, fmtSize, fmtUsd, groupOf, posHealth, shortAddr, sideColor, signColor, utc, winRateColor } from "./ct-shared"
 import { useTrader } from "./useCopyTrade"
 import PnlChart from "./PnlChart"
 import { WINDOW_WORD } from "./TraderTable"
@@ -335,9 +335,9 @@ function TradesTable({ rows }: { rows: Trade[] }) {
               <td className={cn(TD, "text-right text-white/60")}>{fmtUsd(t.fee, { dp: 2 })}</td>
               <td className={cn(TD, "text-right")}>
                 {t.hash ? (
-                  <a href={txUrl(t.hash)} target="_blank" rel="noopener noreferrer" className={cn("inline-flex items-center gap-1 rounded text-white/60 hover:text-white", FOCUS_RING)} aria-label={`Open transaction ${t.hash} on Hyperliquid explorer`}>
-                    {shortAddr(t.hash)} <ExternalLink className="size-3" aria-hidden />
-                  </a>
+                  <span className="inline-flex items-center gap-1 text-white/60" title={t.hash}>
+                    {shortAddr(t.hash)} <CopyButton text={t.hash} />
+                  </span>
                 ) : (
                   <span className="text-white/40">—</span>
                 )}
@@ -358,9 +358,6 @@ export default function TraderDrawer({ row, asset, mock, onClose }: { row: Trade
   const { data, isLoading, isError, isFetching } = useTrader(row?.address ?? null, effAsset, mock)
   const d: TraderDetail | undefined = data
   const positions = useMemo(() => (d ? (effAsset === "ALL" ? d.openPositions : d.openPositions.filter((p) => GROUP_COINS[effAsset].includes(p.coin))) : []), [d, effAsset])
-  const explorer = d?.links?.hyperliquid ?? (row ? addressUrl(row.address) : "#")
-  // Market to open on Hyperliquid: the trader's own market inside the selected group, else the group's primary market.
-  const copyCoin = asset === "ALL" ? (row?.openForAsset?.coin ?? positions[0]?.coin ?? "BTC") : (row?.asset?.coins?.[0] ?? d?.perAsset?.[asset]?.coins?.[0] ?? GROUP_COINS[asset][0])
   const series = d ? (range === "month" ? d.pnlHistory.month : d.pnlHistory.allTime) : []
   const totalUpnl = d ? d.openPositions.reduce((s, p) => s + p.unrealizedPnl, 0) : row?.open.unrealizedPnl
   const score = d?.score ?? row?.score
@@ -393,17 +390,11 @@ export default function TraderDrawer({ row, asset, mock, onClose }: { row: Trade
               <div className="flex flex-wrap items-center gap-1 font-mono text-[11px] text-white/70">
                 <span className="break-all">{row.address}</span>
                 <CopyButton text={row.address} size="md" />
-                <a href={explorer} target="_blank" rel="noopener noreferrer" className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-[11px] text-white/70 hover:bg-white/[0.06] hover:text-white", FOCUS_RING)}>
-                  Open explorer <ExternalLink className="size-3" aria-hidden />
-                </a>
               </div>
             </SheetHeader>
 
             <div className="px-4 pb-8">
               <div className="flex flex-wrap items-center gap-2">
-                <a href={tradeUrl(copyCoin)} target="_blank" rel="noopener noreferrer" className={cn("inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[12px] font-bold text-[#06080F]", FOCUS_RING)} style={{ backgroundColor: "var(--brand, #00FF88)" }}>
-                  Copy on Hyperliquid · {copyCoin} <ExternalLink className="size-3.5" aria-hidden />
-                </a>
                 {asset !== "ALL" && (
                   <button type="button" aria-pressed={allCoins} onClick={() => setAllCoins((v) => !v)} className={cn("h-8 rounded-md border border-white/10 px-3 text-[12px] font-medium text-white/80 hover:bg-white/[0.06]", FOCUS_RING, allCoins && "bg-white/[0.08]")}>
                     {allCoins ? "Showing all coins" : `Showing ${asset} only`}

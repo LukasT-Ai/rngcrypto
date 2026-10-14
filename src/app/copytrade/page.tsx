@@ -3,7 +3,7 @@ import CopyTradeDashboard from "./CopyTradeDashboard"
 
 export const metadata: Metadata = {
   title: "Copy Trade | Top Hyperliquid Traders on BTC and ADA",
-  description: "Stack-ranked leaderboard of the best Hyperliquid perp traders filtered by asset: realized BTC and ADA PnL, win rate, volume, open positions and recent fills, with wallet addresses and explorer links.",
+  description: "Stack-ranked leaderboard of the best Hyperliquid perp traders filtered by asset: realized BTC and ADA PnL, win rate, volume, open positions and recent fills, with one-click wallet address copy.",
   openGraph: {
     title: "Copy Trade | RnGcrypto",
     description: "Top Hyperliquid traders on BTC and ADA: PnL, win rate, open positions and recent fills from public on-chain data.",

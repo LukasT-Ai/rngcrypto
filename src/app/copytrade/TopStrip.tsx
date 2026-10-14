@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 import { FOCUS_RING, SURFACE } from "../signals/shared"
 import type { SummaryKey, SummaryResponse, TraderRow } from "./types"
 import { ASSET_GROUPS } from "./types"
-import { CopyAddressButton, ExtLink, MIX_COLORS, ScoreChip, addressUrl, fmtRate, fmtUsd, shortAddr, signColor, winRateColor } from "./ct-shared"
+import { CopyAddressButton, MIX_COLORS, ScoreChip, fmtRate, fmtUsd, shortAddr, signColor, winRateColor } from "./ct-shared"
 
 const CARDS: { k: SummaryKey; l: string; sub: string }[] = [
   ...ASSET_GROUPS.map((g) => ({ k: g, l: g, sub: "top 5 · 30d" })),
@@ -18,7 +18,7 @@ const StripRow = memo(function StripRow({ r, card, onView }: { r: TraderRow; car
   const pnl = card === "COPYABLE" ? (r.stats30d?.pnlCopyable ?? null) : (a?.realizedPnl ?? null)
   const n = a ? a.wins + a.losses : 0
   return (
-    <li className="flex items-center gap-2 border-t border-white/[0.05] py-1.5 first:border-0">
+    <li onClick={() => onView(r)} className="flex cursor-pointer items-center gap-2 border-t border-white/[0.05] py-1.5 first:border-0 hover:bg-white/[0.03]">
       <span className="w-4 shrink-0 text-right font-mono text-[11px] tabular-nums text-white/45">{r.rank}</span>
       <button type="button" onClick={() => onView(r)} aria-label={`View ${r.displayName ?? r.address}`} className={cn("min-w-0 flex-1 truncate rounded text-left text-[12px] font-semibold text-white/90 hover:underline", FOCUS_RING)} style={{ textDecorationColor: "var(--brand)" }}>
         {r.displayName ?? <span className="font-mono font-medium">{shortAddr(r.address)}</span>}
@@ -33,8 +33,9 @@ const StripRow = memo(function StripRow({ r, card, onView }: { r: TraderRow; car
           {fmtRate(a?.winRate)}
         </span>
       )}
-      <CopyAddressButton text={r.address} />
-      <ExtLink href={addressUrl(r.address)} label="Open on Hyperliquid explorer" className="hidden sm:inline-flex" />
+      <span onClick={(e) => e.stopPropagation()}>
+        <CopyAddressButton text={r.address} />
+      </span>
     </li>
   )
 })

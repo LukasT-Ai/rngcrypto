@@ -237,11 +237,12 @@ export function sortValueFor(x: TraderRow, sort: SortKey): number {
 
 const SCAN = { candidates: 1512, scanned: 1388, lastFullScanAt: NOW - 14 * 60_000, nextScanAt: NOW + 46 * 60_000, stale: false, perAsset: { BTC: 611, ADA: 203, GOLD: 97, WTI: 64 }, pool: { size: 1112, probed: 988, remaining: 124, discovered: 231 } }
 
-export function mockLeaderboard(asset: Asset, window: Window, sort: SortKey, minVolume: number, copyableOnly: boolean, minFocus: number): LeaderboardResponse {
+export function mockLeaderboard(asset: Asset, window: Window, sort: SortKey, minVolume: number, copyableOnly: boolean, minFocus: number, openOnly = false): LeaderboardResponse {
   let rows = TRADERS.map((t) => rowFor(t, asset, window))
   rows = rows.filter((x) => (asset === "ALL" ? x.window.volume : (x.asset?.volumeUsd ?? 0)) >= minVolume)
   if (asset !== "ALL") rows = rows.filter((x) => x.asset != null)
   if (copyableOnly) rows = rows.filter((x) => (x.mix?.copyableSharePct ?? 0) >= minFocus)
+  if (openOnly) rows = rows.filter((x) => (asset === "ALL" ? x.open.count > 0 : x.openForAsset != null))
   rows.sort((a, b) => sortValueFor(b, sort) - sortValueFor(a, sort) || (b.asset?.winRate ?? 0) - (a.asset?.winRate ?? 0))
   rows.forEach((x, i) => (x.rank = i + 1))
   return { asOf: NOW, scan: SCAN, assets: [...ASSET_GROUPS], traders: rows }

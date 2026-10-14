@@ -113,7 +113,7 @@ export default function CopyTradeDashboard() {
     if (SERVER_SORTS.has(k)) setFilters((cur) => ({ ...cur, sort: k as SortKey }))
   }, [])
 
-  const { data, isLoading, isError, isFetching, dataUpdatedAt } = useLeaderboard({ asset: filters.asset, window: filters.window, sort: filters.sort, minVolume: filters.minVolume, copyableOnly: filters.lens === "copyable", minFocus: filters.minFocus }, mock)
+  const { data, isLoading, isError, isFetching, dataUpdatedAt } = useLeaderboard({ asset: filters.asset, window: filters.window, sort: filters.sort, minVolume: filters.minVolume, copyableOnly: filters.lens === "copyable", minFocus: filters.minFocus, openOnly: filters.openOnly }, mock)
   const summary = useSummary(mock)
 
   const rows = useMemo(() => {

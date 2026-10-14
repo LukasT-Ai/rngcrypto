@@ -31,7 +31,8 @@ export function parseQuery(sp: URLSearchParams): (RowQuery & { view: "rows" | "s
     if (!Number.isFinite(n) || n < 0 || n > 100) return { error: "minFocus must be a percentage 0..100" };
     minFocus = n;
   }
-  return { view, asset, window, sort, minVolume, limit, minFocus };
+  const openOnly = ["1", "true", "yes"].includes((sp.get("openOnly") ?? "").toLowerCase());
+  return { view, asset, window, sort, minVolume, limit, minFocus, openOnly };
 }
 
 export async function GET(req: NextRequest) {

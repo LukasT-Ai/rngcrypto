@@ -46,9 +46,11 @@ export interface FilterState {
   minTradesPerDay: number
   minWinRate: number
   search: string
+  /** Server-side: only wallets with an open position (in the asset, or anywhere for ALL). */
+  openOnly: boolean
 }
 
-export const DEFAULT_FILTERS: FilterState = { lens: "copyable", asset: "BTC", window: "month", sort: "copyability", minVolume: 0, minFocus: 70, minTradesPerDay: 0, minWinRate: 0, search: "" }
+export const DEFAULT_FILTERS: FilterState = { lens: "copyable", asset: "BTC", window: "month", sort: "copyability", minVolume: 0, minFocus: 70, minTradesPerDay: 0, minWinRate: 0, search: "", openOnly: false }
 
 /** Numeric input that commits on blur or Enter so typing does not refetch on every key. */
 function NumInput({ id, value, onCommit, placeholder, suffix, disabled, width = "w-16", hint }: { id: string; value: number; onCommit: (n: number) => void; placeholder?: string; suffix?: string; disabled?: boolean; width?: string; hint?: string }) {
@@ -95,6 +97,17 @@ export default function Filters({ value, onChange }: { value: FilterState; onCha
       <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
         <Field label="Lens" hint="Ascend can only mirror BTC, ADA, GOLD and WTI. The copyable lens keeps wallets whose 30d volume is mostly in those four.">
           <Segmented label="Lens" value={value.lens} onChange={(lens) => onChange({ lens })} options={[{ k: "copyable", l: "Ascend-copyable" }, { k: "all", l: "All wallets" }]} />
+        </Field>
+        <Field label="Positions" hint="Only wallets currently holding a position: in the selected asset, or in any market when All is selected.">
+          <button
+            type="button"
+            aria-pressed={value.openOnly}
+            onClick={() => onChange({ openOnly: !value.openOnly })}
+            className={cn("h-8 rounded-md border px-2.5 text-[11px] font-semibold transition-colors", FOCUS_RING, value.openOnly ? "border-transparent text-[#06080F]" : "border-white/10 text-[#9CA3AF] hover:text-white")}
+            style={value.openOnly ? { backgroundColor: "var(--brand)" } : undefined}
+          >
+            {value.openOnly ? "Open positions only" : "Open positions only: off"}
+          </button>
         </Field>
         <Field label="Asset">
           <Segmented label="Asset" value={value.asset} onChange={(asset) => onChange({ asset })} options={[{ k: "BTC", l: "BTC" }, { k: "ADA", l: "ADA" }, { k: "GOLD", l: "GOLD" }, { k: "WTI", l: "WTI" }, { k: "ALL", l: "All" }]} />

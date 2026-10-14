@@ -19,6 +19,8 @@ export interface ListParams {
   minVolume: number
   copyableOnly: boolean
   minFocus: number
+  /** Only wallets with an open position (in the asset, or anywhere for ALL). */
+  openOnly?: boolean
   limit?: number
 }
 
@@ -31,12 +33,13 @@ export function useLeaderboard(p: ListParams, mock: boolean) {
     qs.set("copyableOnly", "1")
     qs.set("minFocus", String(p.minFocus))
   }
+  if (p.openOnly) qs.set("openOnly", "1")
   return useQuery<LeaderboardResponse>({
     queryKey: ["copytrade", "list", mock, qs.toString()],
     queryFn: async () => {
       if (mock) {
         const m = await import("./__fixtures__/mock")
-        return m.mockLeaderboard(p.asset, p.window, p.sort, p.minVolume, p.copyableOnly, p.minFocus)
+        return m.mockLeaderboard(p.asset, p.window, p.sort, p.minVolume, p.copyableOnly, p.minFocus, p.openOnly ?? false)
       }
       const r = await fetch(`/api/copytrade?${qs.toString()}`)
       if (!r.ok) throw new Error(`copytrade ${r.status}`)

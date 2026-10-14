@@ -541,6 +541,8 @@ export interface RowQuery {
   limit: number;
   /** Minimum copyableSharePct; 0 = off. copyableOnly=1 maps to COPYABLE_FOCUS_DEFAULT unless minFocus is given. */
   minFocus: number;
+  /** Keep only wallets with an open position: in the filtered asset group, or in any market when asset=ALL. */
+  openOnly?: boolean;
 }
 
 /**
@@ -620,6 +622,7 @@ export function buildRows(recs: TraderRecord[], q: RowQuery, scores = scoreAll(r
     const vol = row.asset ? row.asset.volumeUsd : row.window.volume;
     if (vol < q.minVolume) continue;
     if (q.minFocus > 0 && row.mix.copyableSharePct < q.minFocus) continue;
+    if (q.openOnly && (q.asset === "ALL" ? row.open.count === 0 : row.openForAsset == null)) continue;
     rows.push({ row, rec: r });
   }
   const key = sortKey(q.sort);

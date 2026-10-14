@@ -121,9 +121,9 @@ function WhyPanel({ score, mix, stats }: { score: Score | null | undefined; mix:
           <p className="mt-2 text-[11px] text-white/50">
             Top markets:{" "}
             {mix.topCoins.map((c, i) => (
-              <span key={c.coin} className="font-mono text-white/75">
+              <span key={c.coin} className="font-mono text-white/75" title={c.label ? c.coin : undefined}>
                 {i > 0 && <span className="text-white/35">, </span>}
-                {c.coin} {fmtRate(c.sharePct)}
+                {c.label ?? c.coin} {fmtRate(c.sharePct)}
               </span>
             ))}
           </p>

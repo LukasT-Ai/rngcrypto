@@ -43,7 +43,8 @@ export interface Mix {
   copyableSharePct: number
   copyableTradeSharePct: number
   byAsset: Record<AssetGroup | "OTHER", MixSlice>
-  topCoins: { coin: string; sharePct: number }[]
+  /** `label` is set for markets whose coin is not self-describing (e.g. Hyperliquid outcome markets like "#106090"). */
+  topCoins: { coin: string; sharePct: number; label?: string }[]
 }
 
 export interface Score {
@@ -107,6 +108,10 @@ export interface ScanStatus {
   lastFullScanAt: number | null
   nextScanAt: number | null
   stale: boolean
+  /** Scanned wallets with fills or an open position per group. */
+  perAsset?: Partial<Record<AssetGroup, number>>
+  /** Discovery progress over the pool of non-core candidate wallets. */
+  pool?: { size: number; probed: number; remaining: number; discovered: number }
 }
 
 export interface LeaderboardResponse {

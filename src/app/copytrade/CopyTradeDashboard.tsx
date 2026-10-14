@@ -7,7 +7,8 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { RNG_THEME, themeStyle } from "../signals/themes"
 import { Chip, SURFACE, timeAgo, useNow } from "../signals/shared"
 import { CARD } from "../signals/performance/perf-shared"
-import type { SortKey, TraderRow } from "./types"
+import type { ScanStatus, SortKey, TraderRow } from "./types"
+import { ASSET_GROUPS } from "./types"
 import Filters, { DEFAULT_FILTERS, type FilterState } from "./Filters"
 import TraderTable, { type ColKey, type SortDir, WINDOW_WORD } from "./TraderTable"
 import TraderDrawer from "./TraderDrawer"
@@ -51,12 +52,18 @@ function sortValue(r: TraderRow, k: ColKey): number {
   }
 }
 
-function ScanChip({ scan, asOf }: { scan: { candidates: number; scanned: number; lastFullScanAt: number | null; stale: boolean } | undefined; asOf: number | undefined }) {
+const scanDetail = (scan: ScanStatus) => {
+  const per = scan.perAsset ? ASSET_GROUPS.filter((g) => scan.perAsset?.[g] != null).map((g) => `${fmtInt(scan.perAsset?.[g])} ${g}`).join(", ") : ""
+  const pool = scan.pool ? `Discovery pool ${fmtInt(scan.pool.probed)} of ${fmtInt(scan.pool.size)} probed, ${fmtInt(scan.pool.discovered)} kept.` : ""
+  return [per ? `Wallets active per group: ${per}.` : "", pool].filter(Boolean).join(" ")
+}
+
+function ScanChip({ scan, asOf }: { scan: ScanStatus | undefined; asOf: number | undefined }) {
   const now = useNow(15_000)
   if (!scan) return <Chip variant="neutral">scan: pending</Chip>
   const last = scan.lastFullScanAt ?? asOf ?? null
   const ago = last != null && now > 0 ? timeAgo(last, now) : "…"
-  const tip = `${fmtInt(scan.scanned)} of ${fmtInt(scan.candidates)} candidate wallets scanned for BTC, ADA, GOLD and WTI fills. Last full scan ${last != null ? utc(last) : "unknown"}.${scan.stale ? " The scanner has not completed a pass recently; numbers may lag." : ""}`
+  const tip = `${fmtInt(scan.scanned)} of ${fmtInt(scan.candidates)} candidate wallets scanned for BTC, ADA, GOLD and WTI fills. ${scanDetail(scan)} Last full scan ${last != null ? utc(last) : "unknown"}.${scan.stale ? " The scanner has not completed a pass recently; numbers may lag." : ""}`
   return (
     <Chip variant={scan.stale ? "warning" : "neutral"} size="label" icon={scan.stale ? undefined : Radar} tip={tip} className="rounded-md">
       <span className="font-mono tabular-nums">
@@ -194,7 +201,7 @@ export default function CopyTradeDashboard() {
               </div>
               {rows.length === 0 ? (
                 <div className={cn(CARD, "px-4 py-10 text-center text-sm text-[#9CA3AF]")}>
-                  {data.traders.length === 0 && data.scan.stale ? "The scanner is warming up after a restart. Wallets appear progressively over the next 15 to 40 minutes; this page refreshes every minute." : "No traders match. Lower the minimum focus or volume, switch to all wallets, widen the window or clear the search."}
+                  {data.traders.length === 0 && data.scan.stale ? `The scanner is warming up after a restart: ${fmtInt(data.scan.scanned)} of ${fmtInt(data.scan.candidates)} wallets scanned so far. ${scanDetail(data.scan)} Wallets appear progressively over the next 15 to 40 minutes; this page refreshes every minute.` : "No traders match. Lower the minimum focus or volume, switch to all wallets, widen the window or clear the search."}
                 </div>
               ) : (
                 <TraderTable rows={rows} asset={filters.asset} window={filters.window} sortKey={sortKey} sortDir={sortDir} onSort={onSort} onView={onView} />

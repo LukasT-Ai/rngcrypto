@@ -151,7 +151,7 @@ export async function register() {
   // open positions for the top 60 per asset. The leaderboard is re-downloaded at most hourly inside the cycle.
   // COPYTRADE=0 disables it.
   if (process.env.COPYTRADE !== "0") {
-    const { runScanCycle, refreshHotPositions, setNextScanAt, SCAN_INTERVAL_MS, HOT_INTERVAL_MS } = await import("./lib/hyperliquid/scanner");
+    const { runScanCycle, refreshHotPositions, setNextScanAt, probeBatch, SCAN_INTERVAL_MS, HOT_INTERVAL_MS, PROBE_IDLE_MS } = await import("./lib/hyperliquid/scanner");
     const cycle = async () => {
       setNextScanAt(Date.now() + SCAN_INTERVAL_MS);
       try {
@@ -168,6 +168,18 @@ export async function register() {
     setInterval(() => {
       refreshHotPositions().catch(() => undefined);
     }, HOT_INTERVAL_MS);
+    // Discovery: probe the pool continuously at the rate budget (unprobed addresses first); idle when exhausted.
+    const probe = async () => {
+      let wait = PROBE_IDLE_MS;
+      try {
+        const n = await probeBatch(10);
+        if (n > 0) wait = 250;
+      } catch {
+        /* retry after the idle wait */
+      }
+      setTimeout(() => void probe(), wait);
+    };
+    setTimeout(() => void probe(), 60_000);
   }
 
   // Macro event loop: 15s baseline; the service itself tightens market polling inside release windows.

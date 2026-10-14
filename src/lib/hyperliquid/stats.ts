@@ -9,7 +9,10 @@ const num = (s: unknown): number => {
 
 export const MIN_CLOSES_FOR_WIN_RATE = 5;
 
-/** Perp coins only: spot pairs look like "PURR/USDC" or "@107". Builder-deployed perps ("xyz:MSFT") are perps. */
+/**
+ * Perp-like coins only: spot pairs look like "PURR/USDC" or "@107" and are excluded. Builder-deployed perps
+ * ("xyz:MSFT") count; outcome markets ("#106090") count too so they weigh on the OTHER side of the mix.
+ */
 export const isPerpCoin = (coin: string) => !coin.includes("/") && !coin.startsWith("@");
 
 export function compactFill(f: HlFill): CompactFill {

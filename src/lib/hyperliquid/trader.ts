@@ -6,7 +6,7 @@ import { FeedCache } from "@/lib/signals/features/fetch";
 import { info, WEIGHT } from "./http";
 import { findLeaderRow } from "./leaderboard";
 import { fetchAllStates, fetchFillsSince, getRecord, getScanSet, readTraderFills, scoreAll } from "./scanner";
-import { computeMix, computeStats30d, dailySeries, equityStartOf, scoreTrader } from "./score";
+import { computeMix, computeStats30d, dailySeries, equityStartOf, monthStartEquity, scoreTrader } from "./score";
 import { allGroupStats, copyStats, emptyStats, mapPositions, mergeFills, perCoinStats, recentTrades, totalEquity } from "./stats";
 import { ASSETS, ASSET_GROUPS, FILL_WINDOW_MS, WINDOWS, type AssetGroup, type HlPortfolio, type TraderDetail, type Window, type WindowPerf } from "./types";
 
@@ -71,12 +71,13 @@ async function load(address: string): Promise<TraderDetail | null> {
   const positions = mapPositions(states, fills);
   const mix = computeMix(perCoin);
   const equity = totalEquity(states) ?? 0;
-  const equityStart = equityStartOf(equity, windows.month.pnl);
+  const recordedStart = portfolio ? monthStartEquity(portfolio) : (record?.portfolio?.equityStart ?? null);
+  const equityStart = equityStartOf(equity, windows.month.pnl, recordedStart);
   const daily = portfolio ? dailySeries(portfolio) : (record?.portfolio?.daily ?? []);
   const stats30d = computeStats30d(perCoin, fills, positions, daily, equityStart);
   const copy = copyStats(fills, equityStart);
   // Score against the scanned set when the trader is in it (cross-sectional pnl percentile); otherwise no percentile.
-  const fallback = () => scoreTrader({ mix, stats30d, copy, positions, equity, monthPnl: windows.month.pnl, daily, pnlPctl: null, now });
+  const fallback = () => scoreTrader({ mix, stats30d, copy, positions, equity, monthPnl: windows.month.pnl, equityStart: recordedStart, daily, pnlPctl: null, now });
   const score = record ? (scoreAll(scanSetWith(record), now).get(address) ?? fallback()) : fallback();
 
   return {

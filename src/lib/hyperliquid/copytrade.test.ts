@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseLeaderboard, parseVaults, selectCandidates, DEFAULT_CRITERIA } from "./leaderboard";
+import { parseLeaderboard, parseVaults, selectCandidates, selectSpecialists, DEFAULT_CRITERIA, DEFAULT_SPECIALISTS } from "./leaderboard";
+import { describeOutcome, isOutcomeCoin, outcomeLabel, parseOutcomeCoin } from "./outcomes";
 import { compactFill, groupStats, mapPositions, mergeFills, openedAtFromFills, perCoinStats, positionForGroup, recentTrades, summarizeOpen, isPerpCoin, countCopyableFills, totalEquity } from "./stats";
 import { TokenBucket } from "./http";
-import { buildRecord, buildRows, buildSummary, scoreAll } from "./scanner";
+import { buildRecord, buildRows, buildSummary, labelMix, perAssetCounts, scoreAll } from "./scanner";
 import { parsePortfolio } from "./trader";
-import { averageHoldMinutes, computeMix, computeStats30d, dailySeries, equityStartOf, lin, maxDrawdownPct, pnlRanks, profitableWeeks, scoreTrader, sortinoDaily, compareScored } from "./score";
+import { averageHoldMinutes, computeMix, computeStats30d, dailySeries, equityStartOf, lin, maxDrawdownPct, monthStartEquity, pnlRanks, profitableWeeks, scoreTrader, sortinoDaily, compareScored } from "./score";
 import { copyStats } from "./stats";
 import type { CompactFill, CopyStats, HlClearinghouseState, HlFill, HlPortfolio, LeaderRow, OpenPosition, TraderRecord } from "./types";
 
@@ -50,6 +51,22 @@ describe("leaderboard parse + candidate filter", () => {
     // the zero-volume row are dropped.
     expect(c.length).toBe(7);
     expect(selectCandidates(rows, vaults, { ...DEFAULT_CRITERIA, take: 2 }).length).toBe(2);
+  });
+
+  it("selects specialists: 25k..5M equity, month roi > 15%, volume > 300k, ranked by roi", () => {
+    const sp = selectSpecialists(rows, new Set(), { ...DEFAULT_SPECIALISTS, take: 50 });
+    for (const r of sp) {
+      expect(r.equity).toBeGreaterThanOrEqual(25_000);
+      expect(r.equity).toBeLessThanOrEqual(5_000_000);
+      expect(r.windows.month.roi).toBeGreaterThan(15);
+      expect(r.windows.month.volume).toBeGreaterThan(300_000);
+    }
+    for (let i = 1; i < sp.length; i++) expect(sp[i - 1].windows.month.roi).toBeGreaterThanOrEqual(sp[i].windows.month.roi);
+    // the 48M and 15M leaders are out; the 4.3M (144% roi) and 0x350e-style accounts are in
+    expect(sp.find((r) => r.address === "0x77375a8c9d13bf79afb2a87f1b0ac1dfd5f5bf66")).toBeUndefined();
+    expect(sp.find((r) => r.address === "0x30afce2f6842bf183c7e3fe7162e279ff0b6393e")).toBeDefined();
+    expect(sp.find((r) => r.displayName === "Vault")).toBeDefined(); // vault filtering is the caller's set
+    expect(selectSpecialists(rows, new Set(["0xvault000000000000000000000000000000000001"]), DEFAULT_SPECIALISTS).find((r) => r.displayName === "Vault")).toBeUndefined();
   });
 
   it("parses the vault list into a lowercase address set", () => {
@@ -238,6 +255,38 @@ describe("token bucket", () => {
   });
 });
 
+// ── Outcome markets ──────────────────────────────────────────────────────────
+
+describe("outcome markets", () => {
+  it("recognises #<outcomeId><side> coins and labels them", () => {
+    expect(isOutcomeCoin("#106090")).toBe(true);
+    expect(isOutcomeCoin("BTC")).toBe(false);
+    expect(isOutcomeCoin("#1")).toBe(false);
+    expect(parseOutcomeCoin("#106090")).toEqual([10609, 0]);
+    expect(parseOutcomeCoin("#12301")).toEqual([1230, 1]);
+    expect(parseOutcomeCoin("xyz:GOLD")).toBeNull();
+    expect(outcomeLabel("#106090")).toBe("Outcome market #10609 · Yes"); // nothing cached in tests
+    expect(outcomeLabel("BTC")).toBeNull();
+    expect(describeOutcome("template:binaryPrice", "perp:BTC|priceDescription:the Pyth BTC/USD price|seconds:90|threshold:81415", 1, [{ name: "template:Yes" }, { name: "template:No" }])).toBe("Outcome: BTC price binary (90s) · No");
+    expect(describeOutcome("template:sportsContestWinner", "competition:NFL|participantA:Baltimore Ravens|participantB:Cleveland Browns|shortNameA:Ravens|shortNameB:Browns", 0, [{ name: "template:{shortNameA}" }, { name: "template:{shortNameB}" }])).toBe("Outcome: Ravens vs Browns · Yes");
+  });
+
+  it("outcome fills stay on the OTHER side of the mix and get a label in topCoins", () => {
+    const perCoin = perCoinStats(
+      [
+        mk({ time: 1, coin: "#106090", dir: "Open Long", px: "0.6", sz: "1000" }),
+        mk({ time: 2, coin: "#106090", dir: "Settlement", px: "1", sz: "1000", closedPnl: "400", startPosition: "1000" }),
+        mk({ time: 3, coin: "BTC", dir: "Open Long", px: "100", sz: "4" }),
+      ].map(compactFill)
+    );
+    const mix = labelMix(computeMix(perCoin));
+    expect(mix.byAsset.OTHER.volumeUsd).toBe(1600);
+    expect(mix.copyableSharePct).toBe(20);
+    expect(mix.topCoins[0]).toEqual({ coin: "#106090", sharePct: 80, label: "Outcome market #10609 · Yes" });
+    expect(mix.topCoins[1].label).toBeUndefined();
+  });
+});
+
 // ── Groups / mix / stats30d / score ──────────────────────────────────────────
 
 describe("asset groups and mix", () => {
@@ -338,6 +387,9 @@ describe("stats30d and portfolio metrics", () => {
     expect(dailySeries(null)).toEqual([]);
     expect(equityStartOf(12_000, 2_000)).toBe(10_000);
     expect(equityStartOf(500, 2_000)).toBe(1000);
+    expect(equityStartOf(500, 2_000, 30_000)).toBe(30_000); // recorded start wins over the floor
+    expect(monthStartEquity(portfolio)).toBe(10_000);
+    expect(monthStartEquity(null)).toBeNull();
   });
 
   it("lin interpolates piecewise and clamps", () => {
@@ -507,7 +559,7 @@ describe("records and ranking", () => {
   const recs: TraderRecord[] = [
     buildRecord(leader("0xa", 500), fillsA, [state, null, null], null, true, null, 10),
     buildRecord(leader("0xb", 9000), fillsB, [null, null, null], null, true, null, 10),
-    buildRecord(leader("0xc", 100), fillsC, [null, null, null], null, true, { at: 1, daily }, 10),
+    buildRecord(leader("0xc", 100), fillsC, [null, null, null], null, true, { at: 1, daily, equityStart: 90_000 }, 10),
   ];
   const q = (over: Partial<Parameters<typeof buildRows>[1]>): Parameters<typeof buildRows>[1] => ({ asset: "ALL", window: "month", sort: "assetPnl", minVolume: 0, limit: 50, minFocus: 0, ...over });
 
@@ -566,8 +618,16 @@ describe("records and ranking", () => {
     expect(cs[1].score.copyability).toBe(0);
   });
 
-  it("buildSummary returns the four asset cards and the COPYABLE strip", () => {
+  it("perAssetCounts counts wallets with fills or an open position per group", () => {
+    expect(perAssetCounts(recs)).toEqual({ BTC: 1, ADA: 1, GOLD: 0, WTI: 1 });
+    expect(perAssetCounts([])).toEqual({ BTC: 0, ADA: 0, GOLD: 0, WTI: 0 });
+  });
+
+  it("buildSummary returns the four asset cards and the COPYABLE strip, fewer than 5 rows when fewer qualify", () => {
+    const empty = buildSummary([], "month");
+    expect(empty).toEqual({ BTC: [], ADA: [], GOLD: [], WTI: [], COPYABLE: [] });
     const s = buildSummary(recs, "month", 5, 10);
+    expect(s.BTC.length).toBe(1);
     expect(Object.keys(s).sort()).toEqual(["ADA", "BTC", "COPYABLE", "GOLD", "WTI"]);
     expect(s.BTC.map((r) => r.address)).toEqual(["0xa"]);
     expect(s.GOLD).toEqual([]);

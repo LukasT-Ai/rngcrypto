@@ -292,7 +292,8 @@ export const ASSET_GROUPS: Record<AssetGroup, string[]> = {
   BTC: ["BTC", "flx:BTC", "hyna:BTC", "cash:BTC"],
   ADA: ["ADA", "hyna:ADA"],
   GOLD: ["xyz:GOLD", "km:GOLD", "PAXG", "flx:GOLD", "hyna:GOLD", "cash:GOLD", "mkts:GOLD"],
-  WTI: ["xyz:CL", "km:USOIL", "xyz:BRENTOIL", "flx:OIL", "cash:WTI", "mkts:USOIL"],
+  // WTI only: Brent markets are deliberately excluded (Ascend mirrors WTI).
+  WTI: ["xyz:CL", "km:USOIL", "flx:OIL", "cash:WTI", "mkts:USOIL"],
 };
 export const COIN_TO_GROUP: Record<string, AssetGroup> = Object.fromEntries(
   (Object.entries(ASSET_GROUPS) as [AssetGroup, string[]][]).flatMap(([g, coins]) => coins.map((c) => [c, g]))

@@ -33,7 +33,7 @@ const ADDRS = [
 ]
 const NAMES: (string | null)[] = ["hyperwhale", null, "adamaxi", null, null, "quietshort", null, "btc_only", null, null, "vol_harvester", null, "goldbug", null]
 
-const GROUP_COINS: Record<AssetGroup, string[]> = { BTC: ["BTC"], ADA: ["ADA"], GOLD: ["xyz:GOLD", "km:GOLD", "PAXG"], WTI: ["xyz:CL", "km:USOIL", "xyz:BRENTOIL"] }
+const GROUP_COINS: Record<AssetGroup, string[]> = { BTC: ["BTC"], ADA: ["ADA"], GOLD: ["xyz:GOLD", "km:GOLD", "PAXG"], WTI: ["xyz:CL", "km:USOIL"] }
 const PX: Record<string, number> = { BTC: 118_420, ADA: 0.842, "xyz:GOLD": 4_062, "km:GOLD": 4_060, PAXG: 4_058, "xyz:CL": 61.4, "km:USOIL": 61.3, "xyz:BRENTOIL": 65.1, ETH: 4_210, SOL: 196.4 }
 const GROUP_SCALE: Record<AssetGroup, number> = { BTC: 1, ADA: 0.25, GOLD: 0.4, WTI: 0.3 }
 

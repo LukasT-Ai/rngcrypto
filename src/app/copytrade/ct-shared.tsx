@@ -19,7 +19,7 @@ export const GROUP_COINS: Record<AssetGroup, string[]> = {
   BTC: ["BTC"],
   ADA: ["ADA"],
   GOLD: ["xyz:GOLD", "km:GOLD", "PAXG"],
-  WTI: ["xyz:CL", "km:USOIL", "xyz:BRENTOIL"],
+  WTI: ["xyz:CL", "km:USOIL", "flx:OIL", "cash:WTI", "mkts:USOIL"],
 }
 export const groupOf = (coin: string): AssetGroup | "OTHER" => {
   for (const g of ASSET_GROUPS) if (GROUP_COINS[g].includes(coin)) return g

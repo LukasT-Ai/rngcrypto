@@ -168,6 +168,7 @@ function buildTrader(i: number): Seed {
     pnlCopyable,
     pnlOther: Math.round((r() - 0.4) * otherVol * 0.015),
   }
+  if (i === 7) mix.topCoins = [{ coin: "#106090", sharePct: 12.4, label: "Outcome: BTC price binary (90s) · Yes" }, ...mix.topCoins.slice(0, 4)]
   const score = buildScore(mix, stats, groups, r)
   if (i === 9) Object.assign(score, { thin: true, consistency: null, risk: null, reasons: ["Thin sample: under 20 copyable fills", ...score.reasons.slice(0, 3)] })
   const monthPnl = pnlCopyable + stats.pnlOther
@@ -234,7 +235,7 @@ export function sortValueFor(x: TraderRow, sort: SortKey): number {
   }
 }
 
-const SCAN = { candidates: 1512, scanned: 1388, lastFullScanAt: NOW - 14 * 60_000, nextScanAt: NOW + 46 * 60_000, stale: false }
+const SCAN = { candidates: 1512, scanned: 1388, lastFullScanAt: NOW - 14 * 60_000, nextScanAt: NOW + 46 * 60_000, stale: false, perAsset: { BTC: 611, ADA: 203, GOLD: 97, WTI: 64 }, pool: { size: 1112, probed: 988, remaining: 124, discovered: 231 } }
 
 export function mockLeaderboard(asset: Asset, window: Window, sort: SortKey, minVolume: number, copyableOnly: boolean, minFocus: number): LeaderboardResponse {
   let rows = TRADERS.map((t) => rowFor(t, asset, window))

@@ -73,7 +73,7 @@ async function fetchCandles(strike: string, sinceMs: number): Promise<Candle[]> 
   const needed = Math.ceil((Date.now() - sinceMs) / CANDLE_MS) + 2;
   const limit = Math.max(3, Math.min(MAX_CANDLES, needed));
   try {
-    const res = await fetch(`https://api.strikefinance.org/price/v2/klines?symbol=${strike}&interval=5m&limit=${limit}&priceType=last`, { cache: "no-store" });
+    const res = await fetch(`https://api.strikefinance.org/price/v2/klines?symbol=${strike}&interval=5m&limit=${limit}&priceType=last`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
     if (!res.ok) return [];
     const raw = (await res.json()) as unknown;
     if (!Array.isArray(raw)) return [];
@@ -434,7 +434,7 @@ export async function fetchMarks(symbols: string[]): Promise<Record<string, numb
       const strike = STRIKE_MAP[sym];
       if (!strike) return;
       try {
-        const r = await fetch(`https://api.strikefinance.org/price/v2/markPrice?symbol=${strike}`, { cache: "no-store" });
+        const r = await fetch(`https://api.strikefinance.org/price/v2/markPrice?symbol=${strike}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
         if (!r.ok) return;
         const j = (await r.json()) as { p?: string };
         const p = parseFloat(j.p ?? "");

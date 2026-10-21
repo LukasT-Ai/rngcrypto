@@ -6,13 +6,24 @@ export async function register() {
   const { tick } = await import("./lib/macro/service");
 
   let busy = false;
+  let busySince = 0;
+  const BUSY_TIMEOUT = 120_000;
   const outcomes = async () => {
-    if (busy) return;
+    if (busy) {
+      if (Date.now() - busySince > BUSY_TIMEOUT) {
+        console.warn("[checker] busy flag stuck for >2m, resetting");
+        busy = false;
+      } else {
+        return;
+      }
+    }
     busy = true;
+    busySince = Date.now();
     try {
-      await runOutcomeCheck();
-    } catch {
-      /* next tick */
+      const r = await runOutcomeCheck();
+      if (r.checked > 0) console.log(`[checker] checked=${r.checked} updated=${r.updated}`);
+    } catch (err) {
+      console.error("[checker] outcome check failed:", err instanceof Error ? err.message : err);
     } finally {
       busy = false;
     }

@@ -3,32 +3,20 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import Image from "next/image"
-import { PenSquare, Layers, User, Menu, X, Zap, Activity, Crosshair, ChevronDown, TrendingUp, BarChart3, Users } from "lucide-react"
+import { PenSquare, Layers, User, Menu, X, Zap, Crosshair, ChevronDown, Users, ExternalLink } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useState, useEffect, useRef } from "react"
 
-// Vendor colors verified from strikefinance.org / ascend.market stylesheets (see app/src/app/signals/themes.ts).
-const STRIKE = "#4EFAB0"
-const ASCEND = "#F35233"
 const RNG = "#00FF88"
 
 type NavChild = { href: string; label: string; icon: React.ElementType; color: string; blurb: string }
-type NavItem = { href: string; label: string; icon: React.ElementType; children?: NavChild[] }
+type NavItem = { href: string; label: string; icon: React.ElementType; children?: NavChild[]; external?: boolean }
 
-// Bot dashboards (/ascend, /strike, /hype) remain live but are intentionally unlinked.
+// Signals and the track record live on cloveup.com now (token gated behind $CLOVE). Bot dashboards stay unlinked.
 const navItems: NavItem[] = [
-  {
-    href: "/signals/strike",
-    label: "Signals",
-    icon: Crosshair,
-    children: [
-      { href: "/signals/strike", label: "Strike", icon: TrendingUp, color: STRIKE, blurb: "All 31 Strike Finance perpetual markets" },
-      { href: "/signals/ascend", label: "Ascend", icon: BarChart3, color: ASCEND, blurb: "BTC, Gold, Cardano and WTI" },
-    ],
-  },
+  { href: "https://cloveup.com/patch", label: "Signals", icon: Crosshair, external: true },
   { href: "/copytrade", label: "Copy Trade", icon: Users },
-  { href: "/signals/performance", label: "Performance", icon: Activity },
   { href: "/projects", label: "Projects", icon: Layers },
   { href: "/proposals", label: "Proposals", icon: Zap },
   { href: "/blog", label: "Blog", icon: PenSquare },
@@ -93,6 +81,13 @@ export function Navbar() {
           {navItems.map((item) => {
             const isActive = isItemActive(pathname, item)
             const color = activeColorFor(pathname, item)
+            if (item.external) {
+              return (
+                <a key={item.href} href={item.href} target="_blank" rel="noopener noreferrer" className="relative inline-flex items-center gap-1 px-4 py-2 text-sm font-medium text-white/50 transition-all duration-200 hover:text-white/80">
+                  {item.label} <ExternalLink className="size-3 opacity-60" />
+                </a>
+              )
+            }
             if (!item.children) {
               return (
                 <Link key={item.href} href={item.href} className={cn("relative px-4 py-2 text-sm font-medium transition-all duration-200", isActive ? "" : "text-white/50 hover:text-white/80")} style={isActive ? { color } : undefined}>
@@ -170,6 +165,14 @@ export function Navbar() {
             {navItems.map((item) => {
               const isActive = isItemActive(pathname, item)
               const color = activeColorFor(pathname, item)
+              if (item.external) {
+                return (
+                  <a key={item.href} href={item.href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-white/50 transition-colors hover:bg-white/5 hover:text-white/80">
+                    <item.icon className="size-4" />
+                    {item.label} <ExternalLink className="size-3 opacity-60" />
+                  </a>
+                )
+              }
               if (!item.children) {
                 return (
                   <Link key={item.href} href={item.href} className={cn("flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors", isActive ? "" : "text-white/50 hover:bg-white/5 hover:text-white/80")} style={isActive ? { color, backgroundColor: `${color}1A` } : undefined}>

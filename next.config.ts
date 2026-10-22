@@ -43,6 +43,11 @@ const nextConfig: NextConfig = {
         destination: "/subscribe",
         permanent: true,
       },
+      // Signals and the track record moved to CLOVE (Oct 22 2026). The page source stays in the repo because
+      // project-clove vendors it byte for byte; only the routes are gone here.
+      { source: "/signals", destination: "https://cloveup.com/patch", permanent: true },
+      { source: "/signals/performance", destination: "https://cloveup.com/patch/performance", permanent: true },
+      { source: "/signals/:path*", destination: "https://cloveup.com/patch", permanent: true },
     ];
   },
 };

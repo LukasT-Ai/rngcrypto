@@ -5,10 +5,7 @@ import { useState } from "react"
 import { ExternalLink } from "lucide-react"
 
 const exploreLinks = [
-  { href: "/signals/strike", label: "Strike Signals" },
-  { href: "/signals/ascend", label: "Ascend Signals" },
   { href: "/copytrade", label: "Copy Trade" },
-  { href: "/signals/performance", label: "Performance" },
   { href: "/projects", label: "Projects" },
   { href: "/blog", label: "Blog" },
   { href: "/about", label: "About" },
@@ -23,6 +20,7 @@ const moreLinks = [
 ]
 
 const ecosystemLinks = [
+  { href: "https://cloveup.com/patch", label: "Signals (on CLOVE)" },
   { href: "https://ascend.market", label: "Ascend Market" },
   { href: "https://liqwid.finance", label: "Liqwid Finance" },
   { href: "https://midnight.network", label: "Midnight" },

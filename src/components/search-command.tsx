@@ -27,9 +27,7 @@ import {
 
 const pages = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Strike Signals", href: "/signals/strike", icon: TrendingUp },
-  { name: "Ascend Signals", href: "/signals/ascend", icon: TrendingUp },
-  { name: "Signal Performance", href: "/signals/performance", icon: BarChart3 },
+  { name: "Signals (on cloveup.com)", href: "https://cloveup.com/patch", icon: TrendingUp },
   { name: "Markets", href: "/markets", icon: BarChart3 },
   { name: "Macro Economy", href: "/macro", icon: Globe },
   { name: "DeFi", href: "/defi", icon: Layers },
@@ -70,7 +68,8 @@ export function SearchCommand() {
   const navigate = useCallback(
     (href: string) => {
       setOpen(false)
-      router.push(href)
+      if (href.startsWith("http")) window.open(href, "_blank", "noopener")
+      else router.push(href)
     },
     [router]
   )

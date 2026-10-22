@@ -9,9 +9,6 @@ const BASE = "https://www.rngcrypto.com"
 export default function sitemap(): MetadataRoute.Sitemap {
   const live: MetadataRoute.Sitemap = [
     { url: BASE, lastModified: new Date(), changeFrequency: "hourly", priority: 1 },
-    { url: `${BASE}/signals/strike`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.9 },
-    { url: `${BASE}/signals/ascend`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.9 },
-    { url: `${BASE}/signals/performance`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.85 },
     { url: `${BASE}/copytrade`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.85 },
     { url: `${BASE}/markets`, lastModified: new Date(), changeFrequency: "hourly", priority: 0.6 },
   ]

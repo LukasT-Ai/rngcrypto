@@ -3,8 +3,7 @@
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import Image from "next/image"
-import Link from "next/link"
-import { useQuery } from "@tanstack/react-query"
+
 import { Badge } from "@/components/ui/badge"
 import { ExternalLink, ArrowRight, Coins, Shield, Palette, TrendingUp, Crosshair, Trophy, CalendarClock, Newspaper } from "lucide-react"
 
@@ -161,50 +160,6 @@ const filterChains = ["all", "cardano", "midnight", "ethereum"] as const
 
 // ── Live stats for the signals suite (what is actually running today) ───────
 
-interface PerfResp {
-  stats: { kpis: { closedN: number; openN: number; tp1Rate: number | null } }
-}
-interface HotResp {
-  hot: { symbol: string }[]
-  all: { symbol: string }[]
-}
-interface MacroResp {
-  upcoming: { title: string; time: string; importance: string }[]
-}
-
-function useSignalsLive() {
-  const perf = useQuery<PerfResp>({
-    queryKey: ["projects-perf"],
-    queryFn: async () => {
-      const r = await fetch("/api/signals/history?view=performance&range=all&dedupe=1&limit=1")
-      if (!r.ok) throw new Error("perf")
-      return r.json()
-    },
-    refetchInterval: 60_000,
-    retry: false,
-  })
-  const hot = useQuery<HotResp>({
-    queryKey: ["signals-hot"],
-    queryFn: async () => {
-      const r = await fetch("/api/signals/hot")
-      if (!r.ok) throw new Error("hot")
-      return r.json()
-    },
-    refetchInterval: 60_000,
-    retry: false,
-  })
-  const macro = useQuery<MacroResp>({
-    queryKey: ["projects-macro"],
-    queryFn: async () => {
-      const r = await fetch("/api/macro")
-      if (!r.ok) throw new Error("macro")
-      return r.json()
-    },
-    refetchInterval: 60_000,
-    retry: false,
-  })
-  return { perf: perf.data, hot: hot.data, macro: macro.data }
-}
 
 function StatusBadge({ status, className }: { status: string; className: string }) {
   return (
@@ -238,11 +193,11 @@ const STRIKE = "#4EFAB0"
 const ASCEND = "#F35233"
 
 function FeaturedSignalsCard() {
-  const { perf, hot, macro } = useSignalsLive()
-  const closedN = perf?.stats.kpis.closedN
-  const tp1 = perf?.stats.kpis.tp1Rate
-  const hotN = hot?.hot?.length
-  const next = macro?.upcoming?.[0]
+  // Live numbers moved with the dashboard to cloveup.com; this card is the pointer.
+  const closedN = null as number | null
+  const tp1 = null as number | null
+  const hotN = null as number | null
+  const next = undefined as { title: string; time: string; importance: string } | undefined
 
   return (
     <motion.div
@@ -263,7 +218,7 @@ function FeaturedSignalsCard() {
               <LiveDot color={GREEN} /> LIVE
             </span>
           </div>
-          <p className="mt-1 text-sm text-white/40">Plain-English trade calls, refreshed every 30 seconds</p>
+          <p className="mt-1 text-sm text-white/40">Plain-English trade calls, now token gated on cloveup.com</p>
           <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-white/60">
             One recommendation per market across 31 crypto, commodity, stock and index tickers: action, conviction, entry, stop and targets, with every reason deep-linked to the chart or statistic behind it. Catalyst headline engines for WTI, Bitcoin, Gold and Cardano, a macro event calendar with verified post-release surprise analysis, and a track record checked against 5-minute candles.
           </p>
@@ -276,12 +231,12 @@ function FeaturedSignalsCard() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link href="/signals/strike" className="inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-[#06080F] transition-opacity hover:opacity-90" style={{ backgroundColor: GREEN }}>
-              Open Strike Signals <ArrowRight className="size-4" />
-            </Link>
-            <Link href="/signals/performance" className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80">
+            <a href="https://cloveup.com/patch" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-[#06080F] transition-opacity hover:opacity-90" style={{ backgroundColor: GREEN }}>
+              Open on cloveup.com <ArrowRight className="size-4" />
+            </a>
+            <a href="https://cloveup.com/patch/performance" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80">
               <Trophy className="size-3.5" /> Performance
-            </Link>
+            </a>
           </div>
         </div>
 
@@ -325,9 +280,9 @@ function VenueSignalsCard({ name, color, logo, tagline, description, href, venue
       <p className="mt-3 text-sm leading-relaxed text-white/60">{description}</p>
       <div className="mt-4 text-[11px] uppercase tracking-wider text-white/40">Markets: <span className="font-mono text-white/70 normal-case tracking-normal">{markets}</span></div>
       <div className="mt-5 flex flex-wrap gap-3">
-        <Link href={href} className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold text-[#06080F] transition-opacity hover:opacity-90" style={{ backgroundColor: color }}>
+        <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold text-[#06080F] transition-opacity hover:opacity-90" style={{ backgroundColor: color }}>
           Open {name} <ArrowRight className="size-4" />
-        </Link>
+        </a>
         <a href={venue.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-4 py-2 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80">
           <ExternalLink className="size-3.5" /> {venue.label}
         </a>
@@ -448,7 +403,7 @@ export function ProjectsContent() {
           logo="/strike/Strike Logo.jpeg"
           tagline="Every market on Strike Finance perpetuals"
           description="The full signal engine pointed at Strike Finance, the Cardano perpetuals DEX: crypto majors, gold, silver, WTI, US stocks and indices, each with a plain-English recommendation and deep-linked evidence."
-          href="/signals/strike"
+          href="https://cloveup.com/patch"
           venue={{ label: "strikefinance.org", url: "https://app.strikefinance.org" }}
           markets="31 tickers"
         />
@@ -458,7 +413,7 @@ export function ProjectsContent() {
           logo="/avatar/ascend_logo_coin.jpg"
           tagline="The markets behind Ascend event perpetuals"
           description="Bitcoin, Gold, Cardano and WTI — the underlying markets for Ascend's event perpetuals (ZK-settled on Midnight) — with catalyst headline engines and macro event intelligence for each."
-          href="/signals/ascend"
+          href="https://cloveup.com/patch"
           venue={{ label: "ascend.market", url: "https://ascend.market" }}
           markets="BTC · GOLD · ADA · WTI"
         />

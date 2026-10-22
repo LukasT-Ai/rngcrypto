@@ -3,18 +3,11 @@
 import { motion, useReducedMotion } from "framer-motion"
 import Image from "next/image"
 import Link from "next/link"
-import { useQuery } from "@tanstack/react-query"
-import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from "recharts"
 import { Activity, ArrowRight, ArrowUpRight, CalendarClock, CheckCircle2, Crosshair, ExternalLink, Flame, Layers, Radar, ShieldCheck } from "lucide-react"
-import { cn } from "@/lib/utils"
-import type { PerformanceStats } from "@/app/api/signals/history/performance"
-import { HotBoardState, HotPlayCard, HotStamp, hotStatus, useHotPlays } from "@/app/signals/HotBoard"
 
 export type HomePost = { slug: string; title: string; description: string; date: string; category: string; readTime: string }
 
 const GREEN = "#00FF88"
-const RED = "#FF3B5C"
-const AMBER = "#F59E0B"
 const ASCEND = "#F35233"
 const LIQWID = "#22D3EE"
 
@@ -22,28 +15,13 @@ const LIQWID = "#22D3EE"
 // Data
 // ---------------------------------------------------------------------------
 
-type PerfResp = { stats: PerformanceStats; meta: PerformanceStats["meta"] & { closedN: number; openN: number }; open: { id: string }[] }
-
-function usePerformance(range: "30" | "all") {
-  return useQuery<PerfResp>({
-    queryKey: ["home-performance", range],
-    queryFn: async () => {
-      const r = await fetch(`/api/signals/history?view=performance&range=${range === "all" ? "all" : "30d"}&limit=300`)
-      if (!r.ok) throw new Error(`performance ${r.status}`)
-      return r.json()
-    },
-    refetchInterval: 60_000,
-    retry: false,
-  })
-}
-
+const CLOVE_PATCH = "https://cloveup.com/patch"
+const CLOVE_PERF = "https://cloveup.com/patch/performance"
 
 // ---------------------------------------------------------------------------
 // Bits
 // ---------------------------------------------------------------------------
 
-const fmtR = (r: number | null | undefined, dp = 2) => (r == null ? "—" : `${r > 0 ? "+" : ""}${r.toFixed(dp)}R`)
-const fmtPct = (p: number | null | undefined) => (p == null ? "—" : `${Math.round(p)}%`)
 const fmtDate = (d: string) => {
   const t = new Date(d)
   return Number.isNaN(t.getTime()) ? d : t.toLocaleDateString("en-US", { month: "short", year: "numeric" })
@@ -95,27 +73,13 @@ function SectionHead({ eyebrow, title, blurb, color, pulse, right }: { eyebrow: 
   )
 }
 
-function Kpi({ label, value, sub, tone = "white", big = false }: { label: string; value: string; sub?: string; tone?: "green" | "red" | "white" | "amber"; big?: boolean }) {
-  const color = tone === "green" ? GREEN : tone === "red" ? RED : tone === "amber" ? AMBER : "#F9FAFB"
-  return (
-    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 backdrop-blur-sm">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">{label}</p>
-      <p className={cn("mt-2 font-mono font-bold tracking-tight tabular-nums", big ? "text-4xl" : "text-3xl")} style={{ color }}>{value}</p>
-      {sub && <p className="mt-1 text-xs text-white/35">{sub}</p>}
-    </div>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Hero
 // ---------------------------------------------------------------------------
 
 function Hero() {
   const m = useMotion()
-  const perf = usePerformance("30")
-  const hot = useHotPlays()
-  const k = perf.data?.stats.kpis
-  const markets = hot.data?.all.length ?? 31
+  const markets = 31
 
   return (
     <section className="relative overflow-hidden">
@@ -130,7 +94,7 @@ function Hero() {
           </div>
           <div className="absolute -bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-full bg-[#06080F] px-2.5 py-1 ring-1 ring-white/10">
             <LivePulse />
-            <span className="text-[10px] font-semibold text-[#00FF88]">signals live</span>
+            <span className="text-[10px] font-semibold text-[#00FF88]">signals live on cloveup.com</span>
           </div>
         </motion.div>
 
@@ -143,58 +107,24 @@ function Hero() {
           Plain-English trade calls across {markets} markets. Every call logged. Every call checked against the tape, not against vibes.
         </motion.p>
 
-        {/* Live proof strip */}
-        <motion.div {...m.rise(0.45)} className="mt-9 grid w-full max-w-3xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-4">
-          {(() => {
-            const meta = perf.data?.meta
-            // Until 100 filled closed signals exist the expectancy and profit factor are previews, so the
-            // strip says so instead of quoting them. TP1 rate and the verified count stay.
-            const provisional = meta?.provisional ?? true
-            const verified = meta ? `${meta.filledN}/${meta.provisionalTarget} verified` : "—"
-            const tiles = provisional
-              ? [
-                  { l: "Expectancy", v: "Provisional", sub: verified, c: AMBER, href: "/signals/performance" },
-                  { l: "TP1 hit rate", v: fmtPct(k?.tp1Rate), c: "#F9FAFB" },
-                  { l: "Profit factor", v: "Provisional", sub: verified, c: AMBER, href: "/signals/performance" },
-                  { l: "Calls verified", v: k ? String(k.closedN) : "—", c: "#F9FAFB" },
-                ]
-              : [
-                  { l: "30d expectancy", v: fmtR(k?.expectancyR), c: (k?.expectancyR ?? 0) >= 0 ? GREEN : RED },
-                  { l: "TP1 hit rate", v: fmtPct(k?.tp1Rate), c: "#F9FAFB" },
-                  { l: "Profit factor", v: k?.profitFactor == null ? "—" : k.profitFactor.toFixed(2), c: (k?.profitFactor ?? 1) >= 1 ? GREEN : RED },
-                  { l: "Calls verified", v: k ? String(k.closedN) : "—", c: "#F9FAFB" },
-                ]
-            return tiles.map((s) => {
-              const body = (
-                <>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">{s.l}</p>
-                  <p className={cn("mt-1 font-mono font-bold tabular-nums", "sub" in s && s.sub ? "text-lg" : "text-2xl", perf.isLoading && "skeleton rounded")} style={{ color: s.c }}>{s.v}</p>
-                  {"sub" in s && s.sub && <p className="text-[11px] text-white/45">{s.sub}</p>}
-                </>
-              )
-              return "href" in s && s.href ? (
-                <Link key={s.l} href={s.href} title="Open the performance page" className="block bg-[#06080F]/90 px-4 py-4 transition-colors hover:bg-[#0A0E17]">
-                  {body}
-                </Link>
-              ) : (
-                <div key={s.l} className="bg-[#06080F]/90 px-4 py-4">
-                  {body}
-                </div>
-              )
-            })
-          })()}
+        {/* Where the calls went */}
+        <motion.div {...m.rise(0.45)} className="mt-9 w-full max-w-3xl rounded-2xl border border-[#00FF88]/25 bg-[#00FF88]/[0.06] px-6 py-5 text-left">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#00FF88]">Moved</p>
+          <p className="mt-1 text-base text-white/80">
+            The signals, the hot board and the verified track record now live on <span className="font-semibold text-white">cloveup.com</span>, token gated behind $CLOVE. Hold it, prove it, enter the Patch.
+          </p>
         </motion.div>
 
         <motion.div {...m.rise(0.6)} className="mt-9 flex flex-col gap-3 sm:flex-row">
-          <Link href="/signals/strike" className="group flex items-center justify-center gap-2 rounded-full bg-[#00FF88] px-8 py-3.5 text-sm font-bold text-[#06080F] transition-all hover:shadow-[0_0_40px_rgba(0,255,136,0.35)]">
+          <a href={CLOVE_PATCH} target="_blank" rel="noopener noreferrer" className="group flex items-center justify-center gap-2 rounded-full bg-[#00FF88] px-8 py-3.5 text-sm font-bold text-[#06080F] transition-all hover:shadow-[0_0_40px_rgba(0,255,136,0.35)]">
             <Radar className="size-4" />
-            Open the signals
+            Open the Patch on cloveup.com
             <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
-          </Link>
-          <Link href="/signals/performance" className="flex items-center justify-center gap-2 rounded-full border border-white/[0.14] bg-white/[0.03] px-8 py-3.5 text-sm font-semibold text-white/80 transition-all hover:border-white/[0.3] hover:bg-white/[0.06] hover:text-white">
+          </a>
+          <a href={CLOVE_PERF} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-full border border-white/[0.14] bg-white/[0.03] px-8 py-3.5 text-sm font-semibold text-white/80 transition-all hover:border-white/[0.3] hover:bg-white/[0.06] hover:text-white">
             <ShieldCheck className="size-4" />
             Verified track record
-          </Link>
+          </a>
         </motion.div>
 
         <motion.p {...m.rise(0.9, { opacity: 0 })} className="mt-6 text-xs text-white/30">
@@ -206,149 +136,33 @@ function Hero() {
 }
 
 // ---------------------------------------------------------------------------
-// Live board
+// Signals moved to CLOVE
 // ---------------------------------------------------------------------------
 
-function LiveBoard() {
+function MovedToClove() {
   const m = useMotion()
-  const hot = useHotPlays()
-  const plays = (hot.data?.hot ?? []).filter((p) => p.bias !== "WAIT").slice(0, 6)
-  const status = hotStatus(hot, plays)
-
   return (
     <section id="live" className="relative py-20 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 lg:px-8">
         <SectionHead
-          eyebrow="On the board right now"
+          eyebrow="The board moved"
           pulse
-          title={<>The hottest setups, <span className="text-[#00FF88]">live</span></>}
-          blurb="Highest-conviction calls across crypto, metals, oil, stocks and indices. Tap one to open the full breakdown."
-          right={<HotStamp ts={hot.data?.timestamp} />}
+          title={<>Signals and the track record now live on <span className="text-[#00FF88]">cloveup.com</span></>}
+          blurb="Same engine, same verified ledger, every ticker. Access is gated by how much $CLOVE a wallet holds: Levels first, Momentum and Flow next, Macro and Models at the top."
         />
-
-        {status !== "ready" ? (
-          <HotBoardState status={status} />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {plays.map((p, i) => (
-              <motion.div key={p.symbol} {...m.fade(i * 0.06)}>
-                <HotPlayCard p={p} href={`/signals/strike?symbol=${encodeURIComponent(p.symbol)}`} />
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Performance
-// ---------------------------------------------------------------------------
-
-function EquityTooltip({ active, payload }: { active?: boolean; payload?: { payload: { cumR: number; symbol: string; t: number } }[] }) {
-  if (!active || !payload?.length) return null
-  const d = payload[0].payload
-  return (
-    <div className="rounded-lg border border-white/10 bg-[#0A0E17] px-3 py-2 text-xs shadow-xl">
-      <p className="font-mono font-bold" style={{ color: d.cumR >= 0 ? GREEN : RED }}>{fmtR(d.cumR)}</p>
-      <p className="text-white/50">{d.symbol} · {new Date(d.t).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>
-    </div>
-  )
-}
-
-function Performance() {
-  const m = useMotion()
-  const perf = usePerformance("30")
-  const s = perf.data?.stats
-  const k = s?.kpis
-  const eq = s?.equity ?? []
-  const last = eq.length ? eq[eq.length - 1].cumR : null
-  const positive = (last ?? 0) >= 0
-  const line = positive ? GREEN : RED
-  const streak = s?.streaks.current
-
-  return (
-    <section id="performance" className="relative py-20 sm:py-24">
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-[#00FF88]/[0.02] to-transparent" />
-      <div className="relative mx-auto max-w-7xl px-4 lg:px-8">
-        <SectionHead
-          eyebrow="Receipts, not screenshots"
-          title={<>Every call is <span className="text-[#00FF88]">verified</span> against 5-minute candles</>}
-          blurb="Take-profit ladder, stop-outs, realized R, equity curve and calibration by confidence. Duplicates merged, nothing cherry-picked."
-          right={
-            <Link href="/signals/performance" className="group inline-flex items-center gap-2 text-sm font-semibold text-white/70 transition-colors hover:text-white">
-              Full performance page <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
-            </Link>
-          }
-        />
-
-        <div className="grid gap-4 lg:grid-cols-5">
-          {/* Equity curve */}
-          <motion.div {...m.fade()} className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 lg:col-span-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">Cumulative R · last 30 days</p>
-                <p className={cn("mt-1 font-mono text-4xl font-bold tabular-nums", perf.isLoading && "skeleton rounded")} style={{ color: line }}>{fmtR(last)}</p>
-              </div>
-              {streak?.type && (
-                <span className="rounded-md px-2 py-1 text-[11px] font-bold" style={{ color: streak.type === "win" ? GREEN : RED, backgroundColor: `${streak.type === "win" ? GREEN : RED}1a` }}>
-                  {streak.length} {streak.type} streak
-                </span>
-              )}
-            </div>
-            <div className="mt-4 h-56">
-              {eq.length > 1 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={eq} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
-                    <defs>
-                      <linearGradient id="home-eq" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={line} stopOpacity={0.28} />
-                        <stop offset="100%" stopColor={line} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <YAxis hide domain={["auto", "auto"]} />
-                    <Tooltip content={<EquityTooltip />} cursor={{ stroke: "rgba(255,255,255,0.18)", strokeWidth: 1 }} />
-                    <Area type="monotone" dataKey="cumR" stroke={line} strokeWidth={2} fill="url(#home-eq)" dot={false} activeDot={{ r: 4, stroke: "#06080F", strokeWidth: 2, fill: line }} isAnimationActive={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-white/35">{perf.isLoading ? "Loading the curve…" : "Not enough closed calls in the window yet"}</div>
-              )}
-            </div>
-            <p className="mt-2 text-[11px] text-white/35">{s?.meta.sampleNote ?? "Each point is one closed call; R = profit measured in units of initial risk."}</p>
-          </motion.div>
-
-          {/* KPIs */}
-          <motion.div {...m.fade(0.08)} className="grid grid-cols-2 gap-4 lg:col-span-2">
-            {perf.data?.meta.provisional ?? true ? (
-              <>
-                <Kpi label="Expectancy" value="Provisional" sub={perf.data ? `${perf.data.meta.filledN} of ${perf.data.meta.provisionalTarget} filled closed signals` : "waiting for data"} tone="amber" />
-                <Kpi label="Profit factor" value="Provisional" sub="quoted once 100 signals have verifiably filled and closed" tone="amber" />
-              </>
-            ) : (
-              <>
-                <Kpi label="Expectancy" value={fmtR(k?.expectancyR)} sub={k?.expectancyConservativeR != null ? `${fmtR(k.expectancyConservativeR)} conservative` : "per call, in R"} tone={(k?.expectancyR ?? 0) >= 0 ? "green" : "red"} />
-                <Kpi label="Profit factor" value={k?.profitFactor == null ? "—" : k.profitFactor.toFixed(2)} sub="gross wins ÷ gross losses" tone={(k?.profitFactor ?? 1) >= 1 ? "green" : "red"} />
-              </>
-            )}
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 backdrop-blur-sm">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">Target ladder</p>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {[["TP1", k?.tp1Rate], ["TP2", k?.tp2Rate], ["TP3", k?.tp3Rate]].map(([l, v]) => (
-                  <div key={l as string}>
-                    <p className="font-mono text-xl font-bold tabular-nums text-white">{fmtPct(v as number | null | undefined)}</p>
-                    <p className="text-[10px] text-white/35">{l as string}</p>
-                  </div>
-                ))}
-              </div>
-              <p className="mt-1 text-xs text-white/35">hit rates</p>
-            </div>
-            <Kpi label="Stopped before TP1" value={fmtPct(k?.stopBeforeTpRate)} sub="clean losses" tone="amber" />
-            <Kpi label="Median time to TP1" value={k?.medianTimeToTp1Min == null ? "—" : k.medianTimeToTp1Min < 90 ? `${Math.round(k.medianTimeToTp1Min)}m` : `${(k.medianTimeToTp1Min / 60).toFixed(1)}h`} sub="how fast it pays" />
-            <Kpi label="Closed · open" value={k ? `${k.closedN} · ${k.openN}` : "—"} sub="calls in window" />
-          </motion.div>
-        </div>
+        <motion.div {...m.fade()} className="grid gap-4 sm:grid-cols-3">
+          {[
+            { t: "Enter the Patch", b: "Prove a wallet, open the dashboard. 2M $CLOVE gets you through the door, 5M opens Levels.", href: CLOVE_PATCH },
+            { t: "Verified track record", b: "Every logged call checked against 5-minute candles. Equity curve, calibration, breakdowns.", href: CLOVE_PERF },
+            { t: "Get $CLOVE", b: "Swap ADA for CLOVE on Minswap straight from the site. The bag is the key.", href: "https://cloveup.com/buy" },
+          ].map((c) => (
+            <a key={c.t} href={c.href} target="_blank" rel="noopener noreferrer" className="group rounded-2xl border border-white/[0.07] bg-white/[0.025] p-6 transition-all duration-300 hover:border-[#00FF88]/30 hover:bg-white/[0.04]">
+              <h3 className="font-display text-lg font-bold text-white transition-colors group-hover:text-[#00FF88]">{c.t}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-white/45">{c.b}</p>
+              <span className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-white/50 group-hover:text-white/80">cloveup.com <ArrowUpRight className="size-3" /></span>
+            </a>
+          ))}
+        </motion.div>
       </div>
     </section>
   )
@@ -424,9 +238,9 @@ function Ecosystem() {
                 ))}
               </ul>
               <div className="mt-7 flex flex-wrap gap-3">
-                <Link href="/signals/ascend" className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold text-[#06080F] transition-all hover:shadow-[0_0_30px_rgba(243,82,51,0.4)]" style={{ backgroundColor: ASCEND }}>
-                  <Activity className="size-4" /> Ascend signals
-                </Link>
+                <a href={CLOVE_PATCH} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold text-[#06080F] transition-all hover:shadow-[0_0_30px_rgba(243,82,51,0.4)]" style={{ backgroundColor: ASCEND }}>
+                  <Activity className="size-4" /> Signals on cloveup.com
+                </a>
                 <a href="https://ascend.market" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/[0.14] px-5 py-2.5 text-sm font-semibold text-white/80 transition-colors hover:border-white/30 hover:text-white">
                   ascend.market <ExternalLink className="size-3.5" />
                 </a>
@@ -543,8 +357,7 @@ export default function HomeContent({ posts }: { posts: HomePost[] }) {
   return (
     <>
       <Hero />
-      <LiveBoard />
-      <Performance />
+      <MovedToClove />
       <HowItWorks />
       <Ecosystem />
       <Latest posts={posts} />

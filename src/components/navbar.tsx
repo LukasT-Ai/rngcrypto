@@ -15,7 +15,7 @@ type NavItem = { href: string; label: string; icon: React.ElementType; children?
 
 // Signals and the track record live on cloveup.com now (token gated behind $CLOVE). Bot dashboards stay unlinked.
 const navItems: NavItem[] = [
-  { href: "https://cloveup.com/patch", label: "Signals", icon: Crosshair, external: true },
+  { href: "https://www.cloveup.com/patch", label: "Signals", icon: Crosshair, external: true },
   { href: "/copytrade", label: "Copy Trade", icon: Users },
   { href: "/projects", label: "Projects", icon: Layers },
   { href: "/proposals", label: "Proposals", icon: Zap },

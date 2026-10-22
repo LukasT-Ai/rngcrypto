@@ -15,8 +15,8 @@ const LIQWID = "#22D3EE"
 // Data
 // ---------------------------------------------------------------------------
 
-const CLOVE_PATCH = "https://cloveup.com/patch"
-const CLOVE_PERF = "https://cloveup.com/patch/performance"
+const CLOVE_PATCH = "https://www.cloveup.com/patch"
+const CLOVE_PERF = "https://www.cloveup.com/patch/performance"
 
 // ---------------------------------------------------------------------------
 // Bits
@@ -154,7 +154,7 @@ function MovedToClove() {
           {[
             { t: "Enter the Patch", b: "Prove a wallet, open the dashboard. 2M $CLOVE gets you through the door, 5M opens Levels.", href: CLOVE_PATCH },
             { t: "Verified track record", b: "Every logged call checked against 5-minute candles. Equity curve, calibration, breakdowns.", href: CLOVE_PERF },
-            { t: "Get $CLOVE", b: "Swap ADA for CLOVE on Minswap straight from the site. The bag is the key.", href: "https://cloveup.com/buy" },
+            { t: "Get $CLOVE", b: "Swap ADA for CLOVE on Minswap straight from the site. The bag is the key.", href: "https://www.cloveup.com/buy" },
           ].map((c) => (
             <a key={c.t} href={c.href} target="_blank" rel="noopener noreferrer" className="group rounded-2xl border border-white/[0.07] bg-white/[0.025] p-6 transition-all duration-300 hover:border-[#00FF88]/30 hover:bg-white/[0.04]">
               <h3 className="font-display text-lg font-bold text-white transition-colors group-hover:text-[#00FF88]">{c.t}</h3>

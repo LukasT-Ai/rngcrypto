@@ -27,7 +27,7 @@ import {
 
 const pages = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Signals (on cloveup.com)", href: "https://cloveup.com/patch", icon: TrendingUp },
+  { name: "Signals (on cloveup.com)", href: "https://www.cloveup.com/patch", icon: TrendingUp },
   { name: "Markets", href: "/markets", icon: BarChart3 },
   { name: "Macro Economy", href: "/macro", icon: Globe },
   { name: "DeFi", href: "/defi", icon: Layers },

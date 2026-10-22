@@ -20,7 +20,7 @@ const moreLinks = [
 ]
 
 const ecosystemLinks = [
-  { href: "https://cloveup.com/patch", label: "Signals (on CLOVE)" },
+  { href: "https://www.cloveup.com/patch", label: "Signals (on CLOVE)" },
   { href: "https://ascend.market", label: "Ascend Market" },
   { href: "https://liqwid.finance", label: "Liqwid Finance" },
   { href: "https://midnight.network", label: "Midnight" },

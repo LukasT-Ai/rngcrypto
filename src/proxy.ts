@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 
 // The signal engine's public data moved to cloveup.com (token gated). The route modules stay because the
 // in-process scheduler (instrumentation.ts) and project-clove's vendoring depend on them; over HTTP they are gone.
-const GONE = { ok: false, error: "Signals moved to cloveup.com. Hold CLOVE, prove it, enter the Patch.", url: "https://cloveup.com/patch" };
+const GONE = { ok: false, error: "Signals moved to cloveup.com. Hold CLOVE, prove it, enter the Patch.", url: "https://www.cloveup.com/patch" };
 
 export function proxy(req: NextRequest) {
   // One door stays open for the owner: the ledger export, only with the export token (set on Railway), so the

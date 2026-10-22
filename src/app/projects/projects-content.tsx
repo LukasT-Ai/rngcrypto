@@ -231,10 +231,10 @@ function FeaturedSignalsCard() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <a href="https://cloveup.com/patch" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-[#06080F] transition-opacity hover:opacity-90" style={{ backgroundColor: GREEN }}>
+            <a href="https://www.cloveup.com/patch" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-[#06080F] transition-opacity hover:opacity-90" style={{ backgroundColor: GREEN }}>
               Open on cloveup.com <ArrowRight className="size-4" />
             </a>
-            <a href="https://cloveup.com/patch/performance" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80">
+            <a href="https://www.cloveup.com/patch/performance" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] px-5 py-2.5 text-sm text-white/60 transition-colors hover:border-white/[0.2] hover:text-white/80">
               <Trophy className="size-3.5" /> Performance
             </a>
           </div>
@@ -403,7 +403,7 @@ export function ProjectsContent() {
           logo="/strike/Strike Logo.jpeg"
           tagline="Every market on Strike Finance perpetuals"
           description="The full signal engine pointed at Strike Finance, the Cardano perpetuals DEX: crypto majors, gold, silver, WTI, US stocks and indices, each with a plain-English recommendation and deep-linked evidence."
-          href="https://cloveup.com/patch"
+          href="https://www.cloveup.com/patch"
           venue={{ label: "strikefinance.org", url: "https://app.strikefinance.org" }}
           markets="31 tickers"
         />
@@ -413,7 +413,7 @@ export function ProjectsContent() {
           logo="/avatar/ascend_logo_coin.jpg"
           tagline="The markets behind Ascend event perpetuals"
           description="Bitcoin, Gold, Cardano and WTI — the underlying markets for Ascend's event perpetuals (ZK-settled on Midnight) — with catalyst headline engines and macro event intelligence for each."
-          href="https://cloveup.com/patch"
+          href="https://www.cloveup.com/patch"
           venue={{ label: "ascend.market", url: "https://ascend.market" }}
           markets="BTC · GOLD · ADA · WTI"
         />
